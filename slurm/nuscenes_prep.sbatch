@@ -55,7 +55,7 @@ bash -lc '
 cd /workspace/mmdet/mmdetection3d && \
 python tools/create_data.py nuscenes \
   --root-path /tudelft.net/staff-umbrella/MscThesisjverhoog/nuscenes_shadow_root \
-  --version v1.0 \
+  --version v1.0-trainval \
   --out-dir /tudelft.net/staff-umbrella/MscThesisjverhoog/nuscenes_pkl \
   --extra-tag nuscenes
 '
