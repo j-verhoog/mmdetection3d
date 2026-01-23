@@ -1,0 +1,60 @@
+IMAGE
+Can change in .def, then rebuild with:
+apptainer build mmdet3d_v1rc5.sif mmdet3d_v1rc5.def
+
+For easier debug:
+apptainer build --sandbox mmdet3d_sandbox mmdet3d.def
+apptainer shell --nv mmdet3d_sandbox # fix everything in here
+apptainer build mmdet3d.sif mmdet3d_sandbox
+
+
+SETUP PROCESS:
+git clone --depth 1 --branch v1.0.0rc5 https://github.com/open-mmlab/mmdetection3d.git
+mkdir mmdetection3d/projects/ mmdetection3d/work_dirs/
+cd mmdetection3d/projects/
+git clone https://github.com/junjie18/CMT.git
+
+# remove the git files to make normal files, then make own git repository
+rm -rf mmdetection3d/projects/CMT/.git
+rm -rf mmdetection3d/.git
+git init
+
+mkdir mmdetection3d/ckpts
+# put nuim_r50.pth and fcos3d.pth files here for CMT
+
+MOVE CMT: (this makes it work normally)
+mv mmdetection3d/projects/CMT/projects /mmdetection3d/projects
+mv mmdetection3d/projects/CMT/tools /mmdetection/tools_CMT
+
+
+SYMBOLIC LINK NUSCENES.
+ln -s /path/to/v1.0-trainval mmdetection3d/data/nuscenes/v1.0-trainval
+
+CHECK SIF WORKING GOOD:
+apptainer run --nv --bind "$HOME/mmdet:/workspace/mmdet" image/mmdet3d_v1rc5.sif   # should work
+WORK IN SIF INTERACTIVELY:
+apptainer shell --nv --bind "$HOME/mmdet:/workspace/mmdet" image/mmdet3d_v1rc5.sif
+Will automatically bind ~ to ~
+MAKE IT WORK WITHOUT TORCH / WANDB LOGGING CLOG. bind tmp dir and put all caches there.
+mkdir -p /tmp/mydir/{wandb,torch,xdg}
+apptainer run --nv   \
+--bind "$HOME/mmdet:/workspace/mmdet"   \
+--bind "/tmp/mydir:/workspace/tmp"   \
+--env WANDB_DIR=/workspace/tmp/wandb   \
+--env TORCH_HOME=/workspace/tmp/torch   \
+--env XDG_CACHE_HOME=/workspace/tmp/xdg   \
+image/mmdet3d_v1rc5.sif
+
+# Wandb smoke test:
+python - <<'PY'
+import wandb, os
+print("WANDB_DIR:", os.environ.get("WANDB_DIR"))
+wandb.init(
+    project="container-smoke-test",
+    name="apptainer-test",
+)
+for i in range(3):
+    wandb.log({"loss": 1.0 / (i + 1)})
+wandb.finish()
+print("W&B logging OK")
+PY
