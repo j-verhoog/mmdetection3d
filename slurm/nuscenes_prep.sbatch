@@ -36,7 +36,10 @@ apptainer exec --cleanenv \
 --env XDG_CACHE_HOME=/workspace/tmp/xdg   \
 --env WANDB_NAME="$WANDB_NAME" \
 "$APPTAINER_IMAGE" \
-bash -lc 'cd /workspace/mmdet/mmdetection3d && \
+bash -lc '
+apt-get update
+apt-get install -y libgl1 libglib2.0-0
+cd /workspace/mmdet/mmdetection3d && \
 python tools/create_data.py nuscenes \
   --root-path /tudelft.net/staff-umbrella/IntelligentVehiclesPublicDatasets/nuscenes \
   --version v1.0 \
