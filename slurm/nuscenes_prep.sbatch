@@ -24,6 +24,20 @@ TMP_BASE="/tmp/jtverhoog_${SLURM_JOB_ID}"
 mkdir -p "$TMP_BASE"/{wandb,torch,xdg,tmp,home}
 mkdir -p /tudelft.net/staff-umbrella/MscThesisjverhoog/nuscenes_pkl
 
+echo "===WORK WITH SHADOW ROOT==="
+NU_ROOT_REAL="/tudelft.net/staff-umbrella/IntelligentVehiclesPublicDatasets/nuscenes"
+NU_ROOT_SHADOW="/tudelft.net/staff-umbrella/MscThesisjverhoog/nuscenes_shadow_root"
+
+mkdir -p "$NU_ROOT_SHADOW"
+
+# Symlink the parts nuScenes devkit expects
+for d in samples sweeps maps lidarseg panoptic v1.0-trainval v1.0-test v1.0-mini; do
+  if [ -e "$NU_ROOT_REAL/$d" ] && [ ! -e "$NU_ROOT_SHADOW/$d" ]; then
+    ln -s "$NU_ROOT_REAL/$d" "$NU_ROOT_SHADOW/$d"
+  fi
+done
+
+
 apptainer exec --cleanenv --contain\
 --bind "$HOME/mmdet:/workspace/mmdet"   \
 --bind "/tudelft.net/staff-umbrella/MscThesisjverhoog:/tudelft.net/staff-umbrella/MscThesisjverhoog"   \
@@ -40,7 +54,7 @@ apptainer exec --cleanenv --contain\
 bash -lc '
 cd /workspace/mmdet/mmdetection3d && \
 python tools/create_data.py nuscenes \
-  --root-path /tudelft.net/staff-umbrella/IntelligentVehiclesPublicDatasets/nuscenes \
+  --root-path /tudelft.net/staff-umbrella/MscThesisjverhoog/nuscenes_shadow_root \
   --version v1.0 \
   --out-dir /tudelft.net/staff-umbrella/MscThesisjverhoog/nuscenes_pkl \
   --extra-tag nuscenes
