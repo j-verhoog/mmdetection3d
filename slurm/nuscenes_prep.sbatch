@@ -24,7 +24,7 @@ mkdir -p "$TMP_BASE"/{wandb,torch,xdg,tmp,home}
 mkdir -p /tudelft.net/staff-umbrella/MscThesisjverhoog/nuscenes_pkl
 
 # so nothign writes to real HOME
-apptainer exec --cleanenv \ 
+apptainer exec --cleanenv \
 --bind "$HOME/mmdet:/workspace/mmdet"   \
 --bind "/tudelft.net/staff-umbrella/MscThesisjverhoog:/tudelft.net/staff-umbrella/MscThesisjverhoog"   \
 --bind "/tudelft.net/staff-umbrella/IntelligentVehiclesPublicDatasets:/tudelft.net/staff-umbrella/IntelligentVehiclesPublicDatasets"   \
