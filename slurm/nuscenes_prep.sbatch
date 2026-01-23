@@ -1,4 +1,3 @@
-
 #!/bin/bash
 #SBATCH --partition=general # request partition
 #SBATCH --qos=short # Quality of service, short default
