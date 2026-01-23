@@ -3,7 +3,7 @@
 #SBATCH --qos=short # Quality of service, short default
 #SBATCH --job-name=wandb_test
 #SBATCH --output=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/wandb_test%j.out
-#SBATCH --error=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/wandb_test/%j.err
+#SBATCH --error=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/wandb_test%j.err
 #SBATCH --time=00:10:00 # 0:01:00 is one minute, max 4hrs for short QoS, 36hrs for medium
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=4
@@ -29,7 +29,6 @@ apptainer exec --cleanenv --contain \
 --bind "$WORK:/workspace/work_dirs" \
 --bind "$TMP_BASE:/workspace/tmp" \
 --env TMPDIR=/workspace/tmp/tmp \
---env HOME=/workspace/tmp/home \
 --env TORCH_HOME=/workspace/tmp/torch   \
 --env XDG_CACHE_HOME=/workspace/tmp/xdg   \
 --env WANDB_DIR=/workspace/tmp/wandb   \
