@@ -38,7 +38,7 @@ for d in samples sweeps maps lidarseg panoptic v1.0-trainval v1.0-test v1.0-mini
 done
 
 
-apptainer exec --cleanenv --contain \
+apptainer exec --cleanenv \
 --bind "$HOME/mmdet:/workspace/mmdet"   \
 --bind "/tudelft.net/staff-umbrella/MscThesisjverhoog:/tudelft.net/staff-umbrella/MscThesisjverhoog"   \
 --bind "/tudelft.net/staff-umbrella/IntelligentVehiclesPublicDatasets:/tudelft.net/staff-umbrella/IntelligentVehiclesPublicDatasets"   \
