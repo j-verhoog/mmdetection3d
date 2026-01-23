@@ -20,16 +20,17 @@ export WORK=/tudelft.net/staff-umbrella/MscThesisjverhoog/pointpillars/test
 mkdir -p "$WORK"
 
 TMP_BASE="/tmp/jtverhoog_${SLURM_JOB_ID}"
-mkdir -p "$TMP_BASE"/{wandb,torch,xdg}
+mkdir -p "$TMP_BASE"/{wandb,torch,xdg,tmp,home}
 mkdir -p /tudelft.net/staff-umbrella/MscThesisjverhoog/nuscenes_pkl
 
-apptainer exec  \
+# so nothign writes to real HOME
+apptainer exec --cleanenv \ 
 --bind "$HOME/mmdet:/workspace/mmdet"   \
---bind "/tmp/jtverhoog:/workspace/tmp" \
 --bind "/tudelft.net/staff-umbrella/MscThesisjverhoog:/tudelft.net/staff-umbrella/MscThesisjverhoog"   \
 --bind "/tudelft.net/staff-umbrella/IntelligentVehiclesPublicDatasets:/tudelft.net/staff-umbrella/IntelligentVehiclesPublicDatasets"   \
---bind "$WORK:/workspace/work_dirs" \
---env TMPDIR=/workspace/tmp \
+--bind "$TMP_BASE:/workspace/tmp" \
+--env TMPDIR=/workspace/tmp/tmp \
+--env HOME=/workspace/tmp/home \
 --env WANDB_DIR=/workspace/tmp/wandb   \
 --env TORCH_HOME=/workspace/tmp/torch   \
 --env XDG_CACHE_HOME=/workspace/tmp/xdg   \
