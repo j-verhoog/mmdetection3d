@@ -2,9 +2,9 @@
 #!/bin/bash
 #SBATCH --partition=general # request partition
 #SBATCH --qos=short # Quality of service, short default
-#SBATCH --job-name=pointpillars_test
-#SBATCH --output=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/pointpillars_test_%j.out
-#SBATCH --error=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/pointpillars_test_%j.err
+#SBATCH --job-name=nuscenes_data_prep
+#SBATCH --output=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/nuscenes_data_prep_%j.out
+#SBATCH --error=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/nuscenes_data_prep_%j.err
 #SBATCH --time=4:00:00 # 0:01:00 is one minute, max 4hrs for short QoS, 36hrs for medium
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=16
