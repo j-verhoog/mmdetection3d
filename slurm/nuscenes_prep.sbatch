@@ -11,6 +11,7 @@
 
 export WANDB_PROJECT="test"
 export WANDB_NAME="pointpillars_test"
+export WANDB_API_KEY=$(awk '$1=="machine" && $2=="api.wandb.ai" {found=1}found && $1=="password" {print $2; exit}' "$HOME/.netrc")
 
 /usr/bin/scontrol show job -d "$SLURM_JOB_ID" # check sbatch working
 
@@ -23,18 +24,18 @@ TMP_BASE="/tmp/jtverhoog_${SLURM_JOB_ID}"
 mkdir -p "$TMP_BASE"/{wandb,torch,xdg,tmp,home}
 mkdir -p /tudelft.net/staff-umbrella/MscThesisjverhoog/nuscenes_pkl
 
-# so nothign writes to real HOME
-apptainer exec --cleanenv \
+apptainer exec --cleanenv --contain\
 --bind "$HOME/mmdet:/workspace/mmdet"   \
 --bind "/tudelft.net/staff-umbrella/MscThesisjverhoog:/tudelft.net/staff-umbrella/MscThesisjverhoog"   \
 --bind "/tudelft.net/staff-umbrella/IntelligentVehiclesPublicDatasets:/tudelft.net/staff-umbrella/IntelligentVehiclesPublicDatasets"   \
 --bind "$TMP_BASE:/workspace/tmp" \
 --env TMPDIR=/workspace/tmp/tmp \
 --env HOME=/workspace/tmp/home \
---env WANDB_DIR=/workspace/tmp/wandb   \
 --env TORCH_HOME=/workspace/tmp/torch   \
 --env XDG_CACHE_HOME=/workspace/tmp/xdg   \
+--env WANDB_DIR=/workspace/tmp/wandb   \
 --env WANDB_NAME="$WANDB_NAME" \
+--env WANDB_API_KEY="$WANDB_API_KEY" \
 "$APPTAINER_IMAGE" \
 bash -lc '
 cd /workspace/mmdet/mmdetection3d && \
