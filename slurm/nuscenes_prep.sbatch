@@ -48,7 +48,6 @@ done
 
 echo "===GOING INTO CONTAINER==="
 apptainer exec --cleanenv \
---home /workspace/tmp/home \
 --bind "$HOME/mmdet:/workspace/mmdet"   \
 --bind "/tudelft.net/staff-umbrella/MscThesisjverhoog:/tudelft.net/staff-umbrella/MscThesisjverhoog"   \
 --bind "/tudelft.net/staff-umbrella/IntelligentVehiclesPublicDatasets:/tudelft.net/staff-umbrella/IntelligentVehiclesPublicDatasets"   \
