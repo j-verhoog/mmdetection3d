@@ -2,8 +2,8 @@
 #SBATCH --partition=general # request partition
 #SBATCH --qos=short # Quality of service, short default
 #SBATCH --job-name=nuscenes_data_prep
-#SBATCH --output=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/nuscenes_data_prep/%j.out
-#SBATCH --error=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/nuscenes_data_prep/%j.err
+#SBATCH --output=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/nuscenes_data_prep/shadow_%j.out
+#SBATCH --error=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/nuscenes_data_prep/shadow_%j.err
 #SBATCH --time=4:00:00 # 0:01:00 is one minute, max 4hrs for short QoS, 36hrs for medium
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=16
@@ -30,10 +30,19 @@ NU_ROOT_SHADOW="/tudelft.net/staff-umbrella/MscThesisjverhoog/nuscenes_shadow_ro
 
 mkdir -p "$NU_ROOT_SHADOW"
 
-# Symlink the parts nuScenes devkit expects
-for d in samples sweeps maps lidarseg panoptic v1.0-trainval v1.0-test v1.0-mini; do
-  if [ -e "$NU_ROOT_REAL/$d" ] && [ ! -e "$NU_ROOT_SHADOW/$d" ]; then
-    ln -s "$NU_ROOT_REAL/$d" "$NU_ROOT_SHADOW/$d"
+# Copy real to shadow with symlinks only if not yet done
+REQUIRED_DIRS=(samples sweeps maps lidarseg panoptic v1.0-trainval v1.0-test v1.0-mini)
+
+for d in "${REQUIRED_DIRS[@]}"; do
+  if [ -e "$NU_ROOT_REAL/$d" ]; then
+    if [ ! -L "$NU_ROOT_SHADOW/$d" ]; then
+      echo "Linking $d..."
+      ln -sfn "$NU_ROOT_REAL/$d" "$NU_ROOT_SHADOW/$d"
+    else
+      echo "$d already linked. Skipping."
+    fi
+  else
+    echo "Warning: Source directory $NU_ROOT_REAL/$d does not exist. Skipping."
   fi
 done
 
@@ -57,5 +66,6 @@ python tools/create_data.py nuscenes \
   --root-path /tudelft.net/staff-umbrella/MscThesisjverhoog/nuscenes_shadow_root \
   --version v1.0 \
   --out-dir /tudelft.net/staff-umbrella/MscThesisjverhoog/nuscenes_shadow_root \
-  --extra-tag nuscenes
+  --extra-tag nuscenes \
+  --workers 16
 '
