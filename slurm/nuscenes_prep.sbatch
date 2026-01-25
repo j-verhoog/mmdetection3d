@@ -37,14 +37,14 @@ for d in samples sweeps maps lidarseg panoptic v1.0-trainval v1.0-test v1.0-mini
   fi
 done
 
-
+echo "===GOING INTO CONTAINER==="
 apptainer exec --cleanenv \
+--home /workspace/tmp/home \
 --bind "$HOME/mmdet:/workspace/mmdet"   \
 --bind "/tudelft.net/staff-umbrella/MscThesisjverhoog:/tudelft.net/staff-umbrella/MscThesisjverhoog"   \
 --bind "/tudelft.net/staff-umbrella/IntelligentVehiclesPublicDatasets:/tudelft.net/staff-umbrella/IntelligentVehiclesPublicDatasets"   \
 --bind "$TMP_BASE:/workspace/tmp" \
 --env TMPDIR=/workspace/tmp/tmp \
---env HOME=/workspace/tmp/home \
 --env TORCH_HOME=/workspace/tmp/torch   \
 --env XDG_CACHE_HOME=/workspace/tmp/xdg   \
 --env WANDB_DIR=/workspace/tmp/wandb   \
@@ -56,6 +56,6 @@ cd /workspace/mmdet/mmdetection3d && \
 python tools/create_data.py nuscenes \
   --root-path /tudelft.net/staff-umbrella/MscThesisjverhoog/nuscenes_shadow_root \
   --version v1.0 \
-  --out-dir /tudelft.net/staff-umbrella/MscThesisjverhoog/nuscenes_pkl \
+  --out-dir /tudelft.net/staff-umbrella/MscThesisjverhoog/nuscenes_shadow_root \
   --extra-tag nuscenes
 '
