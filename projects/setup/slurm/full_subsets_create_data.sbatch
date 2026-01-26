@@ -24,7 +24,7 @@ mkdir -p "$WORK"
 TMP_BASE="/tmp/jtverhoog_${SLURM_JOB_ID}"
 mkdir -p "$TMP_BASE"/{wandb,torch,xdg,tmp,home}
 
-SUBSETS=("boston_day_clear" "boston_night_clear" "singapore_day_rain" "singapore_night_rain")
+SUBSETS=("boston_day_rain" "singapore_day_clear" "singapore_night_clear") # "boston_day_clear"  already processed
 BASE_PATH="/tudelft.net/staff-umbrella/MscThesisjverhoog/nuscenes_subsets_full"
 
 for SUBSET_NAME in "${SUBSETS[@]}"; do
