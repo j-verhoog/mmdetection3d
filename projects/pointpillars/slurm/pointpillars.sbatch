@@ -10,6 +10,8 @@
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=64G # A40 has 503GB spread on 3 gpu's
 
+# added something to pointpillars config for wandb logging
+
 # FOR NAMING STICK TO: A–Z  a–z  0–9  .  _  -
 export WANDB_PROJECT="test"
 export WANDB_NAME="pointpillars_test"

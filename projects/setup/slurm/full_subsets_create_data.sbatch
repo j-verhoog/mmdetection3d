@@ -54,7 +54,7 @@ for SUBSET_NAME in "${SUBSETS[@]}"; do
     cd /workspace/mmdet/mmdetection3d && \
     python tools/create_data.py nuscenes \
       --root-path $NU_ROOT_SUBSET \
-      --version v1.0-trainval \
+      --version v1.0 \
       --out-dir $NU_ROOT_SUBSET \
       --extra-tag nuscenes \
       --workers 16
