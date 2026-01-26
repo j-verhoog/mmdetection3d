@@ -43,6 +43,7 @@ apptainer exec --nv --cleanenv \
 --bind "$WORK:/workspace/work_dirs" \
 --bind "/tudelft.net/staff-umbrella/MscThesisjverhoog:/tudelft.net/staff-umbrella/MscThesisjverhoog"   \
 --bind "/tudelft.net/staff-umbrella/IntelligentVehiclesPublicDatasets:/tudelft.net/staff-umbrella/IntelligentVehiclesPublicDatasets"   \
+--bind "$DATA_ROOT:/workspace/mmdet/mmdetection3d/data/nuscenes" \
 --env TMPDIR=/workspace/tmp/tmp \
 --env TORCH_HOME=/workspace/tmp/torch   \
 --env XDG_CACHE_HOME=/workspace/tmp/xdg   \
@@ -56,7 +57,6 @@ python -u tools/train.py configs/pointpillars/hv_pointpillars_fpn_sbn-all_fp16_2
 --work-dir /workspace/work_dirs \
 --cfg-options \
 evaluation.interval=1 \
-data_root=$DATA_ROOT/
 "
 
 # Measure GPU usage of your job (result)
