@@ -1,9 +1,9 @@
 #!/bin/bash
 #SBATCH --partition=general # request partition
 #SBATCH --qos=medium # Quality of service, short default
-#SBATCH --job-name=nuscenes_data_prep
-#SBATCH --output=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/nuscenes_data_prep/shadow_%j.out
-#SBATCH --error=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/nuscenes_data_prep/shadow_%j.err
+#SBATCH --job-name=nuscenes_full_subsets
+#SBATCH --output=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/nuscenes_data_prep/fullsubsets_%j.out
+#SBATCH --error=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/nuscenes_data_prep/fullsubsets_%j.err
 #SBATCH --time=12:00:00 # 0:01:00 is one minute, max 4hrs for short QoS, 36hrs for medium
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=16
