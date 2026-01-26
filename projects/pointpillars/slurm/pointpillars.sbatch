@@ -8,8 +8,8 @@
 #SBATCH --gres=gpu:a40:1 # request A40
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=8
-#SBATCH --mem=64G # A40 has 503GB spread on 3 gpu's
-#SBATCH --tmp=100G
+#SBATCH --mem=64G # A40 clusters have 503GB spread on 3 gpu's
+#SBATCH --tmp=250G # Lidar only is like 150GB, keyframes 45GB, 3GB pkl files
 
 # added something to pointpillars config for wandb logging
 
@@ -40,27 +40,31 @@ echo "=== LOADING CUDA ==="
 module use /opt/insy/modulefiles
 module load cuda
 
-echo "=== COPYING LIDAR DATA TO LOCAL SSD ==="
-# 1. We enter the network directory to make the relative paths in rsync work easily
-cd "$NETWORK_DATA_ROOT"
+LOCAL_DATA_ROOT=$NETWORK_DATA_ROOT
+# echo "=== COPYING LIDAR DATA TO LOCAL SSD ==="
+# # 1. We enter the network directory to make the relative paths in rsync work easily
+# cd "$NETWORK_DATA_ROOT"
 
-# 2. RUN SMART COPY, time it and let it be quiet
-# -r: recursive
-# -L: COPY THE ACTUAL FILE (Follow Symlink) - Crucial for speed!
-# --include: Specific folders we need for PointPillars
-# --exclude='*': Ignore everything else (Images, Radar) to save space
-time rsync -rL \
---include='v1.0-trainval/***' \
---include='maps/***' \
---include='samples/LIDAR_TOP/***' \
---include='sweeps/LIDAR_TOP/***' \
---include='samples/' \
---include='sweeps/' \
---exclude='*' \
-. "$LOCAL_DATA_ROOT/"
+# # 2. RUN SMART COPY, time it and let it be quiet
+# # -r: recursive
+# # -L: COPY THE ACTUAL FILE (Follow Symlink) - Crucial for speed!
+# # --include: Specific folders we need for PointPillars
+# # --exclude='*': Ignore everything else (Images, Radar) to save space
+# time rsync -rL \
+# --include='*.pkl' \
+# --include='*.json' \
+# --include='nuscenes_gt_database/***' \
+# --include='v1.0-trainval/***' \
+# --include='maps/***' \
+# --include='samples/LIDAR_TOP/***' \
+# --include='sweeps/LIDAR_TOP/***' \
+# --include='samples/' \
+# --include='sweeps/' \
+# --exclude='*' \
+# . "$LOCAL_DATA_ROOT/"
 
-# Return to previous dir just in case
-cd -
+# # Return to previous dir just in case
+# cd -
 
 echo "=== ENTERING CONTAINER =="
 apptainer exec --nv --cleanenv \
@@ -86,6 +90,7 @@ python -u tools/train.py configs/pointpillars/hv_pointpillars_fpn_sbn-all_fp16_2
 --work-dir /workspace/work_dirs \
 --cfg-options \
 evaluation.interval=3 \
+data.samples_per_gpu=16 \
 data.workers_per_gpu=4
 "
 
