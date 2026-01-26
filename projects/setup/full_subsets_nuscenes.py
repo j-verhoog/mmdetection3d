@@ -26,9 +26,9 @@ from nuscenes.nuscenes import NuScenes
 
 # ================= CONFIGURATION =================
 # EXACT PATHS PROVIDED BY USER
-NUSC_SOURCE_ROOT = Path("/home/jolle/mmdet/nuscenes_shadow_root")
-EXCEL_PATH = Path("/home/jolle/mmdet/mmdetection3d/projects/setup/scene_domains_summary.xlsx")
-OUT_ROOT = Path("/home/jolle/mmdet/nuscenes_subsets_full")
+NUSC_SOURCE_ROOT = Path("/tudelft.net/staff-umbrella/MscThesisjverhoog/nuscenes_shadow_root")
+EXCEL_PATH = Path("/home/nfs/jtverhoog/mmdet/mmdetection3d/projects/setup/scene_domains_summary.xlsx")
+OUT_ROOT = Path("/tudelft.net/staff-umbrella/MscThesisjverhoog/nuscenes_subsets_full")
 
 # Options
 COPY_METHOD = "symlink" # not used, but is symlinks now by default
