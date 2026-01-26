@@ -50,6 +50,8 @@ apptainer exec --nv --cleanenv \
 --env WANDB_DIR=/workspace/tmp/wandb   \
 --env WANDB_NAME="$WANDB_NAME" \
 --env WANDB_API_KEY="$WANDB_API_KEY" \
+--env OMP_NUM_THREADS=1 \
+--env MKL_NUM_THREADS=1 \
 "$APPTAINER_IMAGE" \
 bash -lc "
 cd /workspace/mmdet/mmdetection3d && \

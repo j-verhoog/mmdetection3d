@@ -13,7 +13,6 @@ log_config = dict(
                 project=None,  # read from env
                 name=None      # read from env
             ),
-            log_checkpoint=False
         )
     ]
 )
