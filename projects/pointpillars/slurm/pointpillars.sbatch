@@ -37,11 +37,12 @@ TMP_BASE="/tmp/jtverhoog_${SLURM_JOB_ID}"
 mkdir -p "$TMP_BASE"/{wandb,torch,xdg,tmp,home}
 
 echo "=== ENTERING CONTAINER =="
-apptainer run --nv --cleanenv \
+apptainer exec --nv --cleanenv \
 --bind "$HOME/mmdet:/workspace/mmdet"   \
 --bind "$TMP_BASE:/workspace/tmp" \
 --bind "$WORK:/workspace/work_dirs" \
 --bind "/tudelft.net/staff-umbrella/MscThesisjverhoog:/tudelft.net/staff-umbrella/MscThesisjverhoog"   \
+--bind "/tudelft.net/staff-umbrella/IntelligentVehiclesPublicDatasets:/tudelft.net/staff-umbrella/IntelligentVehiclesPublicDatasets"   \
 --env TMPDIR=/workspace/tmp/tmp \
 --env TORCH_HOME=/workspace/tmp/torch   \
 --env XDG_CACHE_HOME=/workspace/tmp/xdg   \
@@ -51,7 +52,7 @@ apptainer run --nv --cleanenv \
 "$APPTAINER_IMAGE" \
 bash -lc "
 cd /workspace/mmdet/mmdetection3d && \
-python tools/train.py configs/pointpillars/hv_pointpillars_fpn_sbn-all_fp16_2x8_2x_nus-3d.py \
+python -u tools/train.py configs/pointpillars/hv_pointpillars_fpn_sbn-all_fp16_2x8_2x_nus-3d.py \
 --work-dir /workspace/work_dirs \
 --cfg-options \
 evaluation.interval=1 \
