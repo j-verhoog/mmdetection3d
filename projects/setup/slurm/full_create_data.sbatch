@@ -22,7 +22,6 @@ mkdir -p "$WORK"
 
 TMP_BASE="/tmp/jtverhoog_${SLURM_JOB_ID}"
 mkdir -p "$TMP_BASE"/{wandb,torch,xdg,tmp,home}
-mkdir -p /tudelft.net/staff-umbrella/MscThesisjverhoog/nuscenes_pkl
 
 echo "===WORK WITH SHADOW ROOT==="
 NU_ROOT_REAL="/tudelft.net/staff-umbrella/IntelligentVehiclesPublicDatasets/nuscenes"

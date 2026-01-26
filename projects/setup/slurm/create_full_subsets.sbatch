@@ -16,6 +16,7 @@ export APPTAINER_IMAGE=/tudelft.net/staff-umbrella/MscThesisjverhoog/image/mmdet
 # temporary image dir to install openpyxl
 mkdir -p /home/nfs/jtverhoog/mmdet/mmdetection3d/tmpfs
 
+# REMEMBER TO EDIT HERE THE PYTHON FILE IF MOVING PLACES
 echo "===GOING INTO CONTAINER==="
 apptainer exec --cleanenv --overlay tmpfs \
 --bind "$HOME/mmdet:/workspace/mmdet"   \
