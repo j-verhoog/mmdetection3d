@@ -68,3 +68,6 @@ for i in range(3):
 wandb.finish()
 print("W&B logging OK")
 PY
+
+
+--- Split nuscenes with full_subsets_nuscenes.py

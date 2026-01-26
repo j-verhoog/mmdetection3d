@@ -19,8 +19,9 @@ export WANDB_API_KEY=$(awk '$1=="machine" && $2=="api.wandb.ai" {found=1}found &
 
 # define image and work dirs
 export APPTAINER_IMAGE=/tudelft.net/staff-umbrella/MscThesisjverhoog/image/mmdet3d_v1rc5.sif
-export WORK=/tudelft.net/staff-umbrella/MscThesisjverhoog/$WANDB_PROJECT/$WANDB_NAME
+export WORK=/tudelft.net/staff-umbrella/MscThesisjverhoog/projects/$WANDB_PROJECT/$WANDB_NAME
 mkdir -p "$WORK"
+export DATA_ROOT="/tudelft.net/staff-umbrella/MscThesisjverhoog/nuscenes_shadow_root"
 
 # Measure GPU usage of your job (initialization)
 previous=$(/usr/bin/nvidia-smi --query-accounted-apps='gpu_utilization,mem_utilization,max_memory_usage,time' --format='csv' 2>/dev/null || true)
@@ -34,8 +35,7 @@ TMP_BASE="/tmp/jtverhoog_${SLURM_JOB_ID}"
 mkdir -p "$TMP_BASE"/{wandb,torch,xdg,tmp,home}
 
 echo "=== ENTERING CONTAINER =="
-apptainer run --nv --cleanenv --contain \
---home /workspace/tmp/home \
+apptainer run --nv --cleanenv \
 --bind "$HOME/mmdet:/workspace/mmdet"   \
 --bind "$TMP_BASE:/workspace/tmp" \
 --bind "$WORK:/workspace/work_dirs" \
@@ -47,11 +47,14 @@ apptainer run --nv --cleanenv --contain \
 --env WANDB_NAME="$WANDB_NAME" \
 --env WANDB_API_KEY="$WANDB_API_KEY" \
 "$APPTAINER_IMAGE" \
-bash -lc 'cd /workspace/mmdet/mmdetection3d && \
+bash -lc "
+cd /workspace/mmdet/mmdetection3d && \
 python tools/train.py configs/pointpillars/hv_pointpillars_fpn_sbn-all_fp16_2x8_2x_nus-3d.py \
---work-dir /workspace/work_dirs
---cfg-options evaluation.interval=1
-'
+--work-dir /workspace/work_dirs \
+--cfg-options \
+evaluation.interval=1 \
+data_root=$DATA_ROOT/
+"
 
 # Measure GPU usage of your job (result)
 /usr/bin/nvidia-smi --query-accounted-apps='gpu_utilization,mem_utilization,max_memory_usage,time' --format='csv' 2>/dev/null || true
