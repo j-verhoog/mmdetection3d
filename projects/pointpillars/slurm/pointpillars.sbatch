@@ -9,7 +9,7 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=64G # A40 clusters have 503GB spread on 3 gpu's
-#SBATCH --tmp=250G # Lidar only is like 150GB, keyframes 45GB, 3GB pkl files
+#SBATCH --tmp=100G # Lidar sweeps only is like 150GB, keyframes 45GB, 3GB pkl files
 
 # added something to pointpillars config for wandb logging
 
@@ -50,17 +50,16 @@ cd "$NETWORK_DATA_ROOT"
 # --include: Specific folders we need for PointPillars
 # --exclude='*': Ignore everything else (Images, Radar) to save space
 time rsync -rvL \
---include='*.pkl' \
---include='*.json' \
---include='nuscenes_gt_database/***' \
---include='v1.0-trainval/***' \
---include='maps/***' \
---include='samples/LIDAR_TOP/***' \
---include='sweeps/LIDAR_TOP/***' \
---include='samples/' \
---include='sweeps/' \
---exclude='*' \
-. "$LOCAL_DATA_ROOT/"
+  --include='*.pkl' \
+  --include='*.json' \
+  --include='nuscenes_gt_database/***' \
+  --include='v1.0-trainval/***' \
+  --include='maps/***' \
+  --include='samples/LIDAR_TOP/***' \
+  --include='samples/' \
+  --exclude='*' \
+  . "$LOCAL_DATA_ROOT/"
+
 
 # Return to previous dir just in case
 cd -
