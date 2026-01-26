@@ -1,10 +1,10 @@
 #!/bin/bash
-#SBATCH --partition=general,cor,me-cor # request partition
-#SBATCH --qos=short # Quality of service, short default
+#SBATCH --partition=general,cor,me-cor # request partition, can submit to cor, me-cor but also maybe nto needed.
+#SBATCH --qos=medium # Quality of service, short default
 #SBATCH --job-name=pointpillars_baseline
 #SBATCH --output=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/pointpillars/baseline_%j.out
 #SBATCH --error=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/pointpillars/baseline_%j.err
-#SBATCH --time=00:30:00 # 0:01:00 is one minute, max 4hrs for short QoS, 36hrs for medium
+#SBATCH --time=36:00:00 # 0:01:00 is one minute, max 4hrs for short QoS, 36hrs for medium
 #SBATCH --gres=gpu:a40:1 # request A40
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=8
@@ -44,13 +44,12 @@ echo "=== COPYING LIDAR DATA TO LOCAL SSD ==="
 # 1. We enter the network directory to make the relative paths in rsync work easily
 cd "$NETWORK_DATA_ROOT"
 
-# 2. RUN SMART COPY
+# 2. RUN SMART COPY, time it and let it be quiet
 # -r: recursive
-# -v: verbose
 # -L: COPY THE ACTUAL FILE (Follow Symlink) - Crucial for speed!
 # --include: Specific folders we need for PointPillars
 # --exclude='*': Ignore everything else (Images, Radar) to save space
-rsync -rvL --info=progress2 \
+time rsync -rL \
 --include='v1.0-trainval/***' \
 --include='maps/***' \
 --include='samples/LIDAR_TOP/***' \
