@@ -40,31 +40,30 @@ echo "=== LOADING CUDA ==="
 module use /opt/insy/modulefiles
 module load cuda
 
-LOCAL_DATA_ROOT=$NETWORK_DATA_ROOT
-# echo "=== COPYING LIDAR DATA TO LOCAL SSD ==="
-# # 1. We enter the network directory to make the relative paths in rsync work easily
-# cd "$NETWORK_DATA_ROOT"
+echo "=== COPYING LIDAR DATA TO LOCAL SSD ==="
+# 1. We enter the network directory to make the relative paths in rsync work easily
+cd "$NETWORK_DATA_ROOT"
 
-# # 2. RUN SMART COPY, time it and let it be quiet
-# # -r: recursive
-# # -L: COPY THE ACTUAL FILE (Follow Symlink) - Crucial for speed!
-# # --include: Specific folders we need for PointPillars
-# # --exclude='*': Ignore everything else (Images, Radar) to save space
-# time rsync -rL \
-# --include='*.pkl' \
-# --include='*.json' \
-# --include='nuscenes_gt_database/***' \
-# --include='v1.0-trainval/***' \
-# --include='maps/***' \
-# --include='samples/LIDAR_TOP/***' \
-# --include='sweeps/LIDAR_TOP/***' \
-# --include='samples/' \
-# --include='sweeps/' \
-# --exclude='*' \
-# . "$LOCAL_DATA_ROOT/"
+# 2. RUN SMART COPY, time it and let it be quiet
+# -r: recursive
+# -L: COPY THE ACTUAL FILE (Follow Symlink) - Crucial for speed!
+# --include: Specific folders we need for PointPillars
+# --exclude='*': Ignore everything else (Images, Radar) to save space
+time rsync -rvL \
+--include='*.pkl' \
+--include='*.json' \
+--include='nuscenes_gt_database/***' \
+--include='v1.0-trainval/***' \
+--include='maps/***' \
+--include='samples/LIDAR_TOP/***' \
+--include='sweeps/LIDAR_TOP/***' \
+--include='samples/' \
+--include='sweeps/' \
+--exclude='*' \
+. "$LOCAL_DATA_ROOT/"
 
-# # Return to previous dir just in case
-# cd -
+# Return to previous dir just in case
+cd -
 
 echo "=== ENTERING CONTAINER =="
 apptainer exec --nv --cleanenv \
@@ -89,8 +88,7 @@ cd /workspace/mmdet/mmdetection3d && \
 python -u tools/train.py configs/pointpillars/hv_pointpillars_fpn_sbn-all_fp16_2x8_2x_nus-3d.py \
 --work-dir /workspace/work_dirs \
 --cfg-options \
-evaluation.interval=3 \
-data.samples_per_gpu=16 \
+evaluation.interval=6 \
 data.workers_per_gpu=4
 "
 
