@@ -61,6 +61,9 @@ python -u tools/train.py configs/pointpillars/hv_pointpillars_fpn_sbn-all_fp16_2
 evaluation.interval=1 \
 "
 
+# Clean up local disk after job
+rm -rf "$TMP_BASE"
+
 # Measure GPU usage of your job (result)
 /usr/bin/nvidia-smi --query-accounted-apps='gpu_utilization,mem_utilization,max_memory_usage,time' --format='csv' 2>/dev/null || true
 
