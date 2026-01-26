@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --partition=general # request partition
+#SBATCH --partition=general,cor,me-cor # request partition
 #SBATCH --qos=short # Quality of service, short default
 #SBATCH --job-name=pointpillars_baseline
 #SBATCH --output=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/pointpillars/baseline_%j.out
