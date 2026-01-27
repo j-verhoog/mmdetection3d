@@ -1,21 +1,22 @@
 #!/bin/bash
 #SBATCH --partition=general,cor,me-cor # request partition, can submit to cor, me-cor but also maybe nto needed.
 #SBATCH --qos=medium # Quality of service, short default
-#SBATCH --job-name=pointpillars_baseline
-#SBATCH --output=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/pointpillars/baseline_%j.out
-#SBATCH --error=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/pointpillars/baseline_%j.err
+#SBATCH --job-name=pointpillars_baseline2
+#SBATCH --output=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/pointpillars/baseline2_%j.out
+#SBATCH --error=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/pointpillars/baseline2_%j.err
 #SBATCH --time=36:00:00 # 0:01:00 is one minute, max 4hrs for short QoS, 36hrs for medium
 #SBATCH --gres=gpu:a40:1 # request A40
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=64G # A40 clusters have 503GB spread on 3 gpu's
-#SBATCH --tmp=100G # Lidar sweeps only is like 150GB, keyframes 45GB, 3GB pkl files -- dowload of keyframes and pkl took 3 hrs
+#SBATCH --tmp=100G # Lidar sweeps only is like 150GB, keyframes 45GB, 3GB pkl files -- dowload of keyframes and pkl took 3 hrs. Epoch [6][6300/14065] after 13:43:19
 
-# added something to pointpillars config for wandb logging. Also can remove gt_databse in next run for it is unused
+# changed default_runtime.py and train.py for wandb logging. Also can remove gt_databse in next run for it is unused
+# different model to run, for previous one resulted in unstable NaN loss
 
 # FOR NAMING STICK TO: A–Z  a–z  0–9  .  _  -
 export WANDB_PROJECT="pointpillars"
-export WANDB_NAME="baseline_full_dataset"
+export WANDB_NAME="baseline2_full_dataset"
 export WANDB_API_KEY=$(awk '$1=="machine" && $2=="api.wandb.ai" {found=1}found && $1=="password" {print $2; exit}' "$HOME/.netrc")
 
 /usr/bin/scontrol show job -d "$SLURM_JOB_ID" # check sbatch working
@@ -28,7 +29,6 @@ mkdir -p "$WORK"
 # --- SMART LOCAL DATA SETUP ---
 NETWORK_DATA_ROOT="/tudelft.net/staff-umbrella/MscThesisjverhoog/nuscenes_shadow_root"
 TMP_BASE="/tmp/jtverhoog_${SLURM_JOB_ID}"
-LOCAL_DATA_ROOT="${TMP_BASE}/nuscenes"
 
 mkdir -p "$TMP_BASE"/{wandb,torch,xdg,tmp,home}
 mkdir -p "$LOCAL_DATA_ROOT"
@@ -40,30 +40,6 @@ echo "=== LOADING CUDA ==="
 module use /opt/insy/modulefiles
 module load cuda
 
-echo "=== COPYING LIDAR DATA TO LOCAL SSD ==="
-# 1. We enter the network directory to make the relative paths in rsync work easily
-cd "$NETWORK_DATA_ROOT"
-
-# 2. RUN SMART COPY, time it and let it be quiet
-# -r: recursive
-# -L: COPY THE ACTUAL FILE (Follow Symlink) - Crucial for speed!
-# --include: Specific folders we need for PointPillars
-# --exclude='*': Ignore everything else (Images, Radar) to save space
-time rsync -rvL \
-  --include='*.pkl' \
-  --include='*.json' \
-  --include='nuscenes_gt_database/***' \
-  --include='v1.0-trainval/***' \
-  --include='maps/***' \
-  --include='samples/LIDAR_TOP/***' \
-  --include='samples/' \
-  --exclude='*' \
-  . "$LOCAL_DATA_ROOT/"
-
-
-# Return to previous dir just in case
-cd -
-
 echo "=== ENTERING CONTAINER =="
 apptainer exec --nv --cleanenv \
 --bind "$HOME/mmdet:/workspace/mmdet"   \
@@ -71,7 +47,7 @@ apptainer exec --nv --cleanenv \
 --bind "$WORK:/workspace/work_dirs" \
 --bind "/tudelft.net/staff-umbrella/MscThesisjverhoog:/tudelft.net/staff-umbrella/MscThesisjverhoog"   \
 --bind "/tudelft.net/staff-umbrella/IntelligentVehiclesPublicDatasets:/tudelft.net/staff-umbrella/IntelligentVehiclesPublicDatasets"   \
---bind "$LOCAL_DATA_ROOT:/workspace/mmdet/mmdetection3d/data/nuscenes" \
+--bind "$NETWORK_DATA_ROOT:/workspace/mmdet/mmdetection3d/data/nuscenes" \
 --env TMPDIR=/workspace/tmp/tmp \
 --env TORCH_HOME=/workspace/tmp/torch   \
 --env XDG_CACHE_HOME=/workspace/tmp/xdg   \
@@ -88,7 +64,8 @@ python -u tools/train.py configs/pointpillars/hv_pointpillars_fpn_sbn-all_fp16_2
 --work-dir /workspace/work_dirs \
 --cfg-options \
 evaluation.interval=6 \
-data.workers_per_gpu=4
+data.workers_per_gpu=4 \
+data.samples_per_gpu=16
 "
 
 # Clean up local disk after job

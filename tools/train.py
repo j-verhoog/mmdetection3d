@@ -120,6 +120,14 @@ def main():
     if args.cfg_options is not None:
         cfg.merge_from_dict(args.cfg_options)
 
+    # Addition for WandB logging
+    lc = cfg.get('log_config', None)
+    if lc is not None and 'hooks' in lc:
+        for h in lc['hooks']:
+            if h.get('type') == 'WandbLoggerHook':
+                h.setdefault('init_kwargs', {})
+                h['init_kwargs']['config'] = cfg._cfg_dict.to_dict()
+
     # set multi-process settings
     setup_multi_processes(cfg)
 
