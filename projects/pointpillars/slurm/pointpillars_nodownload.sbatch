@@ -12,7 +12,7 @@
 #SBATCH --tmp=100G # Lidar sweeps only is like 150GB, keyframes 45GB, 3GB pkl files -- dowload of keyframes and pkl took 3 hrs. Epoch [6][6300/14065] after 13:43:19
 
 # changed default_runtime.py and train.py for wandb logging. Also can remove gt_databse in next run for it is unused
-# different model to run, for previous one resulted in unstable NaN loss
+# same model to run, different batch size. for previous one resulted in unstable NaN loss
 
 # FOR NAMING STICK TO: A–Z  a–z  0–9  .  _  -
 export WANDB_PROJECT="pointpillars"
