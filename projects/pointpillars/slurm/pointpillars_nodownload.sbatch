@@ -9,7 +9,7 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=64G # A40 clusters have 503GB spread on 3 gpu's
-#SBATCH --tmp=100G # Lidar sweeps only is like 150GB, keyframes 45GB, 3GB pkl files -- dowload of keyframes and pkl took 3 hrs. Epoch [6][6300/14065] after 13:43:19
+#SBATCH --tmp=50G # Lidar sweeps only is like 150GB, keyframes 45GB, 3GB pkl files -- dowload of keyframes and pkl took 3 hrs. Epoch [6][6300/14065] after 13:43:19
 
 # changed default_runtime.py and train.py for wandb logging. Also can remove gt_databse in next run for it is unused
 # same model to run, different batch size. for previous one resulted in unstable NaN loss
@@ -65,8 +65,14 @@ python -u tools/train.py configs/pointpillars/hv_pointpillars_fpn_sbn-all_fp16_2
 --cfg-options \
 evaluation.interval=6 \
 data.workers_per_gpu=4 \
-data.samples_per_gpu=16
+data.samples_per_gpu=8 \
+optimizer_config.type="GradientCumulativeOptimizerHook" \
+optimizer_config.cumulative_iters=2 \
+model.pts_voxel_encoder.norm_cfg.momentum=0.005 \
+model.pts_backbone.norm_cfg.momentum=0.005 \
+model.pts_neck.norm_cfg.momentum=0.005
 "
+# batchsize 16 == OOM on A40 --> accumulate batches across iters for update. Halved momentum so same amount of batches are relevant
 
 # Clean up local disk after job
 rm -rf "$TMP_BASE"
