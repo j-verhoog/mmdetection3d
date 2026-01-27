@@ -66,13 +66,13 @@ python -u tools/train.py configs/pointpillars/hv_pointpillars_fpn_sbn-all_fp16_2
 evaluation.interval=6 \
 data.workers_per_gpu=4 \
 data.samples_per_gpu=8 \
-optimizer_config.type="GradientCumulativeOptimizerHook" \
 optimizer_config.cumulative_iters=2 \
 model.pts_voxel_encoder.norm_cfg.momentum=0.005 \
 model.pts_backbone.norm_cfg.momentum=0.005 \
 model.pts_neck.norm_cfg.momentum=0.005
 "
 # batchsize 16 == OOM on A40 --> accumulate batches across iters for update. Halved momentum so same amount of batches are relevant
+# custom hook in mmdet/apis/train to make cumulative iters work
 
 # Clean up local disk after job
 rm -rf "$TMP_BASE"
