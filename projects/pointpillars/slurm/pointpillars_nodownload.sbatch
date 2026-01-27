@@ -1,9 +1,9 @@
 #!/bin/bash
 #SBATCH --partition=general,cor,me-cor # request partition, can submit to cor, me-cor but also maybe nto needed.
 #SBATCH --qos=medium # Quality of service, short default
-#SBATCH --job-name=pointpillars_baseline2
-#SBATCH --output=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/pointpillars/baseline2_%j.out
-#SBATCH --error=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/pointpillars/baseline2_%j.err
+#SBATCH --job-name=pp_base3
+#SBATCH --output=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/pointpillars/baseline3_%j.out
+#SBATCH --error=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/pointpillars/baseline3_%j.err
 #SBATCH --time=36:00:00 # 0:01:00 is one minute, max 4hrs for short QoS, 36hrs for medium
 #SBATCH --gres=gpu:a40:1 # request A40
 #SBATCH --ntasks=1
@@ -16,7 +16,7 @@
 
 # FOR NAMING STICK TO: A–Z  a–z  0–9  .  _  -
 export WANDB_PROJECT="pointpillars"
-export WANDB_NAME="baseline2_full_dataset"
+export WANDB_NAME="baseline3_full_dataset"
 export WANDB_API_KEY=$(awk '$1=="machine" && $2=="api.wandb.ai" {found=1}found && $1=="password" {print $2; exit}' "$HOME/.netrc")
 
 /usr/bin/scontrol show job -d "$SLURM_JOB_ID" # check sbatch working
