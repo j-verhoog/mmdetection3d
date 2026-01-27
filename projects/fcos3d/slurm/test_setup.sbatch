@@ -66,7 +66,7 @@ python -u tools/train.py configs/fcos3d/fcos3d_r101_caffe_fpn_gn-head_dcn_2x8_1x
 --work-dir /workspace/work_dirs \
 --cfg-options \
 data.workers_per_gpu=4 \
-data.samples_per_gpu=16
+data.samples_per_gpu=8
 "
 
 # Clean up local disk after job
