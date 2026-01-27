@@ -68,10 +68,10 @@ data.workers_per_gpu=4 \
 data.samples_per_gpu=8 \
 optimizer_config.cumulative_iters=2 \
 custom_imports='dict(imports=[\"projects.pointpillars.dua_bn_momentum_hook\"], allow_failed_imports=False)' \
-custom_hooks='[dict(type=\"DUABNMomentumHook\", start_momentum=0.01, end_momentum=0.0001, by_epoch=False)]'
+custom_hooks='[dict(type=\"DUABNMomentumHook\", start_momentum=0.005, end_momentum=0.0001, by_epoch=False)]'
 "
 
-# batchsize 16 == OOM on A40 --> accumulate batches across iters for update.
+# batchsize 16 == OOM on A40 --> accumulate batches across iters for update. half momentum for half batchsize
 # custom hook in mmdet/apis/train to make cumulative iters work. another custom hook for momentum decay like DUA
 
 # Clean up local disk after job

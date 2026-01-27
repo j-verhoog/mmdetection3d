@@ -62,6 +62,18 @@ apptainer exec --nv --cleanenv \
 "$APPTAINER_IMAGE" \
 bash -lc "
 cd /workspace/mmdet/mmdetection3d && \
+python - <<'PY'
+import torch
+print('torch', torch.__version__)
+print('cuda', torch.version.cuda)
+print('cuda_available', torch.cuda.is_available())
+print('nccl_available', torch.distributed.is_nccl_available())
+print('nccl', torch.cuda.nccl.version() if torch.cuda.is_available() else None)
+print('gpus', torch.cuda.device_count())
+for i in range(torch.cuda.device_count()):
+    print(i, torch.cuda.get_device_name(i))
+PY
+&& \
 bash tools/dist_train.sh \
   configs/pointpillars/hv_pointpillars_fpn_sbn-all_fp16_2x8_2x_nus-3d.py \
   2 \
