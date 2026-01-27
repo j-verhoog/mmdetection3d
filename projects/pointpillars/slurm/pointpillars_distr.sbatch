@@ -12,6 +12,7 @@
 #SBATCH --mem=128G
 
 # added something to pointpillars config for wandb logging
+# try disabling dev/shm 
 
 # FOR NAMING STICK TO: A–Z  a–z  0–9  .  _  -
 export WANDB_PROJECT="pointpillars"
@@ -57,6 +58,7 @@ apptainer exec --nv --cleanenv \
 --env WANDB_API_KEY="$WANDB_API_KEY" \
 --env OMP_NUM_THREADS=1 \
 --env MKL_NUM_THREADS=1 \
+--env NCCL_SHM_DISABLE=1 \
 "$APPTAINER_IMAGE" \
 bash -lc "
 cd /workspace/mmdet/mmdetection3d && \
