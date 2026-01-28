@@ -1,21 +1,22 @@
 #!/bin/bash
 #SBATCH --partition=general # request partition
-#SBATCH --qos=short # Quality of service, short default
-#SBATCH --job-name=pp_distr_test
+#SBATCH --qos=medium # Quality of service, short default
+#SBATCH --job-name=pp_distr
 #SBATCH --output=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/pointpillars/distr_%j.out
 #SBATCH --error=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/pointpillars/distr_%j.err
-#SBATCH --time=01:00:00 # 0:01:00 is one minute, max 4hrs for short QoS, 36hrs for medium
+#SBATCH --time=36:00:00 # 0:01:00 is one minute, max 4hrs for short QoS, 36hrs for medium
 #SBATCH --nodes=1              # Force 1 node (Shared /tmp)
 #SBATCH --gres=gpu:a40:2       # REQUEST 2 GPUs (Max per DAIC A40 node)
 #SBATCH --ntasks=2
 #SBATCH --cpus-per-task=8     # 2 GPUs * 8 Cores = 16 Cores
-#SBATCH --mem=128G
+#SBATCH --mem=64G
 
-# added something to pointpillars config for wandb logging
+
+# DO NOT TOUCH!!!! WORKING MULTI GPU PROCESS. FULL REPLICA OF POINTPILLARS POSSIBLE
 
 # FOR NAMING STICK TO: A–Z  a–z  0–9  .  _  -
 export WANDB_PROJECT="pointpillars"
-export WANDB_NAME="distr"
+export WANDB_NAME="distr_baseline_original"
 export WANDB_API_KEY=$(awk '$1=="machine" && $2=="api.wandb.ai" {found=1}found && $1=="password" {print $2; exit}' "$HOME/.netrc")
 
 /usr/bin/scontrol show job -d "$SLURM_JOB_ID" # check sbatch working
@@ -40,7 +41,7 @@ echo "=== LOADING CUDA ==="
 module use /opt/insy/modulefiles
 module load cuda
 
-
+# setup ports for multigpu run
 export MASTER_ADDR=$(srun -N1 -n1 hostname -s)
 export MASTER_PORT=$PORT
 echo "MASTER_ADDR=$MASTER_ADDR MASTER_PORT=$MASTER_PORT"
@@ -81,7 +82,7 @@ srun --ntasks=2 --gpus-per-task=1 bash -lc "
       configs/pointpillars/hv_pointpillars_fpn_sbn-all_fp16_2x8_2x_nus-3d.py \
       --launcher slurm \
       --work-dir /workspace/work_dirs \
-      --cfg-options evaluation.interval=6 data.samples_per_gpu=8 data.workers_per_gpu=2 dist_params.port='"$MASTER_PORT"'
+      --cfg-options evaluation.interval=6 data.samples_per_gpu=8 dist_params.port='"$MASTER_PORT"'
   '
 "
 
