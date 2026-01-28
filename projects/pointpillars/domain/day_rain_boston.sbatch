@@ -80,7 +80,8 @@ srun --ntasks=2 --gpus-per-task=1 bash -lc "
       configs/pointpillars/hv_pointpillars_fpn_sbn-all_fp16_2x8_2x_nus-3d.py \
       --launcher slurm \
       --work-dir /workspace/work_dirs \
-      --cfg-options evaluation.interval=6 data.samples_per_gpu=8 dist_params.port='"$MASTER_PORT"'
+      --cfg-options load_from=checkpoints/hv_pointpillars_fpn_sbn-all_fp16_2x8_2x_nus-3d_20201021_120719-269f9dd6.pth \
+      optimizer.lr=0.0001 evaluation.interval=1 runner.max_epochs=6 data.samples_per_gpu=8
   '
 "
 
