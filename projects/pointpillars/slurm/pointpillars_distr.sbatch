@@ -12,7 +12,6 @@
 #SBATCH --mem=128G
 
 # added something to pointpillars config for wandb logging
-# try disabling dev/shm 
 
 # FOR NAMING STICK TO: A–Z  a–z  0–9  .  _  -
 export WANDB_PROJECT="pointpillars"

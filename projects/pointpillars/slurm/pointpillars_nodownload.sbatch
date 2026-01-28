@@ -1,10 +1,10 @@
 #!/bin/bash
 #SBATCH --partition=general,cor,me-cor # request partition, can submit to cor, me-cor but also maybe nto needed.
-#SBATCH --qos=long # Quality of service, short default
+#SBATCH --qos=short # Quality of service, short default
 #SBATCH --job-name=pp_base3
 #SBATCH --output=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/pointpillars/baseline3_%j.out
 #SBATCH --error=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/pointpillars/baseline3_%j.err
-#SBATCH --time=2-06:00:00 # 0:01:00 is one minute, max 4hrs for short QoS, 36hrs for medium
+#SBATCH --time=01:00:00 # 0:01:00 is one minute, max 4hrs for short QoS, 36hrs for medium
 #SBATCH --gres=gpu:a40:1 # request A40
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=8
@@ -16,7 +16,7 @@
 
 # FOR NAMING STICK TO: A–Z  a–z  0–9  .  _  -
 export WANDB_PROJECT="pointpillars"
-export WANDB_NAME="baseline3_full_dataset"
+export WANDB_NAME="baseline3_full_dataset_cumiter"
 export WANDB_API_KEY=$(awk '$1=="machine" && $2=="api.wandb.ai" {found=1}found && $1=="password" {print $2; exit}' "$HOME/.netrc")
 
 /usr/bin/scontrol show job -d "$SLURM_JOB_ID" # check sbatch working
@@ -31,7 +31,6 @@ NETWORK_DATA_ROOT="/tudelft.net/staff-umbrella/MscThesisjverhoog/nuscenes_shadow
 TMP_BASE="/tmp/jtverhoog_${SLURM_JOB_ID}"
 
 mkdir -p "$TMP_BASE"/{wandb,torch,xdg,tmp,home}
-mkdir -p "$LOCAL_DATA_ROOT"
 
 # Measure GPU usage of your job (initialization)
 previous=$(/usr/bin/nvidia-smi --query-accounted-apps='gpu_utilization,mem_utilization,max_memory_usage,time' --format='csv' 2>/dev/null || true)

@@ -1,10 +1,10 @@
 #!/bin/bash
 #SBATCH --partition=general,cor,me-cor # request partition, can submit to cor, me-cor but also maybe nto needed.
-#SBATCH --qos=long # Quality of service, short default
+#SBATCH --qos=short # Quality of service, short default
 #SBATCH --job-name=pp_base4
 #SBATCH --output=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/pointpillars/baseline4_%j.out
 #SBATCH --error=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/pointpillars/baseline4_%j.err
-#SBATCH --time=2-06:00:00 # 0:01:00 is one minute, max 4hrs for short QoS, 36hrs for medium
+#SBATCH --time=01:00:00 # 0:01:00 is one minute, max 4hrs for short QoS, 36hrs for medium
 #SBATCH --gres=gpu:a40:1 # request A40
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=8
@@ -16,7 +16,7 @@
 
 # FOR NAMING STICK TO: A–Z  a–z  0–9  .  _  -
 export WANDB_PROJECT="pointpillars"
-export WANDB_NAME="baseline3_full_dataset"
+export WANDB_NAME="baseline4_full_dataset_momhook"
 export WANDB_API_KEY=$(awk '$1=="machine" && $2=="api.wandb.ai" {found=1}found && $1=="password" {print $2; exit}' "$HOME/.netrc")
 
 /usr/bin/scontrol show job -d "$SLURM_JOB_ID" # check sbatch working
@@ -31,7 +31,6 @@ NETWORK_DATA_ROOT="/tudelft.net/staff-umbrella/MscThesisjverhoog/nuscenes_shadow
 TMP_BASE="/tmp/jtverhoog_${SLURM_JOB_ID}"
 
 mkdir -p "$TMP_BASE"/{wandb,torch,xdg,tmp,home}
-mkdir -p "$LOCAL_DATA_ROOT"
 
 # Measure GPU usage of your job (initialization)
 previous=$(/usr/bin/nvidia-smi --query-accounted-apps='gpu_utilization,mem_utilization,max_memory_usage,time' --format='csv' 2>/dev/null || true)
@@ -66,9 +65,9 @@ python -u tools/train.py configs/pointpillars/hv_pointpillars_fpn_sbn-all_fp16_2
 evaluation.interval=6 \
 data.workers_per_gpu=4 \
 data.samples_per_gpu=8 \
-optimizer_config.cumulative_iters=2 \
-custom_imports='dict(imports=[\"projects.pointpillars.dua_bn_momentum_hook\"], allow_failed_imports=False)' \
-custom_hooks='[dict(type=\"DUABNMomentumHook\", start_momentum=0.005, end_momentum=0.0001, by_epoch=False)]'
+custom_imports.imports='["projects.pointpillars.dua_momentum_hook"]' \
+custom_imports.allow_failed_imports=False \
+custom_hooks='[dict(type="DUABNMomentumHook", start_momentum=0.005, end_momentum=0.0001, by_epoch=False)]'
 "
 
 # batchsize 16 == OOM on A40 --> accumulate batches across iters for update. half momentum for half batchsize
