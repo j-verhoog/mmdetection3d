@@ -10,7 +10,7 @@ custom_imports = dict(
 custom_hooks = [
     dict(
         type='DUABNMomentumHook',
-        start_momentum=0.01,
+        start_momentum=0.005,
         end_momentum=0.0001,
         by_epoch=False
     )

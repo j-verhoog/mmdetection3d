@@ -4,7 +4,7 @@ from torch.nn.modules.batchnorm import _BatchNorm
 
 @HOOKS.register_module()
 class DUABNMomentumHook(Hook):
-    def __init__(self, start_momentum=0.01, end_momentum=0.0001, by_epoch=False, log_interval=1):
+    def __init__(self, start_momentum=0.005, end_momentum=0.0001, by_epoch=False, log_interval=1):
         self.start = float(start_momentum)
         self.end = float(end_momentum)
         self.by_epoch = bool(by_epoch)

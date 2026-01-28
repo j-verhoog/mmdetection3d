@@ -1,9 +1,9 @@
 #!/bin/bash
 #SBATCH --partition=general,cor,me-cor # request partition, can submit to cor, me-cor but also maybe nto needed.
 #SBATCH --qos=long # Quality of service, short default
-#SBATCH --job-name=pp_base4
-#SBATCH --output=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/pointpillars/baseline4_%j.out
-#SBATCH --error=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/pointpillars/baseline4_%j.err
+#SBATCH --job-name=pp_base5
+#SBATCH --output=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/pointpillars/baseline5_%j.out
+#SBATCH --error=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/pointpillars/baseline5_%j.err
 #SBATCH --time=2-06:00:00 # 0:01:00 is one minute, max 4hrs for short QoS, 36hrs for medium
 #SBATCH --gres=gpu:a40:1 # request A40
 #SBATCH --ntasks=1
@@ -11,14 +11,11 @@
 #SBATCH --mem=64G # A40 clusters have 503GB spread on 3 gpu's
 #SBATCH --tmp=50G # Lidar sweeps only is like 150GB, keyframes 45GB, 3GB pkl files -- dowload of keyframes and pkl took 3 hrs. Epoch [6][6300/14065] after 13:43:19
 
-# DO NOT TOUCH, MOMHOOK FINAL WORKING VERSION
-# momhook now also logs to WandB the bn mom.
-# changed default_runtime.py and train.py for wandb logging. Also can remove gt_databse in next run for it is unused
-# same model to run, different batch size. for previous one resulted in unstable NaN loss
+# diff with first base: bn default mom halved with decay to 0.0001. Logging that to wandb. With custom CumIter+FP16 Hook.
 
 # FOR NAMING STICK TO: A–Z  a–z  0–9  .  _  -
 export WANDB_PROJECT="pointpillars"
-export WANDB_NAME="baseline4_full_dataset_momhook"
+export WANDB_NAME="baseline5_full_dataset_cumiter_momhook"
 export WANDB_API_KEY=$(awk '$1=="machine" && $2=="api.wandb.ai" {found=1}found && $1=="password" {print $2; exit}' "$HOME/.netrc")
 
 /usr/bin/scontrol show job -d "$SLURM_JOB_ID" # check sbatch working
@@ -61,16 +58,14 @@ apptainer exec --nv --cleanenv \
 "$APPTAINER_IMAGE" \
 bash -lc "
 cd /workspace/mmdet/mmdetection3d && \
-python -u tools/train.py projects/pointpillars/hv_pointpillars_fpn_sbn-all_fp16_2x8_2x_nus-3d_momhook.py \
+python -u tools/train.py projects/pointpillars/hv_pointpillars_fpn_sbn-all_fp16_2x8_2x_nus-3d.py \
 --work-dir /workspace/work_dirs \
 --cfg-options \
 evaluation.interval=6 \
 data.workers_per_gpu=4 \
-data.samples_per_gpu=8 
+data.samples_per_gpu=8 \
+optimizer_config.cumulative_iters=2
 "
-
-# batchsize 16 == OOM on A40 --> accumulate batches across iters for update. half momentum for half batchsize
-# custom hook in mmdet/apis/train to make cumulative iters work. another custom hook for momentum decay like DUA
 
 # Clean up local disk after job
 rm -rf "$TMP_BASE"
