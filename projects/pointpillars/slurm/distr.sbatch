@@ -40,6 +40,12 @@ echo "=== LOADING CUDA ==="
 module use /opt/insy/modulefiles
 module load cuda
 
+
+export MASTER_ADDR=$(srun -N1 -n1 hostname -s)
+export MASTER_PORT=$PORT
+echo "MASTER_ADDR=$MASTER_ADDR MASTER_PORT=$MASTER_PORT"
+
+
 echo "=== ENTERING CONTAINER =="
 srun --ntasks=2 --gpus-per-task=1 bash -lc "
   apptainer exec --nv --cleanenv \
@@ -66,6 +72,8 @@ srun --ntasks=2 --gpus-per-task=1 bash -lc "
   --env NCCL_ASYNC_ERROR_HANDLING=1 \
   --env NCCL_BLOCKING_WAIT=1 \
   --env TORCH_DISTRIBUTED_DEBUG=DETAIL \
+  --env MASTER_ADDR=\"$MASTER_ADDR\" \
+  --env MASTER_PORT=\"$MASTER_PORT\" \
   \"$APPTAINER_IMAGE\" \
   bash -lc '
     cd /workspace/mmdet/mmdetection3d && \
@@ -73,7 +81,7 @@ srun --ntasks=2 --gpus-per-task=1 bash -lc "
       configs/pointpillars/hv_pointpillars_fpn_sbn-all_fp16_2x8_2x_nus-3d.py \
       --launcher slurm \
       --work-dir /workspace/work_dirs \
-      --cfg-options evaluation.interval=6 data.samples_per_gpu=8 data.workers_per_gpu=2
+      --cfg-options evaluation.interval=6 data.samples_per_gpu=8 data.workers_per_gpu=2 dist_params.port='"$MASTER_PORT"'
   '
 "
 
