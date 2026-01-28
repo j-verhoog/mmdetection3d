@@ -11,6 +11,7 @@
 #SBATCH --mem=64G # A40 clusters have 503GB spread on 3 gpu's
 #SBATCH --tmp=100G # Lidar sweeps only is like 150GB, keyframes 45GB, 3GB pkl files -- dowload of keyframes and pkl took 3 hrs
 
+# DO NOT TOUCH< FIRST GOOD RUN ON WANDB, BUT UNSTABLE IN THE END
 # added something to pointpillars config for wandb logging. Also can remove gt_databse in next run for it is unused
 
 # FOR NAMING STICK TO: A–Z  a–z  0–9  .  _  -

@@ -59,15 +59,12 @@ apptainer exec --nv --cleanenv \
 "$APPTAINER_IMAGE" \
 bash -lc "
 cd /workspace/mmdet/mmdetection3d && \
-python -u tools/train.py configs/pointpillars/hv_pointpillars_fpn_sbn-all_fp16_2x8_2x_nus-3d.py \
+python -u tools/train.py configs/pointpillars/hv_pointpillars_fpn_sbn-all_fp16_2x8_2x_nus-3d_momhook.py \
 --work-dir /workspace/work_dirs \
 --cfg-options \
 evaluation.interval=6 \
 data.workers_per_gpu=4 \
-data.samples_per_gpu=8 \
-custom_imports.imports='["projects.pointpillars.dua_momentum_hook"]' \
-custom_imports.allow_failed_imports=False \
-custom_hooks='[dict(type="DUABNMomentumHook", start_momentum=0.005, end_momentum=0.0001, by_epoch=False)]'
+data.samples_per_gpu=8 
 "
 
 # batchsize 16 == OOM on A40 --> accumulate batches across iters for update. half momentum for half batchsize

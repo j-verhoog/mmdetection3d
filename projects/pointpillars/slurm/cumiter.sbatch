@@ -1,10 +1,10 @@
 #!/bin/bash
 #SBATCH --partition=general,cor,me-cor # request partition, can submit to cor, me-cor but also maybe nto needed.
-#SBATCH --qos=short # Quality of service, short default
+#SBATCH --qos=long # Quality of service, short default
 #SBATCH --job-name=pp_base3
 #SBATCH --output=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/pointpillars/baseline3_%j.out
 #SBATCH --error=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/pointpillars/baseline3_%j.err
-#SBATCH --time=01:00:00 # 0:01:00 is one minute, max 4hrs for short QoS, 36hrs for medium
+#SBATCH --time=2-06:00:00 # 0:01:00 is one minute, max 4hrs for short QoS, 36hrs for medium
 #SBATCH --gres=gpu:a40:1 # request A40
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=8
