@@ -11,6 +11,8 @@
 #SBATCH --mem=64G # A40 clusters have 503GB spread on 3 gpu's
 #SBATCH --tmp=50G # Lidar sweeps only is like 150GB, keyframes 45GB, 3GB pkl files -- dowload of keyframes and pkl took 3 hrs. Epoch [6][6300/14065] after 13:43:19
 
+############# NO MORE TOUCH, IT WORKS FOR CUMITER
+
 # changed default_runtime.py and train.py for wandb logging. Also can remove gt_databse in next run for it is unused
 # same model to run, different batch size. for previous one resulted in unstable NaN loss
 
