@@ -41,35 +41,42 @@ module use /opt/insy/modulefiles
 module load cuda
 
 echo "=== ENTERING CONTAINER =="
-srun --ntasks=2 --gpus-per-task=1 apptainer exec --nv --cleanenv \
---bind "$HOME/mmdet:/workspace/mmdet"   \
---bind "$TMP_BASE:/workspace/tmp" \
---bind "$WORK:/workspace/work_dirs" \
---bind "/tudelft.net/staff-umbrella/MscThesisjverhoog:/tudelft.net/staff-umbrella/MscThesisjverhoog"   \
---bind "/tudelft.net/staff-umbrella/IntelligentVehiclesPublicDatasets:/tudelft.net/staff-umbrella/IntelligentVehiclesPublicDatasets"   \
---bind "$NETWORK_DATA_ROOT:/workspace/mmdet/mmdetection3d/data/nuscenes" \
---env TORCH_HOME=/workspace/tmp/torch/${SLURM_PROCID} \
---env XDG_CACHE_HOME=/workspace/tmp/xdg/${SLURM_PROCID} \
---env WANDB_DIR=/workspace/tmp/wandb/${SLURM_PROCID} \
---env TMPDIR=/workspace/tmp/tmp/${SLURM_PROCID} \
---env WANDB_PROJECT="$WANDB_PROJECT" \
---env WANDB_NAME="${WANDB_NAME}_${SLURM_PROCID}" \
---env WANDB_API_KEY="$WANDB_API_KEY" \
---env OMP_NUM_THREADS=1 \
---env MKL_NUM_THREADS=1 \
---env NCCL_DEBUG=INFO \
---env NCCL_ASYNC_ERROR_HANDLING=1 \
---env NCCL_BLOCKING_WAIT=1 \
---env TORCH_DISTRIBUTED_DEBUG=DETAIL \
-"$APPTAINER_IMAGE" \
-bash -lc "
-cd /workspace/mmdet/mmdetection3d && \
-python -u tools/train.py \
-  configs/pointpillars/hv_pointpillars_fpn_sbn-all_fp16_2x8_2x_nus-3d.py \
-  --launcher slurm \
-  --work-dir /workspace/work_dirs \
-  --cfg-options evaluation.interval=6 data.samples_per_gpu=8 data.workers_per_gpu=2
-"
+srun --ntasks=2 --gpus-per-task=1 bash -lc '
+  apptainer exec --nv --cleanenv \
+  --bind "$HOME/mmdet:/workspace/mmdet"   \
+  --bind "$TMP_BASE:/workspace/tmp" \
+  --bind "$WORK:/workspace/work_dirs" \
+  --bind "/tudelft.net/staff-umbrella/MscThesisjverhoog:/tudelft.net/staff-umbrella/MscThesisjverhoog"   \
+  --bind "/tudelft.net/staff-umbrella/IntelligentVehiclesPublicDatasets:/tudelft.net/staff-umbrella/IntelligentVehiclesPublicDatasets"   \
+  --bind "$NETWORK_DATA_ROOT:/workspace/mmdet/mmdetection3d/data/nuscenes" \
+  --env SLURM_PROCID="$SLURM_PROCID" \
+  --env SLURM_NTASKS="$SLURM_NTASKS" \
+  --env SLURM_NODELIST="$SLURM_NODELIST" \
+  --env SLURM_JOB_ID="$SLURM_JOB_ID" \
+  --env TORCH_HOME="/workspace/tmp/torch/$SLURM_PROCID" \
+  --env XDG_CACHE_HOME="/workspace/tmp/xdg/$SLURM_PROCID" \
+  --env WANDB_DIR="/workspace/tmp/wandb/$SLURM_PROCID" \
+  --env TMPDIR="/workspace/tmp/tmp/$SLURM_PROCID" \
+  --env WANDB_PROJECT="'"$WANDB_PROJECT"'" \
+  --env WANDB_NAME="'"$WANDB_NAME"'_$SLURM_PROCID" \
+  --env WANDB_API_KEY="'"$WANDB_API_KEY"'" \
+  --env OMP_NUM_THREADS=1 \
+  --env MKL_NUM_THREADS=1 \
+  --env NCCL_DEBUG=INFO \
+  --env NCCL_ASYNC_ERROR_HANDLING=1 \
+  --env NCCL_BLOCKING_WAIT=1 \
+  --env TORCH_DISTRIBUTED_DEBUG=DETAIL \
+  "'"$APPTAINER_IMAGE"'" \
+  bash -lc "
+    cd /workspace/mmdet/mmdetection3d && \
+    python -u tools/train.py \
+      configs/pointpillars/hv_pointpillars_fpn_sbn-all_fp16_2x8_2x_nus-3d.py \
+      --launcher slurm \
+      --work-dir /workspace/work_dirs \
+      --cfg-options evaluation.interval=6 data.samples_per_gpu=8 data.workers_per_gpu=2
+  "
+'
+
 
 # Clean up local disk after job
 rm -rf "$TMP_BASE"
