@@ -122,7 +122,7 @@ for name in full_set boston_day_clear boston_day_rain singapore_night_clear sing
       set -euo pipefail
       cd /workspace/mmdet/mmdetection3d
 
-      echo 'CKPT: /workspace/ckpt.pth'           | tee -a '/workspace/out/${name}/meta.txt'
+      echo 'CKPT: /workspace/ckpt.pth'           | tee '/workspace/out/${name}/meta.txt'
       echo 'SUBSET: ${name}'                     | tee -a '/workspace/out/${name}/meta.txt'
       echo 'DATA_ROOT(bind): data/nuscenes -> subset root' | tee -a '/workspace/out/${name}/meta.txt'
 
