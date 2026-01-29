@@ -47,8 +47,6 @@ echo "MASTER_ADDR=$MASTER_ADDR MASTER_PORT=$MASTER_PORT"
 # ----------------------------
 # What to test
 # ----------------------------
-CFG_HOST=$HOME/mmdet/mmdetection3d/configs/pointpillars/hv_pointpillars_fpn_sbn-all_fp16_2x8_2x_nus-3d.py
-
 # IMPORTANT: set this to the checkpoint you want to evaluate (HOST path)
 CKPT_HOST=/home/nfs/jtverhoog/mmdet/mmdetection3d/checkpoints/hv_pointpillars_fpn_sbn-all_fp16_2x8_2x_nus-3d_20201021_120719-269f9dd6.pth
 
@@ -72,7 +70,6 @@ COMMON_BINDS=(
 
 # Also bind config + ckpt explicitly (extra robust)
 COMMON_BINDS+=(
-  --bind "$CFG_HOST:/workspace/cfg.py"
   --bind "$CKPT_HOST:/workspace/ckpt.pth"
 )
 
@@ -130,7 +127,7 @@ for name in boston_day_clear boston_day_rain singapore_night_clear singapore_day
       echo 'DATA_ROOT(bind): data/nuscenes -> subset root' | tee -a '/workspace/out/${name}/meta.txt'
 
       python -u tools/test.py \
-        /workspace/cfg.py \
+        /workspace/mmdet/mmdetection3d/configs/pointpillars/hv_pointpillars_fpn_sbn-all_fp16_2x8_2x_nus-3d.py \
         /workspace/ckpt.pth \
         --eval bbox \
         --out /workspace/out/${name}/results.pkl \
