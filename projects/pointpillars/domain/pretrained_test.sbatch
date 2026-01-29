@@ -52,6 +52,7 @@ CKPT_HOST=/home/nfs/jtverhoog/mmdet/mmdetection3d/checkpoints/hv_pointpillars_fp
 
 # 4 subset roots (HOST paths)
 declare -A SUBSETS
+SUBSETS[full_set]="/tudelft.net/staff-umbrella/MscThesisjverhoog/nuscenes_shadow_root"
 SUBSETS[boston_day_clear]="/tudelft.net/staff-umbrella/MscThesisjverhoog/nuscenes_subsets_full/boston_day_clear"
 SUBSETS[boston_day_rain]="/tudelft.net/staff-umbrella/MscThesisjverhoog/nuscenes_subsets_full/boston_day_rain"
 SUBSETS[singapore_night_clear]="/tudelft.net/staff-umbrella/MscThesisjverhoog/nuscenes_subsets_full/singapore_night_clear"
@@ -101,7 +102,7 @@ COMMON_ENVS=(
 # ----------------------------
 # Run evaluation sequentially over subsets
 # ----------------------------
-for name in boston_day_clear boston_day_rain singapore_night_clear singapore_day_clear; do
+for name in full_set boston_day_clear boston_day_rain singapore_night_clear singapore_day_clear; do
   host_root="${SUBSETS[$name]}"
   out_dir_host="${OUT_ROOT_HOST}/${name}"
   mkdir -p "$out_dir_host"
@@ -121,7 +122,6 @@ for name in boston_day_clear boston_day_rain singapore_night_clear singapore_day
       set -euo pipefail
       cd /workspace/mmdet/mmdetection3d
 
-      echo 'CFG:  /workspace/cfg.py'             | tee  '/workspace/out/${name}/meta.txt'
       echo 'CKPT: /workspace/ckpt.pth'           | tee -a '/workspace/out/${name}/meta.txt'
       echo 'SUBSET: ${name}'                     | tee -a '/workspace/out/${name}/meta.txt'
       echo 'DATA_ROOT(bind): data/nuscenes -> subset root' | tee -a '/workspace/out/${name}/meta.txt'
