@@ -58,7 +58,7 @@ apptainer exec --nv --cleanenv \
 "$APPTAINER_IMAGE" \
 bash -lc "
 cd /workspace/mmdet/mmdetection3d && \
-python -u tools/train.py projects/pointpillars/hv_pointpillars_fpn_sbn-all_fp16_2x8_2x_nus-3d.py \
+python -u tools/train.py configs/pointpillars/hv_pointpillars_fpn_sbn-all_fp16_2x8_2x_nus-3d_momhook.py \
 --work-dir /workspace/work_dirs \
 --cfg-options \
 evaluation.interval=6 \
