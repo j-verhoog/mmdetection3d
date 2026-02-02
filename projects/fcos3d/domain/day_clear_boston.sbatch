@@ -81,7 +81,7 @@ srun --ntasks=2 --gpus-per-task=1 bash -lc "
       --launcher slurm \
       --work-dir /workspace/work_dirs \
       --cfg-options load_from=checkpoints/fcos3d_baseline.pth \
-      optimizer.lr=0.0001 evaluation.interval=1 runner.max_epochs=6 data.samples_per_gpu=8
+      optimizer.lr=0.0001 evaluation.interval=1 runner.max_epochs=6 data.samples_per_gpu=8 total_epochs=6
   '
 "
 
