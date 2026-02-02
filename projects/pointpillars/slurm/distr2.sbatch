@@ -2,8 +2,8 @@
 #SBATCH --partition=general # request partition
 #SBATCH --qos=medium # Quality of service, short default
 #SBATCH --job-name=pp_distr
-#SBATCH --output=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/pointpillars/distr_%j.out
-#SBATCH --error=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/pointpillars/distr_%j.err
+#SBATCH --output=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/pointpillars/distr2_%j.out
+#SBATCH --error=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/pointpillars/distr2_%j.err
 #SBATCH --time=36:00:00 # 0:01:00 is one minute, max 4hrs for short QoS, 36hrs for medium
 #SBATCH --nodes=2              # Use two machines
 #SBATCH --ntasks=4             # Total tasks (2 per node)
@@ -31,7 +31,11 @@ mkdir -p "$WORK"
 # --- LOCAL DATA SETUP ---
 NETWORK_DATA_ROOT="/tudelft.net/staff-umbrella/MscThesisjverhoog/nuscenes_shadow_root"
 TMP_BASE="/tmp/jtverhoog_${SLURM_JOB_ID}"
-mkdir -p "$TMP_BASE"/{wandb,torch,xdg,tmp,home}
+
+# FIX: Use srun to create directories on ALL nodes, not just the master
+echo "Creating tmp directories on all nodes..."
+srun --nodes=$SLURM_NNODES --ntasks-per-node=1 \
+    mkdir -p "$TMP_BASE"/{wandb,torch,xdg,tmp,home}
 
 # Measure GPU usage of your job (initialization)
 previous=$(/usr/bin/nvidia-smi --query-accounted-apps='gpu_utilization,mem_utilization,max_memory_usage,time' --format='csv' 2>/dev/null || true)
@@ -90,9 +94,11 @@ srun --ntasks=4 --gpus-per-task=1 bash -lc "
 
 
 
-# Clean up local disk after job
-rm -rf "$TMP_BASE"
-
+# Clean up local disk on ALL nodes
+echo "Cleaning up tmp directories on all nodes..."
+srun --nodes=$SLURM_NNODES --ntasks-per-node=1 \
+    rm -rf "$TMP_BASE"
+    
 # Measure GPU usage of your job (result)
 /usr/bin/nvidia-smi --query-accounted-apps='gpu_utilization,mem_utilization,max_memory_usage,time' --format='csv' 2>/dev/null || true
 
