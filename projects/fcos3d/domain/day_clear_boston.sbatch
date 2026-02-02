@@ -77,7 +77,7 @@ srun --ntasks=2 --gpus-per-task=1 bash -lc "
   bash -lc '
     cd /workspace/mmdet/mmdetection3d && \
     python -u tools/train.py \
-      configs/fcos3d/fcos3d_r101_caffe_fpn_gn-head_dcn_2x8_1x_nus-mono3d \
+      configs/fcos3d/fcos3d_r101_caffe_fpn_gn-head_dcn_2x8_1x_nus-mono3d.py \
       --launcher slurm \
       --work-dir /workspace/work_dirs \
       --cfg-options load_from=checkpoints/fcos3d_baseline.pth \
