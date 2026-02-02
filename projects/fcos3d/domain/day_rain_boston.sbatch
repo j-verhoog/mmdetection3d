@@ -1,10 +1,10 @@
 #!/bin/bash
 #SBATCH --partition=general # request partition
-#SBATCH --qos=short # Quality of service, short default
+#SBATCH --qos=medium # Quality of service, short default
 #SBATCH --job-name=drB_distr
-#SBATCH --output=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/pointpillars/drB_distr_%j.out
-#SBATCH --error=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/pointpillars/drB_distr_%j.err
-#SBATCH --time=04:00:00 # 0:01:00 is one minute, max 4hrs for short QoS, 36hrs for medium
+#SBATCH --output=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/fcos3d/drB_distr_%j.out
+#SBATCH --error=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/fcos3d/drB_distr_%j.err
+#SBATCH --time=08:00:00 # 0:01:00 is one minute, max 4hrs for short QoS, 36hrs for medium
 #SBATCH --nodes=1              # Force 1 node (Shared /tmp)
 #SBATCH --gres=gpu:a40:2       # REQUEST 2 GPUs
 #SBATCH --ntasks=2
@@ -13,8 +13,8 @@
 
 
 # FOR NAMING STICK TO: A–Z  a–z  0–9  .  _  -
-export WANDB_PROJECT="pointpillars"
-export WANDB_NAME="drB_distr_12E"
+export WANDB_PROJECT="fcos3d"
+export WANDB_NAME="drB_distr"
 export WANDB_API_KEY=$(awk '$1=="machine" && $2=="api.wandb.ai" {found=1}found && $1=="password" {print $2; exit}' "$HOME/.netrc")
 
 /usr/bin/scontrol show job -d "$SLURM_JOB_ID" # check sbatch working
@@ -77,11 +77,11 @@ srun --ntasks=2 --gpus-per-task=1 bash -lc "
   bash -lc '
     cd /workspace/mmdet/mmdetection3d && \
     python -u tools/train.py \
-      configs/pointpillars/hv_pointpillars_fpn_sbn-all_fp16_2x8_2x_nus-3d.py \
+      configs/fcos3d/fcos3d_r101_caffe_fpn_gn-head_dcn_2x8_1x_nus-mono3d.py \
       --launcher slurm \
       --work-dir /workspace/work_dirs \
-      --cfg-options load_from=checkpoints/hv_pointpillars_fpn_sbn-all_fp16_2x8_2x_nus-3d_20201021_120719-269f9dd6.pth \
-      optimizer.lr=0.0001 evaluation.interval=1 runner.max_epochs=12 data.samples_per_gpu=8
+      --cfg-options load_from=checkpoints/fcos3d_baseline.pth \
+      optimizer.lr=0.0001 evaluation.interval=1 runner.max_epochs=6 data.samples_per_gpu=8 total_epochs=6
   '
 "
 

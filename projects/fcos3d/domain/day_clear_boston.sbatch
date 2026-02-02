@@ -4,7 +4,7 @@
 #SBATCH --job-name=dcB_distr
 #SBATCH --output=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/fcos3d/dcB_distr_%j.out
 #SBATCH --error=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/fcos3d/dcB_distr_%j.err
-#SBATCH --time=08:00:00 # 0:01:00 is one minute, max 4hrs for short QoS, 36hrs for medium
+#SBATCH --time=16:00:00 # 0:01:00 is one minute, max 4hrs for short QoS, 36hrs for medium
 #SBATCH --nodes=1              # Force 1 node (Shared /tmp)
 #SBATCH --gres=gpu:a40:2       # REQUEST 2 GPUs
 #SBATCH --ntasks=2
@@ -14,7 +14,7 @@
 
 # FOR NAMING STICK TO: A–Z  a–z  0–9  .  _  -
 export WANDB_PROJECT="fcos3d"
-export WANDB_NAME="dcB_distr_12E"
+export WANDB_NAME="dcB_distr"
 export WANDB_API_KEY=$(awk '$1=="machine" && $2=="api.wandb.ai" {found=1}found && $1=="password" {print $2; exit}' "$HOME/.netrc")
 
 /usr/bin/scontrol show job -d "$SLURM_JOB_ID" # check sbatch working
