@@ -36,6 +36,7 @@ from typing import Dict, List, Set, Tuple
 from tqdm import tqdm
 from nuscenes.nuscenes import NuScenes
 import random
+from concurrent.futures import ProcessPoolExecutor
 
 # ================= GLOBAL CONFIGURATION =================
 # Paths (same for all configurations)
@@ -185,6 +186,52 @@ def save_json_table(data: List[Dict], root: Path, table_name: str):
     out_dir.mkdir(parents=True, exist_ok=True)
     with open(out_dir / f"{table_name}.json", 'w') as f:
         json.dump(data, f, indent=0)
+
+# ================= SYMBOLIC LINKING & UTILITY FUNCTIONS =================
+
+def parallel_symlink_worker(task: Tuple[Path, Path]) -> bool:
+    """
+    Worker function for parallel symlink creation.
+    Takes (src, dst) and creates a symlink with absolute path.
+    
+    NOTE: No logging in worker processes to avoid file lock contention.
+    Worker processes cannot safely share file handles.
+    
+    Returns True if symlink created successfully, False otherwise.
+    """
+    src, dst = task
+    
+    # Check if source exists
+    if not src.exists():
+        return False
+    
+    # Use absolute path for the symlink target
+    abs_src = src.resolve()
+    
+    # Remove existing destination if it exists
+    try:
+        if dst.exists() or dst.is_symlink():
+            if dst.is_symlink():
+                dst.unlink()
+            elif dst.is_dir():
+                shutil.rmtree(dst)
+            else:
+                dst.unlink()
+    except Exception:
+        return False
+    
+    # Create parent directories
+    try:
+        dst.parent.mkdir(parents=True, exist_ok=True)
+    except Exception:
+        return False
+    
+    # Create the symlink
+    try:
+        os.symlink(abs_src, dst)
+        return True
+    except Exception:
+        return False
 
 def safe_symlink(src: Path, dst: Path):
     """
@@ -668,8 +715,8 @@ def _process_single_client_subset(
                 curr_sd_prev = prev_sd['prev']
             
             # Check for insufficient LiDAR sweeps
-            if 'LIDAR' in sensor and sweep_count < 9:
-                msg = f"Sample {sample_token[:8]}: {sensor} has only {sweep_count} sweeps (< 9)"
+            if 'LIDAR' in sensor and sweep_count < 8:
+                msg = f"Sample {sample_token[:8]}: {sensor} has only {sweep_count} sweeps (< 8)"
                 lidar_sweep_warnings.append(msg)
                 detailed_logger.warning(f"Low LiDAR sweeps: {msg}")
         
@@ -686,7 +733,7 @@ def _process_single_client_subset(
     
     # Log traverse summary
     if lidar_sweep_warnings:
-        logger.warning(f"Found {len(lidar_sweep_warnings)} samples with < 10 LiDAR sweeps")
+        logger.warning(f"Found {len(lidar_sweep_warnings)} samples with < 8 LiDAR sweeps")
         detailed_logger.warning(f"Low LiDAR sweep summary:\n" + "\n".join(lidar_sweep_warnings[:20]))
         if len(lidar_sweep_warnings) > 20:
             detailed_logger.warning(f"... and {len(lidar_sweep_warnings) - 20} more")
@@ -741,17 +788,29 @@ def _process_single_client_subset(
         logger.error(f"Failed to write JSON tables: {e}")
         raise RuntimeError(f"JSON writing failed: {e}") from e
 
-    # --- E. Symlinking Phase ---
-    logger.debug(f"Symlinking sensor files...")
-    symlink_count = 0
-    for sd in tqdm(new_tables['sample_data'], desc="Linking Files", leave=False):
+    # --- E. Symlinking Phase (PARALLEL) ---
+    logger.debug(f"Symlinking sensor files using parallel execution...")
+    
+    # Prepare the list of tasks (source_path, destination_path)
+    symlink_tasks = []
+    for sd in new_tables['sample_data']:
         filename = sd['filename']  # e.g. samples/CAM_FRONT/xxx.jpg
         src_path = NUSC_SOURCE_ROOT / filename
         dst_path = subset_root / filename
-        safe_symlink(src_path, dst_path)
-        symlink_count += 1
+        symlink_tasks.append((src_path, dst_path))
     
-    logger.debug(f"Created {symlink_count} symlinks")
+    # Execute in parallel using ProcessPoolExecutor with 32 workers
+    with ProcessPoolExecutor(max_workers=32) as executor:
+        results = list(tqdm(
+            executor.map(parallel_symlink_worker, symlink_tasks, chunksize=100),
+            total=len(symlink_tasks),
+            desc="Linking Files (Parallel)",
+            leave=False
+        ))
+    
+    # Count successful symlinks
+    symlink_count = sum(1 for r in results if r)
+    logger.debug(f"Created {symlink_count}/{len(symlink_tasks)} symlinks successfully")
     
     # --- F. Map Copying Phase ---
     logger.debug(f"Copying maps...")
