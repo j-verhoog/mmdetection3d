@@ -14,7 +14,7 @@
 
 # FOR NAMING STICK TO: A–Z  a–z  0–9  .  _  -
 export WANDB_PROJECT="fcos3d"
-export WANDB_NAME="dcS_distr"
+export WANDB_NAME="dcS_distr_lr01"
 export WANDB_API_KEY=$(awk '$1=="machine" && $2=="api.wandb.ai" {found=1}found && $1=="password" {print $2; exit}' "$HOME/.netrc")
 
 /usr/bin/scontrol show job -d "$SLURM_JOB_ID" # check sbatch working
@@ -81,7 +81,7 @@ srun --ntasks=2 --gpus-per-task=1 bash -lc "
       --launcher slurm \
       --work-dir /workspace/work_dirs \
       --cfg-options load_from=checkpoints/fcos3d_baseline.pth \
-      optimizer.lr=0.0001 evaluation.interval=1 runner.max_epochs=6 data.samples_per_gpu=8 total_epochs=6
+      optimizer.lr=0.00001 evaluation.interval=1 runner.max_epochs=6 data.samples_per_gpu=8 total_epochs=6
   '
 "
 
