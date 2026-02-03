@@ -52,7 +52,7 @@ CKPT_HOST=/home/nfs/jtverhoog/mmdet/mmdetection3d/checkpoints/fcos3d_baseline.pt
 
 # 4 subset roots (HOST paths)
 declare -A SUBSETS
-SUBSETS[full_set]="/tudelft.net/staff-umbrella/MscThesisjverhoog/nuscenes_shadow_root"
+# SUBSETS[full_set]="/tudelft.net/staff-umbrella/MscThesisjverhoog/nuscenes_shadow_root"
 SUBSETS[boston_day_clear]="/tudelft.net/staff-umbrella/MscThesisjverhoog/nuscenes_subsets_full/boston_day_clear"
 SUBSETS[boston_day_rain]="/tudelft.net/staff-umbrella/MscThesisjverhoog/nuscenes_subsets_full/boston_day_rain"
 SUBSETS[singapore_night_clear]="/tudelft.net/staff-umbrella/MscThesisjverhoog/nuscenes_subsets_full/singapore_night_clear"
@@ -102,7 +102,8 @@ COMMON_ENVS=(
 # ----------------------------
 # Run evaluation sequentially over subsets
 # ----------------------------
-for name in full_set boston_day_clear boston_day_rain singapore_night_clear singapore_day_clear; do
+# full set out
+for name in boston_day_clear boston_day_rain singapore_night_clear singapore_day_clear; do
   host_root="${SUBSETS[$name]}"
   out_dir_host="${OUT_ROOT_HOST}/${name}"
   mkdir -p "$out_dir_host"
