@@ -28,9 +28,13 @@ export WORK=/tudelft.net/staff-umbrella/MscThesisjverhoog/projects/$WANDB_PROJEC
 mkdir -p "$WORK"
 
 # --- LOCAL DATA SETUP ---
-NETWORK_DATA_ROOT="/tudelft.net/staff-umbrella/MscThesisjverhoog/nuscenes_subsets_full/singapore_day_clear"
+NETWORK_DATA_ROOT="/tudelft.net/staff-umbrella/MscThesisjverhoog/nuscenes_shadow_root"
 TMP_BASE="/tmp/jtverhoog_${SLURM_JOB_ID}"
-mkdir -p "$TMP_BASE"/{wandb,torch,xdg,tmp,home}
+
+# FIX: Use srun to create directories on ALL nodes, not just the master
+echo "Creating tmp directories on all nodes..."
+# This creates the sub-folders for each rank on the correct nodes
+srun --ntasks=$SLURM_NTASKS bash -c "mkdir -p $TMP_BASE/{wandb,torch,xdg,tmp,home}/\$SLURM_PROCID"
 
 # Measure GPU usage of your job (initialization)
 previous=$(/usr/bin/nvidia-smi --query-accounted-apps='gpu_utilization,mem_utilization,max_memory_usage,time' --format='csv' 2>/dev/null || true)
@@ -46,7 +50,7 @@ echo "MASTER_ADDR=$MASTER_ADDR MASTER_PORT=$MASTER_PORT"
 
 
 echo "=== ENTERING CONTAINER =="
-srun --ntasks=2 --gpus-per-task=1 bash -lc "
+srun --ntasks=4 --ntasks-per-node=2 --gpus-per-task=1 bash -lc "
   apptainer exec --nv --cleanenv \
   --bind \"$HOME/mmdet:/workspace/mmdet\" \
   --bind \"$TMP_BASE:/workspace/tmp\" \
@@ -86,10 +90,10 @@ srun --ntasks=2 --gpus-per-task=1 bash -lc "
 "
 
 
-
-
-# Clean up local disk after job
-rm -rf "$TMP_BASE"
+# Clean up local disk on ALL nodes
+echo "Cleaning up tmp directories on all nodes..."
+srun --nodes=$SLURM_NNODES --ntasks-per-node=1 \
+    rm -rf "$TMP_BASE"
 
 # Measure GPU usage of your job (result)
 /usr/bin/nvidia-smi --query-accounted-apps='gpu_utilization,mem_utilization,max_memory_usage,time' --format='csv' 2>/dev/null || true
