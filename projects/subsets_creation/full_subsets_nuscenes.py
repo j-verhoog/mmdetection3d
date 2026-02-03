@@ -114,7 +114,7 @@ logger = logging.getLogger(__name__)
 
 # Detailed logger (extensive debugging information)
 detailed_logger = logging.getLogger('detailed')
-detailed_logger.setLevel(logging.DEBUG)
+detailed_logger.setLevel(logging.CRITICAL)                         # 'DEBUG' or 'CRITICAL' to surpress most logs
 detailed_handler = logging.FileHandler(BASE_OUT_ROOT / "subset_creation_detailed.log", mode='w')
 detailed_handler.setFormatter(logging.Formatter(
     "%(asctime)s [%(levelname)s] %(funcName)s:%(lineno)d: %(message)s"
@@ -229,8 +229,8 @@ def safe_symlink(src: Path, dst: Path):
     try:
         # Try relative path first (most portable)
         rel_src = os.path.relpath(src, dst.parent)
-        os.symlink(rel_src, dst)
-        detailed_logger.debug(f"Symlink created (relative): {rel_src} -> {dst}")
+        os.symlink(src.resolve(), dst)
+        detailed_logger.debug(f"Symlink created (absolute): {src.resolve()} -> {dst}")
     except ValueError:
         # ValueError: paths on different drives/mount points
         # Fallback to absolute symlink
@@ -664,8 +664,8 @@ def _process_single_client_subset(
                 curr_sd_prev = prev_sd['prev']
             
             # Check for insufficient LiDAR sweeps
-            if 'LIDAR' in sensor and sweep_count < 10:
-                msg = f"Sample {sample_token[:8]}: {sensor} has only {sweep_count} sweeps (< 10)"
+            if 'LIDAR' in sensor and sweep_count < 9:
+                msg = f"Sample {sample_token[:8]}: {sensor} has only {sweep_count} sweeps (< 9)"
                 lidar_sweep_warnings.append(msg)
                 detailed_logger.warning(f"Low LiDAR sweeps: {msg}")
         
