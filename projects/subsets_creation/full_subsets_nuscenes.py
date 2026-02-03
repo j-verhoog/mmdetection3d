@@ -606,6 +606,10 @@ def _process_single_client_subset(
     logger.debug(f"_process_single_client_subset: {subset_name}/client {client_id}")
     logger.debug(f"  Train samples: {len(client_train_samples)}, Val samples: {len(client_val_samples)}")
     
+    # Add this at the top:
+    if subset_root.exists() and OVERWRITE:
+        logger.info(f"Cleaning up existing directory: {subset_root}")
+        shutil.rmtree(subset_root)
     subset_root.mkdir(parents=True, exist_ok=True)
 
     # --- A. Identification Phase (Graph Traversal) ---
