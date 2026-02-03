@@ -16,8 +16,8 @@
 set -euo pipefail
 
 # FOR NAMING STICK TO: A–Z  a–z  0–9  .  _  -
-export WANDB_PROJECT="pointpillars"
-export WANDB_NAME="base_testing2"
+export WANDB_PROJECT="pointpillars4x8"
+export WANDB_NAME="base_testing"
 export WANDB_API_KEY=$(awk '$1=="machine" && $2=="api.wandb.ai" {found=1}found && $1=="password" {print $2; exit}' "$HOME/.netrc")
 
 /usr/bin/scontrol show job -d "$SLURM_JOB_ID"
@@ -27,7 +27,7 @@ export PORT=$(( ((RANDOM<<15)|RANDOM) % 49152 + 10000 ))
 
 # define image and output dirs
 export APPTAINER_IMAGE=/tudelft.net/staff-umbrella/MscThesisjverhoog/image/mmdet3d_v1rc5.sif
-OUT_ROOT_HOST=/tudelft.net/staff-umbrella/MscThesisjverhoog/projects/pointpillars/base_testing2
+OUT_ROOT_HOST=/tudelft.net/staff-umbrella/MscThesisjverhoog/projects/pointpillars/base_testing
 mkdir -p "$OUT_ROOT_HOST"
 
 # --- LOCAL TMP SETUP (keep structure you used) ---

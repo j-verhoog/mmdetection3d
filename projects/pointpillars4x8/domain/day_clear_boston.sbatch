@@ -1,10 +1,10 @@
 #!/bin/bash
 #SBATCH --partition=general # request partition
 #SBATCH --qos=medium # Quality of service, short default
-#SBATCH --job-name=pp_distr
-#SBATCH --output=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/pointpillars/distr2_%j.out
-#SBATCH --error=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/pointpillars/distr2_%j.err
-#SBATCH --time=36:00:00 # 0:01:00 is one minute, max 4hrs for short QoS, 36hrs for medium
+#SBATCH --job-name=dcB_distr   # takes 16/32 hours for 24 epochs == ??/16 hours for 12 epoch
+#SBATCH --output=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/pointpillars4x8/dcB_distr_%j.out
+#SBATCH --error=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/pointpillars4x8/dcB_distr_%j.err
+#SBATCH --time=09:00:00 # 0:01:00 is one minute, max 4hrs for short QoS, 36hrs for medium
 #SBATCH --nodes=2              # Use two machines
 #SBATCH --ntasks=4             # Total tasks (2 per node)
 #SBATCH --ntasks-per-node=2    # Spread them evenly
@@ -12,16 +12,15 @@
 #SBATCH --cpus-per-task=16
 #SBATCH --mem=128G
 
-
-# 2 indicating the same run without the fp16 settings.
-# DO NOT TOUCH!!!! WORKING MULTI GPU PROCESS. FULL REPLICA OF POINTPILLARS POSSIBLE
-
 # FOR NAMING STICK TO: A–Z  a–z  0–9  .  _  -
 export WANDB_PROJECT="pointpillars4x8"
-export WANDB_NAME="distr_baseline_original"
+export WANDB_NAME="day_clear_Boston"
 export WANDB_API_KEY=$(awk '$1=="machine" && $2=="api.wandb.ai" {found=1}found && $1=="password" {print $2; exit}' "$HOME/.netrc")
 
 /usr/bin/scontrol show job -d "$SLURM_JOB_ID" # check sbatch working
+
+# Setup random port for communication between the 2 GPUs
+export PORT=$(( ((RANDOM<<15)|RANDOM) % 49152 + 10000 ))
 
 # define image and work dirs
 export APPTAINER_IMAGE=/tudelft.net/staff-umbrella/MscThesisjverhoog/image/mmdet3d_v1rc5.sif
@@ -29,13 +28,9 @@ export WORK=/tudelft.net/staff-umbrella/MscThesisjverhoog/projects/$WANDB_PROJEC
 mkdir -p "$WORK"
 
 # --- LOCAL DATA SETUP ---
-NETWORK_DATA_ROOT="/tudelft.net/staff-umbrella/MscThesisjverhoog/nuscenes_shadow_root"
+NETWORK_DATA_ROOT="/tudelft.net/staff-umbrella/MscThesisjverhoog/nuscenes_subsets_full/boston_day_clear"
 TMP_BASE="/tmp/jtverhoog_${SLURM_JOB_ID}"
-
-# FIX: Use srun to create directories on ALL nodes, not just the master
-echo "Creating tmp directories on all nodes..."
-srun --nodes=$SLURM_NNODES --ntasks-per-node=1 \
-    mkdir -p "$TMP_BASE"/{wandb,torch,xdg,tmp,home}
+mkdir -p "$TMP_BASE"/{wandb,torch,xdg,tmp,home}
 
 # Measure GPU usage of your job (initialization)
 previous=$(/usr/bin/nvidia-smi --query-accounted-apps='gpu_utilization,mem_utilization,max_memory_usage,time' --format='csv' 2>/dev/null || true)
@@ -44,16 +39,14 @@ echo "=== LOADING CUDA ==="
 module use /opt/insy/modulefiles
 module load cuda
 
-# Get the hostname of the first node in the list
-export MASTER_ADDR=$(scontrol show hostnames "$SLURM_JOB_NODELIST" | head -n 1)
-export MASTER_PORT=$(( ((RANDOM<<15)|RANDOM) % 49152 + 10000 ))
-
-echo "Master node is: $MASTER_ADDR"
+# setup ports for multigpu run
+export MASTER_ADDR=$(srun -N1 -n1 hostname -s)
+export MASTER_PORT=$PORT
 echo "MASTER_ADDR=$MASTER_ADDR MASTER_PORT=$MASTER_PORT"
 
 
 echo "=== ENTERING CONTAINER =="
-srun --ntasks=4 --gpus-per-task=1 bash -lc "
+srun --ntasks=2 --gpus-per-task=1 bash -lc "
   apptainer exec --nv --cleanenv \
   --bind \"$HOME/mmdet:/workspace/mmdet\" \
   --bind \"$TMP_BASE:/workspace/tmp\" \
@@ -80,25 +73,24 @@ srun --ntasks=4 --gpus-per-task=1 bash -lc "
   --env TORCH_DISTRIBUTED_DEBUG=DETAIL \
   --env MASTER_ADDR=\"$MASTER_ADDR\" \
   --env MASTER_PORT=\"$MASTER_PORT\" \
-  --env NCCL_SOCKET_IFNAME=\"campus\" \
   \"$APPTAINER_IMAGE\" \
   bash -lc '
     cd /workspace/mmdet/mmdetection3d && \
     python -u tools/train.py \
-      configs/pointpillars/hv_pointpillars_fpn_sbn-all_4x8_2x_nus-3d.py \
+      configs/pointpillars/hv_pointpillars_fpn_sbn-all_fp16_2x8_2x_nus-3d.py \
       --launcher slurm \
       --work-dir /workspace/work_dirs \
-      --cfg-options evaluation.interval=6 data.samples_per_gpu=8 dist_params.port='"$MASTER_PORT"'
+      --cfg-options load_from=checkpoints/hv_pointpillars_fpn_sbn-all_fp16_2x8_2x_nus-3d_20201021_120719-269f9dd6.pth \
+      optimizer.lr=0.0001 evaluation.interval=1 runner.max_epochs=12 data.samples_per_gpu=8 lr_config.step=[9,11]
   '
 "
 
 
 
-# Clean up local disk on ALL nodes
-echo "Cleaning up tmp directories on all nodes..."
-srun --nodes=$SLURM_NNODES --ntasks-per-node=1 \
-    rm -rf "$TMP_BASE"
-    
+
+# Clean up local disk after job
+rm -rf "$TMP_BASE"
+
 # Measure GPU usage of your job (result)
 /usr/bin/nvidia-smi --query-accounted-apps='gpu_utilization,mem_utilization,max_memory_usage,time' --format='csv' 2>/dev/null || true
 
