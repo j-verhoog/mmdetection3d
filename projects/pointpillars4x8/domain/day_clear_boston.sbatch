@@ -77,10 +77,10 @@ srun --ntasks=2 --gpus-per-task=1 bash -lc "
   bash -lc '
     cd /workspace/mmdet/mmdetection3d && \
     python -u tools/train.py \
-      configs/pointpillars/hv_pointpillars_fpn_sbn-all_fp16_2x8_2x_nus-3d.py \
+      configs/pointpillars/hv_pointpillars_fpn_sbn-all_4x8_2x_nus-3d.py \
       --launcher slurm \
       --work-dir /workspace/work_dirs \
-      --cfg-options load_from=checkpoints/hv_pointpillars_fpn_sbn-all_fp16_2x8_2x_nus-3d_20201021_120719-269f9dd6.pth \
+      --cfg-options load_from=checkpoints/replication_pointpillars_fpn.pth \
       optimizer.lr=0.0001 evaluation.interval=1 runner.max_epochs=12 data.samples_per_gpu=8 lr_config.step=[9,11]
   '
 "

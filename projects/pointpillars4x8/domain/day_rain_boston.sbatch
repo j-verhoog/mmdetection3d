@@ -2,8 +2,8 @@
 #SBATCH --partition=general # request partition
 #SBATCH --qos=short # Quality of service, short default
 #SBATCH --job-name=drB_distr # takes 8/32 hours for 24 epochs == ??/16 hours for 12 epoch
-#SBATCH --output=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/pointpillars/drB_distr_%j.out
-#SBATCH --error=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/pointpillars/drB_distr_%j.err
+#SBATCH --output=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/pointpillars4x8/drB_distr_%j.out
+#SBATCH --error=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/pointpillars4x8/drB_distr_%j.err
 #SBATCH --time=04:00:00 # 0:01:00 is one minute, max 4hrs for short QoS, 36hrs for medium
 #SBATCH --nodes=2              # Use two machines
 #SBATCH --ntasks=4             # Total tasks (2 per node)
@@ -77,10 +77,10 @@ srun --ntasks=2 --gpus-per-task=1 bash -lc "
   bash -lc '
     cd /workspace/mmdet/mmdetection3d && \
     python -u tools/train.py \
-      configs/pointpillars/hv_pointpillars_fpn_sbn-all_fp16_2x8_2x_nus-3d.py \
+      configs/pointpillars/hv_pointpillars_fpn_sbn-all_4x8_2x_nus-3d.py \
       --launcher slurm \
       --work-dir /workspace/work_dirs \
-      --cfg-options load_from=checkpoints/hv_pointpillars_fpn_sbn-all_fp16_2x8_2x_nus-3d_20201021_120719-269f9dd6.pth \
+      --cfg-options load_from=checkpoints/replication_pointpillars_fpn.pth \
       optimizer.lr=0.0001 evaluation.interval=1 runner.max_epochs=12 data.samples_per_gpu=8 lr_config.step=[9,11]
   '
 "
