@@ -353,10 +353,35 @@ momentum_config = dict(
     step_ratio_up=0.4)
 total_epochs = 20
 checkpoint_config = dict(interval=1)
+# log_config = dict(
+#     interval=50,
+#     hooks=[dict(type='TextLoggerHook'),
+#            dict(type='TensorboardLoggerHook')])
 log_config = dict(
     interval=50,
-    hooks=[dict(type='TextLoggerHook'),
-           dict(type='TensorboardLoggerHook')])
+    hooks=[
+        dict(type='TextLoggerHook'),
+        dict(
+            type='WandbLoggerHook',
+            init_kwargs=dict(
+                project=None,  # read from env
+                name=None,      # read from env
+            ),
+        )
+    ]
+)
+
+# 1. Tell MMDet3D to import your CMT project
+custom_imports = dict(
+    imports=['projects.cmt.hooks.disable_gt_sampling'], 
+    allow_failed_imports=False)
+custom_hooks = [
+    dict(
+        type='DisableGTImportanceHook',
+        disable_after_epoch=15  # Turns off at the start of Epoch 16
+    )
+]
+
 dist_params = dict(backend='nccl')
 log_level = 'INFO'
 work_dir = None
