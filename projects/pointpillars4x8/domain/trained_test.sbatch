@@ -2,8 +2,8 @@
 #SBATCH --partition=general
 #SBATCH --qos=short
 #SBATCH --job-name=pp_test_4subs
-#SBATCH --output=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/pointpillars/pp_test_4subs_%j.out
-#SBATCH --error=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/pointpillars/pp_test_4subs_%j.err
+#SBATCH --output=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/pointpillars4x8/trained_test_4subs_%j.out
+#SBATCH --error=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/pointpillars4x8/trained_test_4subs_%j.err
 #SBATCH --time=01:30:00
 #SBATCH --nodes=1
 #SBATCH --gres=gpu:a40:1
