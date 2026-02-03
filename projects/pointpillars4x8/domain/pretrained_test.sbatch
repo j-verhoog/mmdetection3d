@@ -27,7 +27,7 @@ export PORT=$(( ((RANDOM<<15)|RANDOM) % 49152 + 10000 ))
 
 # define image and output dirs
 export APPTAINER_IMAGE=/tudelft.net/staff-umbrella/MscThesisjverhoog/image/mmdet3d_v1rc5.sif
-OUT_ROOT_HOST=/tudelft.net/staff-umbrella/MscThesisjverhoog/projects/pointpillars/base_testing
+OUT_ROOT_HOST=/tudelft.net/staff-umbrella/MscThesisjverhoog/projects/pointpillars4x8/base_testing_pretrained
 mkdir -p "$OUT_ROOT_HOST"
 
 # --- LOCAL TMP SETUP (keep structure you used) ---
