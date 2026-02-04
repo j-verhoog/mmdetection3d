@@ -100,13 +100,16 @@ def main():
                 best_key = key
                 best = tok
 
-        # Trace the 'prev' chain
         cnt = 0
         cur_tok = sd_lookup[best]["prev"]
         while cur_tok and cur_tok in sd_lookup:
+            if sd_lookup[cur_tok]["isk"]:
+                break
             cnt += 1
             cur_tok = sd_lookup[cur_tok]["prev"]
-            if cnt > 100: break # Safety break for circular refs
+            if cnt > 100:
+                break
+
 
         bucket = min(cnt, args.cap)
         hist[bucket] += 1

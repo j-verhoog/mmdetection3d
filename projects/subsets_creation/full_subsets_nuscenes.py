@@ -130,6 +130,39 @@ detailed_handler.setFormatter(logging.Formatter(
 ))
 detailed_logger.addHandler(detailed_handler)
 
+
+logger.info("""
+--- Complete nuScenes sweeps/samples check (anount of sweeps before a keyframe) ---
+--- Results ---
+Samples processed: 34149
+Targeting: LIDAR_TOP
+Samples missing target: 0
+Samples with at least 1 LIDAR_TOP: 34149
+
+Histogram (Prev Frames):
+  0    : 850
+  1    : 0
+  2    : 0
+  3    : 0
+  4    : 0
+  5    : 0
+  6    : 0
+  7    : 1045
+  8    : 2112
+  9    : 28360
+  10   : 1316
+  11   : 466
+  12   : 0
+  13   : 0
+  14   : 0
+  15   : 0
+  16   : 0
+  17   : 0
+  18   : 0
+  19   : 0
+  20+  : 0
+""")
+
 # ================= HELPER FUNCTIONS =================
 
 def load_scene_map(file_path: Path) -> Tuple[Dict[str, str], Dict[str, str]]:
@@ -671,6 +704,7 @@ def _process_single_client_subset(
         detailed_logger.debug(f"Scene {scene_token[:8]}: {sample_count} samples")
     
     logger.debug(f"Total samples extracted from assigned scenes: {len(keep_samples)}")
+    logger.info(f"  {subset_name}/Client {client_id}: {len(keep_samples)} keyframes (samples)")
     
     # --- B. IDENTIFICATION PHASE (Graph Traversal) ---
     # Traverse graph for all extracted samples to identify related data
@@ -725,8 +759,8 @@ def _process_single_client_subset(
                 curr_sd_prev = prev_sd['prev']
             
             # Check for insufficient LiDAR sweeps
-            if 'LIDAR' in sensor and sweep_count < 8:
-                msg = f"Sample {sample_token[:8]}: {sensor} has only {sweep_count} sweeps (< 8)"
+            if 'LIDAR' in sensor and sweep_count < 7:
+                msg = f"Sample {sample_token[:8]}: {sensor} has only {sweep_count} sweeps (< 7)"
                 lidar_sweep_warnings.append(msg)
                 detailed_logger.warning(f"Low LiDAR sweeps: {msg}")
         
@@ -743,7 +777,7 @@ def _process_single_client_subset(
     
     # Log traverse summary
     if lidar_sweep_warnings:
-        logger.warning(f"Found {len(lidar_sweep_warnings)} samples with < 8 LiDAR sweeps")
+        logger.warning(f"Found {len(lidar_sweep_warnings)} samples with < 7 LiDAR sweeps")
         detailed_logger.warning(f"Low LiDAR sweep summary:\n" + "\n".join(lidar_sweep_warnings[:20]))
         if len(lidar_sweep_warnings) > 20:
             detailed_logger.warning(f"... and {len(lidar_sweep_warnings) - 20} more")
@@ -1104,6 +1138,10 @@ def _process_configuration(
         # === STEP 2B: FULL VAL scenes (no filtering, no subsampling) ===
         kept_val_scenes = val_scene_tokens.copy()
         logger.info(f"  Validation scenes (no filtering): {len(kept_val_scenes)}")
+        
+        # Log final scene counts per domain after fairness filtering
+        total_kept_scenes = len(kept_train_scenes) + len(kept_val_scenes)
+        logger.info(f"  FINAL: {subset_name} - {len(kept_train_scenes)} train + {len(kept_val_scenes)} val = {total_kept_scenes} total scenes")
         
         # === STEP 2C: Distribute TRAIN scenes to clients ===
         if kept_train_scenes:
