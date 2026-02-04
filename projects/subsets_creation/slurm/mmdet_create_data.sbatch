@@ -4,10 +4,10 @@
 #SBATCH --job-name=create_data_all
 #SBATCH --output=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/nuscenes_data_prep/recur_full_%j.out
 #SBATCH --error=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/nuscenes_data_prep/recur_full_%j.err
-#SBATCH --time=12:00:00 # 0:01:00 is one minute, max 4hrs for short QoS, 36hrs for medium
+#SBATCH --time=06:00:00 # 0:01:00 is one minute, max 4hrs for short QoS, 36hrs for medium
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=16
-#SBATCH --mem=32G
+#SBATCH --mem=16G
 
 # --- CONFIGURATION ---
 BASE_DATASETS_FOLDER="/tudelft.net/staff-umbrella/MscThesisjverhoog/datasets/nuscenes_subsets"
@@ -16,7 +16,14 @@ APPTAINER_IMAGE="/tudelft.net/staff-umbrella/MscThesisjverhoog/image/mmdet3d_v1r
 # --- MANUAL OVERRIDE ---
 # If this list is NOT empty, the script will skip discovery and ONLY process these paths.
 # Example: MANUAL_OVERRIDE=("/path/to/subset1" "/path/to/subset2")
-MANUAL_OVERRIDE=()
+# --- MANUAL OVERRIDE ---
+MANUAL_OVERRIDE=(
+    "/tudelft.net/staff-umbrella/MscThesisjverhoog/datasets/nuscenes_subsets/Default_NoFair_SingleClient/boston_day_clear"
+    "/tudelft.net/staff-umbrella/MscThesisjverhoog/datasets/nuscenes_subsets/Default_NoFair_SingleClient/boston_day_rain"
+    "/tudelft.net/staff-umbrella/MscThesisjverhoog/datasets/nuscenes_subsets/Default_NoFair_SingleClient/singapore_day_clear"
+    "/tudelft.net/staff-umbrella/MscThesisjverhoog/datasets/nuscenes_subsets/Default_NoFair_SingleClient/singapore_night_clear"
+    "/tudelft.net/staff-umbrella/MscThesisjverhoog/datasets/nuscenes_subsets/Default_NoFair_SingleClient/singapore_night_rain"
+)
 
 # --- PHASE 1: DISCOVERY ---
 TARGET_PATHS=()
