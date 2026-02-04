@@ -42,7 +42,10 @@ from concurrent.futures import ProcessPoolExecutor
 # Paths (same for all configurations)
 NUSC_SOURCE_ROOT = Path("/tudelft.net/staff-umbrella/IntelligentVehiclesPublicDatasets/nuscenes")
 EXCEL_PATH = Path("/home/nfs/jtverhoog/mmdet/mmdetection3d/projects/subsets_creation/scene_domains_summary.xlsx")
-BASE_OUT_ROOT = Path("/tudelft.net/staff-umbrella/MscThesisjverhoog/nusc_datasets")
+BASE_OUT_ROOT = Path("/tudelft.net/staff-umbrella/MscThesisjverhoog/datasets/nuscenes_subsets")
+# NUSC_SOURCE_ROOT = Path("/home/jolle/mmdet/nuscenes_shadow_root")
+# EXCEL_PATH = Path("/home/jolle/mmdet/mmdetection3d/projects/subsets_creation/scene_domains_summary.xlsx")
+# BASE_OUT_ROOT = Path("/home/jolle/mmdet/scratch")
 
 # Global options
 COPY_METHOD = "symlink"  # not used, but symlinks now by default
@@ -61,23 +64,24 @@ DOMAIN_MAPPING = {
 # ================= EXPERIMENT CONFIGURATIONS =================
 # Each configuration creates a different dataset variant
 # These can be run sequentially to generate multiple experimental conditions
+# takes approx 1.5hrs per run on 16-core CPU with SSD storage
 CONFIGURATIONS = [
-    {
-        "name": "Default_NoFair_SingleClient",
-        "temporal_grouping": False,  # False = Interleaved (stride), True = Sequential (chunks)
-        "drop_strategy": "RANDOM",   # 'TAIL' = take first N, 'RANDOM' = random sample
-        "fairness_mode": False,      # False, 'TOTAL', 'COMPARATIVE'
-        "clients_per_domain": 1,     # Number of client subsets per domain
-        "random_seed": DEFAULT_RANDOM_SEED,
-    },
-    {
-        "name": "Exp1_CompFair_SingleClient",
-        "temporal_grouping": False,
-        "drop_strategy": "RANDOM",
-        "fairness_mode": "COMPARATIVE",
-        "clients_per_domain": 1,
-        "random_seed": DEFAULT_RANDOM_SEED,
-    },
+    # {
+    #     "name": "Default_NoFair_SingleClient",
+    #     "temporal_grouping": False,  # False = Interleaved (stride), True = Sequential (chunks)
+    #     "drop_strategy": "RANDOM",   # 'TAIL' = take first N, 'RANDOM' = random sample
+    #     "fairness_mode": False,      # False, 'TOTAL', 'COMPARATIVE'
+    #     "clients_per_domain": 1,     # Number of client subsets per domain
+    #     "random_seed": DEFAULT_RANDOM_SEED,
+    # },
+    # {
+    #     "name": "Exp1_CompFair_SingleClient",
+    #     "temporal_grouping": False,
+    #     "drop_strategy": "RANDOM",
+    #     "fairness_mode": "COMPARATIVE",
+    #     "clients_per_domain": 1,
+    #     "random_seed": DEFAULT_RANDOM_SEED,
+    # },
     {
         "name": "Exp2_TotalFair_SingleClient",
         "temporal_grouping": False,
@@ -86,15 +90,19 @@ CONFIGURATIONS = [
         "clients_per_domain": 1,
         "random_seed": DEFAULT_RANDOM_SEED,
     },
-    {
-        "name": "Exp3_CompFair_DualClient",
-        "temporal_grouping": False,
-        "drop_strategy": "RANDOM",
-        "fairness_mode": "COMPARATIVE",
-        "clients_per_domain": 2,
-        "random_seed": DEFAULT_RANDOM_SEED,
-    },
+    # {
+    #     "name": "Exp3_CompFair_DualClient",
+    #     "temporal_grouping": False,
+    #     "drop_strategy": "RANDOM",
+    #     "fairness_mode": "COMPARATIVE",
+    #     "clients_per_domain": 2,
+    #     "random_seed": DEFAULT_RANDOM_SEED,
+    # },
 ]
+
+# Global dictionary to track excluded scenes per configuration per domain
+# Structure: { config_name -> { domain -> [scene_tokens] } }
+EXCLUDED_SCENES_REGISTRY = {}
 
 
 # =================================================
@@ -294,20 +302,18 @@ def safe_symlink(src: Path, dst: Path):
 
 # ================= FAIRNESS & CLIENT DISTRIBUTION FUNCTIONS =================
 
-def get_fairness_filtered_samples(
+def get_fairness_filtered_scenes(
     subset_name: str,
     scene_tokens: List[str],
     nusc: NuScenes,
     fairness_mode: str = False,
     drop_strategy: str = "TAIL",
     random_seed: int = DEFAULT_RANDOM_SEED
-) -> Tuple[List[str], int]:
+) -> Tuple[List[str], int, List[str]]:
     """
-    Identifies which training samples to include based on fairness mode.
+    Identifies which training scenes to include based on fairness mode.
+    Works at SCENE level - entire scenes are kept or dropped together.
     Uses MIN-based capping to ensure fair comparison between domains.
-    
-    CRITICAL CHANGE: Collects ALL samples first, then applies drop strategy.
-    This ensures DROP_STRATEGY works on the entire dataset, not just the head.
     
     Args:
         subset_name: Domain name (e.g., 'boston_day_rain')
@@ -318,58 +324,42 @@ def get_fairness_filtered_samples(
         random_seed: Seed for reproducible random sampling
     
     Returns:
-        Tuple of (sample_tokens_list, limit_used)
-        - sample_tokens_list: List of samples to keep (ordered)
-        - limit_used: The fairness limit that was applied
+        Tuple of (kept_scene_tokens, limit_used, excluded_scene_tokens)
+        - kept_scene_tokens: List of scene tokens to keep (ordered)
+        - limit_used: The fairness limit that was applied (in scenes)
+        - excluded_scene_tokens: List of excluded scene tokens
     
     Workflow:
-        1. Collect ALL valid samples for this domain
-        2. Calculate fairness limit (if fairness_mode enabled)
-        3. Apply drop_strategy to select which samples to keep
-        4. Return filtered list
+        1. Collect ALL valid scenes for this domain
+        2. Calculate fairness limit in SCENES (if fairness_mode enabled)
+        3. Apply drop_strategy to select which scenes to keep
+        4. Return filtered list and excluded scenes
     """
-    detailed_logger.info(f"get_fairness_filtered_samples: {subset_name}, fairness={fairness_mode}, drop_strategy={drop_strategy}")
+    detailed_logger.info(f"get_fairness_filtered_scenes: {subset_name}, fairness={fairness_mode}, drop_strategy={drop_strategy}")
     
-    # ===== STEP 1: COLLECT ALL VALID SAMPLES =====
-    detailed_logger.debug(f"Collecting all samples for {len(scene_tokens)} scenes...")
-    all_valid_samples = []
-    scenes_processed = 0
+    # ===== STEP 1: COLLECT ALL VALID SCENES =====
+    all_valid_scenes = []
     
     for scene_token in scene_tokens:
         try:
             scene = nusc.get('scene', scene_token)
-            scenes_processed += 1
+            all_valid_scenes.append(scene_token)
         except KeyError:
             logger.warning(f"Scene {scene_token} not found in DB")
             detailed_logger.debug(f"Scene not found: {scene_token}")
             continue
-        
-        curr_sample_token = scene['first_sample_token']
-        sample_count_in_scene = 0
-        while curr_sample_token:
-            all_valid_samples.append(curr_sample_token)
-            sample_count_in_scene += 1
-            try:
-                sample = nusc.get('sample', curr_sample_token)
-                curr_sample_token = sample['next']
-            except KeyError as e:
-                logger.error(f"Sample chain broken at {curr_sample_token}: {e}")
-                detailed_logger.error(f"Sample chain broken: {curr_sample_token}", exc_info=True)
-                break
-        
-        detailed_logger.debug(f"Scene {scene_token[:8]}: {sample_count_in_scene} samples")
     
-    logger.info(f"Collected {len(all_valid_samples)} samples from {scenes_processed}/{len(scene_tokens)} scenes for {subset_name}")
-    detailed_logger.debug(f"Total samples collected: {len(all_valid_samples)}")
+    logger.info(f"Collected {len(all_valid_scenes)} scenes for {subset_name}")
+    detailed_logger.debug(f"Total scenes collected: {len(all_valid_scenes)}")
     
-    if not all_valid_samples:
-        logger.warning(f"No valid samples found for {subset_name}")
-        return [], 0
+    if not all_valid_scenes:
+        logger.warning(f"No valid scenes found for {subset_name}")
+        return [], 0, scene_tokens
     
-    # ===== STEP 2: CALCULATE FAIRNESS LIMIT =====
+    # ===== STEP 2: CALCULATE FAIRNESS LIMIT (IN SCENES) =====
     if not fairness_mode:
-        limit = len(all_valid_samples)
-        logger.debug(f"{subset_name}: No fairness, using all {limit} samples")
+        limit = len(all_valid_scenes)
+        logger.debug(f"{subset_name}: No fairness, using all {limit} scenes")
     else:
         SINGAPORE_DOMAINS = {'singapore_day_clear', 'singapore_night_clear'}
         BOSTON_DOMAINS = {'boston_day_clear', 'boston_day_rain'}
@@ -378,11 +368,10 @@ def get_fairness_filtered_samples(
         if subset_name not in ALL_COMPARISON_DOMAINS:
             logger.warning(f"Domain {subset_name} not in comparison list. No fairness applied.")
             detailed_logger.debug(f"Domain {subset_name} not comparable")
-            limit = len(all_valid_samples)
+            limit = len(all_valid_scenes)
         else:
-            # CRITICAL FIX: Count only TRAIN samples (respect train/val split)
-            # This ensures fairness limits are based on train-only data
-            domain_sample_counts = {}
+            # Count TRAIN scenes only for fairness calculation
+            domain_scene_counts = {}
             scene_map = load_scene_map(EXCEL_PATH)[0]  # scene_token -> domain
             scene_split = load_scene_map(EXCEL_PATH)[1]  # scene_token -> 'train'/'val'
             domain_scenes = {d: [] for d in ALL_COMPARISON_DOMAINS}
@@ -395,107 +384,97 @@ def get_fairness_filtered_samples(
                         if token not in domain_scenes[domain]:
                             domain_scenes[domain].append(token)
             
-            detailed_logger.debug(f"Counting TRAIN-ONLY samples per domain (excluding val scenes)")
+            detailed_logger.debug(f"Counting TRAIN-ONLY scenes per domain (excluding val scenes)")
             
-            # Count TRAIN samples only
+            # Count TRAIN scenes only
             for domain, tokens in domain_scenes.items():
-                count = 0
-                for scene_token in tokens:
-                    try:
-                        scene = nusc.get('scene', scene_token)
-                    except KeyError:
-                        continue
-                    curr_sample_token = scene['first_sample_token']
-                    while curr_sample_token:
-                        count += 1
-                        try:
-                            sample = nusc.get('sample', curr_sample_token)
-                            curr_sample_token = sample['next']
-                        except KeyError:
-                            break
-                domain_sample_counts[domain] = count
+                domain_scene_counts[domain] = len(tokens)
             
-            detailed_logger.debug(f"TRAIN-ONLY sample counts per domain: {domain_sample_counts}")
-            
-            detailed_logger.debug(f"Sample counts per domain: {domain_sample_counts}")
+            detailed_logger.debug(f"TRAIN-ONLY scene counts per domain: {domain_scene_counts}")
             
             # Determine limit using MIN
             if fairness_mode == 'TOTAL':
-                limit = min(domain_sample_counts.values()) if domain_sample_counts else len(all_valid_samples)
-                logger.info(f"FAIRNESS=TOTAL: {subset_name} limited to {limit} samples (min across all)")
+                limit = min(domain_scene_counts.values()) if domain_scene_counts else len(all_valid_scenes)
+                logger.info(f"FAIRNESS=TOTAL: {subset_name} limited to {limit} scenes (min across all)")
             
             elif fairness_mode == 'COMPARATIVE':
                 singapore_limit = min(
-                    domain_sample_counts.get('singapore_day_clear', float('inf')),
-                    domain_sample_counts.get('singapore_night_clear', float('inf'))
+                    domain_scene_counts.get('singapore_day_clear', float('inf')),
+                    domain_scene_counts.get('singapore_night_clear', float('inf'))
                 )
                 boston_limit = min(
-                    domain_sample_counts.get('boston_day_clear', float('inf')),
-                    domain_sample_counts.get('boston_day_rain', float('inf'))
+                    domain_scene_counts.get('boston_day_clear', float('inf')),
+                    domain_scene_counts.get('boston_day_rain', float('inf'))
                 )
                 
                 if singapore_limit == float('inf'):
-                    singapore_limit = len(all_valid_samples)
+                    singapore_limit = len(all_valid_scenes)
                 if boston_limit == float('inf'):
-                    boston_limit = len(all_valid_samples)
+                    boston_limit = len(all_valid_scenes)
                 
                 limit = singapore_limit if subset_name in SINGAPORE_DOMAINS else boston_limit
-                logger.info(f"FAIRNESS=COMPARATIVE: {subset_name} limited to {limit} samples")
+                logger.info(f"FAIRNESS=COMPARATIVE: {subset_name} limited to {limit} scenes")
             
             else:
                 raise ValueError(f"Invalid fairness_mode: {fairness_mode}")
     
-    # ===== STEP 3: APPLY DROP STRATEGY =====
-    if len(all_valid_samples) <= limit:
-        keep_samples = all_valid_samples
-        logger.debug(f"{subset_name}: No reduction needed ({len(all_valid_samples)} <= {limit})")
+    # ===== STEP 3: APPLY DROP STRATEGY (at scene level) =====
+    if len(all_valid_scenes) <= limit:
+        keep_scenes = all_valid_scenes
+        excluded_scenes = []
+        logger.debug(f"{subset_name}: No reduction needed ({len(all_valid_scenes)} <= {limit})")
     else:
-        logger.info(f"Fairness: Reducing {len(all_valid_samples)} -> {limit} samples using {drop_strategy}")
+        logger.info(f"Fairness: Reducing {len(all_valid_scenes)} -> {limit} scenes using {drop_strategy}")
         detailed_logger.info(f"Applying drop_strategy={drop_strategy} to {subset_name}")
         
         if drop_strategy == "TAIL":
-            # Keep first N samples (temporal order preserved)
-            keep_samples = all_valid_samples[:limit]
-            logger.debug(f"DROP=TAIL: Keeping first {limit} samples (dropping last {len(all_valid_samples) - limit})")
-            detailed_logger.debug(f"TAIL: kept samples [0:{limit}]")
+            # Keep first N scenes (temporal order preserved)
+            keep_scenes = all_valid_scenes[:limit]
+            excluded_scenes = all_valid_scenes[limit:]
+            logger.debug(f"DROP=TAIL: Keeping first {limit} scenes (excluding last {len(excluded_scenes)})")
+            detailed_logger.debug(f"TAIL: kept scenes [0:{limit}]")
         
         elif drop_strategy == "RANDOM":
-            # Randomly select N samples from entire set
+            # Randomly select N scenes from entire set
             random.seed(random_seed)
-            selected_indices = sorted(random.sample(range(len(all_valid_samples)), limit))
-            keep_samples = [all_valid_samples[i] for i in selected_indices]
-            logger.debug(f"DROP=RANDOM: Randomly selected {limit} samples (seed={random_seed})")
+            selected_indices = sorted(random.sample(range(len(all_valid_scenes)), limit))
+            keep_scenes = [all_valid_scenes[i] for i in selected_indices]
+            excluded_indices = set(range(len(all_valid_scenes))) - set(selected_indices)
+            excluded_scenes = [all_valid_scenes[i] for i in sorted(excluded_indices)]
+            logger.debug(f"DROP=RANDOM: Randomly selected {limit} scenes (excluding {len(excluded_scenes)}, seed={random_seed})")
             detailed_logger.debug(f"RANDOM: selected {len(selected_indices)} indices using seed {random_seed}")
         
         else:
             logger.warning(f"Unknown drop_strategy '{drop_strategy}', defaulting to TAIL")
-            keep_samples = all_valid_samples[:limit]
+            keep_scenes = all_valid_scenes[:limit]
+            excluded_scenes = all_valid_scenes[limit:]
     
-    detailed_logger.info(f"Final for {subset_name}: {len(keep_samples)} samples")
-    return keep_samples, limit
+    detailed_logger.info(f"Final for {subset_name}: {len(keep_scenes)} scenes, {len(excluded_scenes)} excluded")
+    return keep_scenes, limit, excluded_scenes
 
 
 
 
-def distribute_samples_to_clients(
-    sample_tokens: List[str],
+def distribute_scenes_to_clients(
+    scene_tokens: List[str],
     num_clients: int,
     temporal_grouping: bool = False,
     drop_strategy: str = "TAIL",
     random_seed: int = DEFAULT_RANDOM_SEED
 ) -> Dict[int, List[str]]:
     """
-    Distributes training samples across multiple clients.
+    Distributes training scenes across multiple clients.
+    CRITICAL: Complete scenes go to single clients - no mixing.
     
     Args:
-        sample_tokens: List of sample tokens (should be ordered by time if temporal_grouping=True)
+        scene_tokens: List of scene tokens (should be ordered by time if temporal_grouping=True)
         num_clients: Number of clients
         temporal_grouping: True = sequential chunks, False = interleaved stride
         drop_strategy: 'TAIL' = take first N, 'RANDOM' = random sample
         random_seed: Seed for reproducible shuffling
     
     Returns:
-        Dict[client_id (1-indexed) -> List[sample_tokens]]
+        Dict[client_id (1-indexed) -> List[scene_tokens]]
     
     Logic:
         TEMPORAL_GROUPING=True (Sequential chunks):
@@ -509,65 +488,63 @@ def distribute_samples_to_clients(
             Client 2: [1::num_clients]
             Maximizes diversity per client, breaks continuity
         
-        DROP_STRATEGY='TAIL': Take samples sequentially from start
-        DROP_STRATEGY='RANDOM': Randomly select samples first, then organize
+        DROP_STRATEGY='TAIL': Take scenes sequentially from start
+        DROP_STRATEGY='RANDOM': Randomly select scenes first, then organize
     """
     if num_clients < 1:
         raise ValueError(f"num_clients must be >= 1, got {num_clients}")
     
-    if not sample_tokens:
-        raise ValueError("Cannot distribute empty sample list")
+    if not scene_tokens:
+        raise ValueError("Cannot distribute empty scene list")
     
-    logger.debug(f"Distributing {len(sample_tokens)} samples to {num_clients} clients "
+    logger.debug(f"Distributing {len(scene_tokens)} scenes to {num_clients} clients "
                  f"(temporal={temporal_grouping}, drop_strategy={drop_strategy})")
     
     # Handle drop strategy
     if drop_strategy == "RANDOM":
-        # Randomly select samples (for when fairness limit was enforced)
+        # Randomly select scenes
         random.seed(random_seed)
-        # Note: this is only needed if samples were already filtered by fairness
-        # and we want to randomly choose from them
-        shuffled = sample_tokens.copy()
+        shuffled = scene_tokens.copy()
         random.shuffle(shuffled)
-        working_samples = shuffled
+        working_scenes = shuffled
     elif drop_strategy == "TAIL":
-        # Use samples sequentially (temporal order preserved)
-        working_samples = sample_tokens
+        # Use scenes sequentially (temporal order preserved)
+        working_scenes = scene_tokens
     else:
         raise ValueError(f"Invalid drop_strategy: {drop_strategy}. Must be 'TAIL' or 'RANDOM'")
     
-    client_samples = {}
+    client_scenes = {}
     
     if temporal_grouping:
         # Sequential chunking: divide into contiguous blocks
-        chunk_size = len(working_samples) // num_clients
-        remainder = len(working_samples) % num_clients
+        chunk_size = len(working_scenes) // num_clients
+        remainder = len(working_scenes) % num_clients
         
         idx = 0
         for client_id in range(1, num_clients + 1):
-            # Give remainder samples to the first clients
+            # Give remainder scenes to the first clients
             size = chunk_size + (1 if client_id <= remainder else 0)
-            client_samples[client_id] = working_samples[idx:idx + size]
-            logger.debug(f"Client {client_id}: {size} samples (temporal chunk)")
+            client_scenes[client_id] = working_scenes[idx:idx + size]
+            logger.debug(f"Client {client_id}: {size} scenes (temporal chunk)")
             idx += size
     
     else:
         # Interleaved stride: distribute round-robin
         for client_id in range(1, num_clients + 1):
             offset = client_id - 1  # 0-indexed offset
-            samples = working_samples[offset::num_clients]
-            client_samples[client_id] = samples
-            logger.debug(f"Client {client_id}: {len(samples)} samples (interleaved)")
+            scenes = working_scenes[offset::num_clients]
+            client_scenes[client_id] = scenes
+            logger.debug(f"Client {client_id}: {len(scenes)} scenes (interleaved)")
     
     # Verify distribution
-    total_assigned = sum(len(v) for v in client_samples.values())
-    if total_assigned != len(working_samples):
+    total_assigned = sum(len(v) for v in client_scenes.values())
+    if total_assigned != len(working_scenes):
         raise RuntimeError(
-            f"Distribution error: assigned {total_assigned} but had {len(working_samples)}"
+            f"Distribution error: assigned {total_assigned} but had {len(working_scenes)}"
         )
     
-    logger.info(f"Successfully distributed samples: {[(i, len(v)) for i, v in sorted(client_samples.items())]}")
-    return client_samples
+    logger.info(f"Successfully distributed scenes: {[(i, len(v)) for i, v in sorted(client_scenes.items())]}")
+    return client_scenes
 
 
 # ================= DATA PROCESSING =================
@@ -623,25 +600,27 @@ def _process_single_client_subset(
     subset_name: str,
     client_id: int,
     scene_tokens: List[str],
-    client_train_samples: Set[str],
-    client_val_samples: Set[str],
+    client_train_scenes: Set[str],
+    client_val_scenes: Set[str],
     subset_root: Path,
     nusc: NuScenes,
     raw_tables: Dict[str, List[Dict]]
 ):
     """
     Processes a single client's subset by filtering and linking data.
+    NOW WORKS AT SCENE LEVEL: Derives samples from assigned scenes only.
     
     Each client gets:
-    - Unique partial TRAINING set (samples divided among clients)
-    - FULL VALIDATION set (same for all clients in the domain)
+    - Training scenes: partial (divided among clients)
+    - Validation scenes: FULL (same for all clients in the domain)
+    - All samples from these scenes are extracted
     
     Args:
         subset_name: Domain name (e.g., 'boston_day_rain')
         client_id: Client identifier (1-indexed)
-        scene_tokens: All scene tokens for this domain (used for traversal)
-        client_train_samples: Training samples assigned to this client
-        client_val_samples: ALL validation samples (full set for this domain)
+        scene_tokens: All valid scene tokens for this domain
+        client_train_scenes: Scene tokens assigned to this client for training
+        client_val_scenes: ALL val scene tokens (full set for this domain)
         subset_root: Output directory for this client
         nusc: NuScenes instance
         raw_tables: Raw metadata tables
@@ -651,36 +630,67 @@ def _process_single_client_subset(
         RuntimeError: If filtering/writing fails
     """
     logger.debug(f"_process_single_client_subset: {subset_name}/client {client_id}")
-    logger.debug(f"  Train samples: {len(client_train_samples)}, Val samples: {len(client_val_samples)}")
+    logger.debug(f"  Train scenes: {len(client_train_scenes)}, Val scenes: {len(client_val_scenes)}")
     
-    # Add this at the top:
     if subset_root.exists() and OVERWRITE:
         logger.info(f"Cleaning up existing directory: {subset_root}")
         shutil.rmtree(subset_root)
     subset_root.mkdir(parents=True, exist_ok=True)
 
-    # --- A. Identification Phase (Graph Traversal) ---
-    # Traverse graph for ALL samples (train + val) assigned to this client
-    all_client_samples = client_train_samples | client_val_samples
+    # --- A. SCENE-TO-SAMPLE EXTRACTION ---
+    # Extract ALL samples from the assigned scenes (no subsampling at sample level)
+    all_client_scenes = client_train_scenes | client_val_scenes
+    keep_samples = set()
     
-    keep_samples = all_client_samples.copy()
+    logger.debug(f"Extracting samples from {len(all_client_scenes)} assigned scenes...")
+    
+    for scene_token in tqdm(
+        sorted(list(all_client_scenes)),
+        desc=f"Extracting samples from scenes ({subset_name}/client{client_id})",
+        leave=False
+    ):
+        try:
+            scene = nusc.get('scene', scene_token)
+        except KeyError:
+            logger.error(f"Scene {scene_token} assigned to client but not in DB")
+            continue
+        
+        # Traverse all samples in this scene
+        curr_sample_token = scene['first_sample_token']
+        sample_count = 0
+        while curr_sample_token:
+            keep_samples.add(curr_sample_token)
+            sample_count += 1
+            try:
+                sample = nusc.get('sample', curr_sample_token)
+                curr_sample_token = sample['next']
+            except KeyError as e:
+                logger.error(f"Sample chain broken at {curr_sample_token} in scene {scene_token}: {e}")
+                break
+        
+        detailed_logger.debug(f"Scene {scene_token[:8]}: {sample_count} samples")
+    
+    logger.debug(f"Total samples extracted from assigned scenes: {len(keep_samples)}")
+    
+    # --- B. IDENTIFICATION PHASE (Graph Traversal) ---
+    # Traverse graph for all extracted samples to identify related data
     keep_sample_data = set()  # Images/Lidar (Keyframes AND Sweeps)
     keep_instances = set()
     
-    logger.debug(f"Traversing graph for {len(keep_samples)} total samples (train+val)...")
+    logger.debug(f"Traversing graph for {len(keep_samples)} samples...")
     
     lidar_sweep_warnings = []
     missing_samples = []
     
     for sample_token in tqdm(
         keep_samples,
-        desc=f"Analyzing {subset_name}/client{client_id} graph",
+        desc=f"Analyzing graph ({subset_name}/client{client_id})",
         leave=False
     ):
         try:
             sample = nusc.get('sample', sample_token)
         except KeyError as e:
-            logger.error(f"Sample {sample_token} in client distribution but not in DB")
+            logger.error(f"Sample {sample_token} extracted from scene but not in DB")
             missing_samples.append(sample_token)
             raise KeyError(f"Missing sample: {sample_token}") from e
 
@@ -742,10 +752,10 @@ def _process_single_client_subset(
         logger.error(f"Found {len(missing_samples)} missing samples in DB")
         detailed_logger.error(f"Missing samples: {missing_samples}")
 
-    # --- B. Filtering Phase ---
+    # --- C. FILTERING PHASE ---
     logger.debug(f"Filtering metadata tables...")
     
-    target_scene_tokens = set(scene_tokens)
+    target_scene_tokens = set(all_client_scenes)
     new_tables = {}
     
     # Filter primary tables based on the sets we built above
@@ -772,14 +782,12 @@ def _process_single_client_subset(
     logger.debug(f"Filtered tables: scene={len(new_tables['scene'])}, sample={len(new_tables['sample'])}, "
                  f"sample_data={len(new_tables['sample_data'])}, annotation={len(new_tables['sample_annotation'])}")
 
-    # --- C. HEAL DATA INTEGRITY ---
+    # --- D. HEAL DATA INTEGRITY ---
     # Fix broken prev/next pointers in both sample and sample_data tables
-    # This ensures external tools (NuScenes SDK, other pipelines) don't break
-    # on traversals that encounter removed samples
     heal_pointers(new_tables['sample'], 'sample')
     heal_pointers(new_tables['sample_data'], 'sample_data')
 
-    # --- D. Writing Phase ---
+    # --- E. Writing Phase ---
     try:
         for table_name, data in new_tables.items():
             save_json_table(data, subset_root, table_name)
@@ -788,7 +796,7 @@ def _process_single_client_subset(
         logger.error(f"Failed to write JSON tables: {e}")
         raise RuntimeError(f"JSON writing failed: {e}") from e
 
-    # --- E. Symlinking Phase (PARALLEL) ---
+    # --- F. Symlinking Phase (PARALLEL) ---
     logger.debug(f"Symlinking sensor files using parallel execution...")
     
     # Prepare the list of tasks (source_path, destination_path)
@@ -812,7 +820,7 @@ def _process_single_client_subset(
     symlink_count = sum(1 for r in results if r)
     logger.debug(f"Created {symlink_count}/{len(symlink_tasks)} symlinks successfully")
     
-    # --- F. Map Copying Phase ---
+    # --- G. Map Copying Phase ---
     logger.debug(f"Copying maps...")
     src_maps = NUSC_SOURCE_ROOT / "maps"
     dst_maps = subset_root / "maps"
@@ -883,6 +891,70 @@ def count_files_in_subsets() -> None:
     logger.info("="*80)
 
 
+def generate_excluded_scenes_report() -> None:
+    """
+    Generates a comprehensive report of excluded scenes per configuration per domain.
+    Saves to CSV files for easy analysis.
+    """
+    logger.info("="*80)
+    logger.info("EXCLUDED SCENES REPORT")
+    logger.info("="*80)
+    
+    if not EXCLUDED_SCENES_REGISTRY:
+        logger.warning("No exclusion data to report")
+        return
+    
+    # Per configuration
+    for config_name, domain_dict in EXCLUDED_SCENES_REGISTRY.items():
+        logger.info(f"\nConfiguration: {config_name}")
+        
+        # Create CSV file for this configuration
+        csv_path = BASE_OUT_ROOT / f"excluded_scenes_{config_name}.csv"
+        
+        rows = []
+        total_excluded = 0
+        
+        for domain_name in sorted(domain_dict.keys()):
+            excluded_scenes = domain_dict[domain_name]
+            num_excluded = len(excluded_scenes)
+            total_excluded += num_excluded
+            
+            logger.info(f"  {domain_name}: {num_excluded} scenes excluded")
+            detailed_logger.info(f"  Excluded scenes for {domain_name}: {excluded_scenes}")
+            
+            # Add rows to CSV
+            for scene_token in excluded_scenes:
+                rows.append({
+                    'configuration': config_name,
+                    'domain': domain_name,
+                    'scene_token': scene_token
+                })
+        
+        # Write CSV
+        try:
+            df = pd.DataFrame(rows)
+            df.to_csv(csv_path, index=False)
+            logger.info(f"  Excluded scenes CSV saved: {csv_path}")
+        except Exception as e:
+            logger.error(f"Failed to write excluded scenes CSV for {config_name}: {e}")
+        
+        logger.info(f"  Total excluded in {config_name}: {total_excluded} scenes")
+    
+    # Summary across all configurations
+    logger.info("\n" + "="*80)
+    logger.info("EXCLUSION SUMMARY ACROSS CONFIGURATIONS")
+    logger.info("="*80)
+    
+    for config_name in sorted(EXCLUDED_SCENES_REGISTRY.keys()):
+        domain_dict = EXCLUDED_SCENES_REGISTRY[config_name]
+        summary = {}
+        for domain_name, excluded_scenes in domain_dict.items():
+            summary[domain_name] = len(excluded_scenes)
+        logger.info(f"{config_name}: {summary}")
+    
+    logger.info("="*80)
+
+
 def main():
     """
     Main execution loop that processes multiple configurations.
@@ -939,6 +1011,9 @@ def main():
     logger.info(f"Log: {BASE_OUT_ROOT / 'subset_creation.log'}")
     logger.info("="*80)
     
+    # Generate excluded scenes report
+    generate_excluded_scenes_report()
+    
     # Count and log files in each subset
     count_files_in_subsets()
 
@@ -954,14 +1029,19 @@ def _process_configuration(
     """
     Process one configuration.
     
-    Workflow:
+    Workflow (at SCENE level):
     1. Separate scenes into train/val by split
-    2. Extract samples from train scenes, apply fairness filtering
-    3. Extract ALL samples from val scenes (no filtering)
-    4. Distribute train samples to clients
-    5. For each client: merge train + val samples, process
+    2. Apply fairness filtering to train scenes (entire scenes kept/dropped)
+    3. Extract ALL val scenes (no filtering)
+    4. Distribute train scenes to clients
+    5. For each client: merge train + val scene lists, extract ALL samples from those scenes
+    6. Process client data
     """
     logger.info(f"Processing configuration: {config['name']}")
+    
+    # Initialize excluded scenes tracker for this configuration
+    config_excluded = {}
+    EXCLUDED_SCENES_REGISTRY[config['name']] = config_excluded
     
     # === STEP 1: Separate train/val scenes ===
     domains_train = {}  # subset_name -> list of train scene tokens
@@ -973,6 +1053,7 @@ def _process_configuration(
         if subset_name not in domains_train:
             domains_train[subset_name] = []
             domains_val[subset_name] = []
+            config_excluded[subset_name] = []  # Initialize excluded scenes list
         
         if split == 'train':
             domains_train[subset_name].append(scene_token)
@@ -996,10 +1077,10 @@ def _process_configuration(
         
         logger.info(f"Processing domain: {subset_name} ({len(train_scene_tokens)} train, {len(val_scene_tokens)} val)")
         
-        # === STEP 2A: Extract and filter TRAIN samples ===
+        # === STEP 2A: Apply fairness filtering to TRAIN scenes ===
         if train_scene_tokens:
             try:
-                train_samples, fairness_limit = get_fairness_filtered_samples(
+                kept_train_scenes, fairness_limit, excluded_train_scenes = get_fairness_filtered_scenes(
                     subset_name,
                     train_scene_tokens,
                     nusc,
@@ -1007,42 +1088,28 @@ def _process_configuration(
                     drop_strategy=config['drop_strategy'],
                     random_seed=config['random_seed']
                 )
+                # Track excluded scenes
+                config_excluded[subset_name] = excluded_train_scenes
             except Exception as e:
                 logger.error(f"Fairness filtering failed for {subset_name}: {e}")
                 detailed_logger.error(f"Fairness filtering exception: {e}", exc_info=True)
                 raise
             
-            logger.info(f"  Train samples after filtering: {len(train_samples)}")
+            logger.info(f"  Train scenes after filtering: {len(kept_train_scenes)} (excluded: {len(excluded_train_scenes)})")
         else:
-            train_samples = []
+            kept_train_scenes = []
+            excluded_train_scenes = []
             logger.info(f"  No train scenes for {subset_name}")
         
-        # === STEP 2B: Extract FULL VAL samples (no filtering) ===
-        if val_scene_tokens:
-            val_samples = []
-            for scene_token in val_scene_tokens:
-                try:
-                    scene = nusc.get('scene', scene_token)
-                except KeyError:
-                    logger.warning(f"Scene {scene_token} not found in DB")
-                    continue
-                
-                curr_sample_token = scene['first_sample_token']
-                while curr_sample_token:
-                    val_samples.append(curr_sample_token)
-                    sample = nusc.get('sample', curr_sample_token)
-                    curr_sample_token = sample['next']
-            
-            logger.info(f"  Validation samples (no filtering): {len(val_samples)}")
-        else:
-            val_samples = []
-            logger.info(f"  No validation scenes for {subset_name}")
+        # === STEP 2B: FULL VAL scenes (no filtering, no subsampling) ===
+        kept_val_scenes = val_scene_tokens.copy()
+        logger.info(f"  Validation scenes (no filtering): {len(kept_val_scenes)}")
         
-        # === STEP 2C: Distribute TRAIN samples to clients ===
-        if train_samples:
+        # === STEP 2C: Distribute TRAIN scenes to clients ===
+        if kept_train_scenes:
             try:
-                client_train_dist = distribute_samples_to_clients(
-                    train_samples,
+                client_train_dist = distribute_scenes_to_clients(
+                    kept_train_scenes,
                     num_clients=config['clients_per_domain'],
                     temporal_grouping=config['temporal_grouping'],
                     drop_strategy=config['drop_strategy'],
@@ -1052,17 +1119,20 @@ def _process_configuration(
                 logger.error(f"Client distribution failed for {subset_name}: {e}")
                 raise
         else:
-            # No train samples, but still create clients with only validation
+            # No train scenes, but still create clients with only validation
             client_train_dist = {
                 i: [] for i in range(1, config['clients_per_domain'] + 1)
             }
         
         # === STEP 2D: Process each client ===
         for client_id in range(1, config['clients_per_domain'] + 1):
-            client_train_samples = set(client_train_dist.get(client_id, []))
-            client_val_samples = set(val_samples)
+            client_train_scenes = set(client_train_dist.get(client_id, []))
+            client_val_scenes = set(kept_val_scenes)
             
-            logger.info(f"  {subset_name} / Client {client_id}: {len(client_train_samples)} train, {len(client_val_samples)} val")
+            # Combine all scenes for this client
+            client_all_scenes = client_train_scenes | client_val_scenes
+            
+            logger.info(f"  {subset_name} / Client {client_id}: {len(client_train_scenes)} train scenes, {len(client_val_scenes)} val scenes (total {len(client_all_scenes)})")
             
             # Determine output directory
             if config['clients_per_domain'] == 1:
@@ -1076,9 +1146,9 @@ def _process_configuration(
                 _process_single_client_subset(
                     subset_name=subset_name,
                     client_id=client_id,
-                    scene_tokens=train_scene_tokens + val_scene_tokens,  # All scenes for traversal
-                    client_train_samples=client_train_samples,
-                    client_val_samples=client_val_samples,
+                    scene_tokens=sorted(list(client_all_scenes)),  # All scenes for this client
+                    client_train_scenes=client_train_scenes,
+                    client_val_scenes=client_val_scenes,
                     subset_root=subset_root,
                     nusc=nusc,
                     raw_tables=raw_tables
@@ -1088,6 +1158,8 @@ def _process_configuration(
                 raise
     
     logger.info(f"Configuration {config['name']} completed successfully")
+    logger.info(f"Excluded scenes summary saved to registry")
+
 
 if __name__ == "__main__":
     main()
