@@ -17,11 +17,12 @@ mkdir -p "$EMPTY"
 
 if [ -d "$TARGET" ]; then
     echo "Syncing empty dir to $TARGET..."
-    rsync -a --delete "$EMPTY" "$TARGET/"
+    # -r: recursive
+    # --delete: remove files in target
+    # --no-p: do not try to sync permissions (fixes your error)
+    rsync -r --delete --no-p "$EMPTY" "$TARGET/"
     rm -rf "$TARGET" "$EMPTY"
     echo "Done."
-else
-    echo "Directory not found."
 fi
 
 # define image and work dirs
