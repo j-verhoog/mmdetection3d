@@ -30,12 +30,12 @@ else
     while read -r META_DIR; do
         NU_ROOT=$(dirname "$META_DIR")
         
-        # Validation: check for samples.json and samples/ folder
-        if [ -f "$META_DIR/samples.json" ] && [ -d "$NU_ROOT/samples" ]; then
+        # Validation: check for sample.json (singular) and samples/ folder
+        if [ -f "$META_DIR/sample.json" ] && [ -d "$NU_ROOT/samples" ]; then
             TARGET_PATHS+=("$NU_ROOT")
             echo "Found valid nuScenes root: $NU_ROOT"
         else
-            echo "Skipping invalid candidate: $NU_ROOT (Missing samples.json or samples/)"
+            echo "Skipping invalid candidate: $NU_ROOT (Missing sample.json or samples/)"
         fi
     done < <(find "$BASE_DATASETS_FOLDER" -type d -name "v1.0-trainval")
 fi
