@@ -43,14 +43,15 @@ echo "=== LOADING CUDA ==="
 module use /opt/insy/modulefiles
 module load cuda
 
-# setup ports for multigpu run
-export MASTER_ADDR=$(srun -N1 -n1 hostname -s)
-export MASTER_PORT=$PORT
+# Get the hostname of the first node in the list
+export MASTER_ADDR=$(scontrol show hostnames "$SLURM_JOB_NODELIST" | head -n 1)
+export MASTER_PORT=$(( ((RANDOM<<15)|RANDOM) % 49152 + 10000 ))
+
+echo "Master node is: $MASTER_ADDR"
 echo "MASTER_ADDR=$MASTER_ADDR MASTER_PORT=$MASTER_PORT"
 
-
 echo "=== ENTERING CONTAINER =="
-srun --ntasks=4 --ntasks-per-node=2 --gpus-per-task=1 bash -lc "
+srun --ntasks=4 --gpus-per-task=1 bash -lc "
   apptainer exec --nv --cleanenv \
   --bind \"$HOME/mmdet:/workspace/mmdet\" \
   --bind \"$TMP_BASE:/workspace/tmp\" \
@@ -77,6 +78,7 @@ srun --ntasks=4 --ntasks-per-node=2 --gpus-per-task=1 bash -lc "
   --env TORCH_DISTRIBUTED_DEBUG=DETAIL \
   --env MASTER_ADDR=\"$MASTER_ADDR\" \
   --env MASTER_PORT=\"$MASTER_PORT\" \
+  --env NCCL_SOCKET_IFNAME=\"campus\" \
   \"$APPTAINER_IMAGE\" \
   bash -lc '
     cd /workspace/mmdet/mmdetection3d && \
@@ -85,7 +87,7 @@ srun --ntasks=4 --ntasks-per-node=2 --gpus-per-task=1 bash -lc "
       --launcher slurm \
       --work-dir /workspace/work_dirs \
       --cfg-options load_from=checkpoints/replication_pointpillars_fpn.pth \
-      optimizer.lr=0.0001 evaluation.interval=1 runner.max_epochs=12 data.samples_per_gpu=8 lr_config.step=[9,11]
+      optimizer.lr=0.0001 evaluation.interval=1 runner.max_epochs=12 data.samples_per_gpu=8 lr_config.step=[9,11] dist_params.port='"$MASTER_PORT"'
   '
 "
 
