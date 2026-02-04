@@ -66,38 +66,46 @@ DOMAIN_MAPPING = {
 # These can be run sequentially to generate multiple experimental conditions
 # takes approx 1.5hrs per run on 16-core CPU with SSD storage
 CONFIGURATIONS = [
-    # {
-    #     "name": "Default_NoFair_SingleClient",
-    #     "temporal_grouping": False,  # False = Interleaved (stride), True = Sequential (chunks)
-    #     "drop_strategy": "RANDOM",   # 'TAIL' = take first N, 'RANDOM' = random sample
-    #     "fairness_mode": False,      # False, 'TOTAL', 'COMPARATIVE'
-    #     "clients_per_domain": 1,     # Number of client subsets per domain
-    #     "random_seed": DEFAULT_RANDOM_SEED,
-    # },
-    # {
-    #     "name": "Exp1_CompFair_SingleClient",
-    #     "temporal_grouping": False,
-    #     "drop_strategy": "RANDOM",
-    #     "fairness_mode": "COMPARATIVE",
-    #     "clients_per_domain": 1,
-    #     "random_seed": DEFAULT_RANDOM_SEED,
-    # },
     {
-        "name": "Exp2_TotalFair_SingleClient",
+        "name": "Default_NoFair_SingleClient",
+        "temporal_grouping": False,  # False = Interleaved (stride), True = Sequential (chunks)
+        "drop_strategy": "RANDOM",   # 'TAIL' = take first N, 'RANDOM' = random sample
+        "fairness_mode": False,      # False, 'TOTAL', 'COMPARATIVE'
+        "clients_per_domain": 1,     # Number of client subsets per domain
+        "random_seed": DEFAULT_RANDOM_SEED,
+    },
+    {
+        "name": "Exp1_CompFair_SingleClient",
         "temporal_grouping": False,
         "drop_strategy": "RANDOM",
-        "fairness_mode": "TOTAL",
+        "fairness_mode": "COMPARATIVE",
         "clients_per_domain": 1,
         "random_seed": DEFAULT_RANDOM_SEED,
     },
     # {
-    #     "name": "Exp3_CompFair_DualClient",
+    #     "name": "Exp2_TotalFair_SingleClient",
     #     "temporal_grouping": False,
     #     "drop_strategy": "RANDOM",
-    #     "fairness_mode": "COMPARATIVE",
-    #     "clients_per_domain": 2,
+    #     "fairness_mode": "TOTAL",
+    #     "clients_per_domain": 1,
     #     "random_seed": DEFAULT_RANDOM_SEED,
     # },
+    {
+        "name": "Exp3_CompFair_DualClient",
+        "temporal_grouping": False,
+        "drop_strategy": "RANDOM",
+        "fairness_mode": "COMPARATIVE",
+        "clients_per_domain": 2,
+        "random_seed": DEFAULT_RANDOM_SEED,
+    },
+    {
+        "name": "Exp4_TotalFair_DualClient",
+        "temporal_grouping": False,
+        "drop_strategy": "RANDOM",
+        "fairness_mode": "TOTAL",
+        "clients_per_domain": 2,
+        "random_seed": DEFAULT_RANDOM_SEED,
+    },
 ]
 
 # Global dictionary to track excluded scenes per configuration per domain

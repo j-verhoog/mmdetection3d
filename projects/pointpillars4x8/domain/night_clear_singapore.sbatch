@@ -1,16 +1,16 @@
 #!/bin/bash
-#SBATCH --partition=general # request partition
-#SBATCH --qos=short # Quality of service, short default
-#SBATCH --job-name=ncS_distr   # takes 3/32 hours for 24 epochs == ??/16 hours for 12 epoch
+#SBATCH --partition=general    # request partition
+#SBATCH --qos=short            # Quality of service, short default
+#SBATCH --job-name=4x8ncS      # takes 3/32 hours for 24 epochs == ??/16 hours for 12 epoch
 #SBATCH --output=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/pointpillars4x8/ncS_distr_%j.out
 #SBATCH --error=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/pointpillars4x8/ncS_distr_%j.err
-#SBATCH --time=04:00:00 # 0:01:00 is one minute, max 4hrs for short QoS, 36hrs for medium
+#SBATCH --time=02:00:00        # 0:01:00 is one minute, max 4hrs for short QoS, 36hrs for medium
 #SBATCH --nodes=2              # Use two machines
 #SBATCH --ntasks=4             # Total tasks (2 per node)
 #SBATCH --ntasks-per-node=2    # Spread them evenly
 #SBATCH --gres=gpu:a40:2       # Request 2 GPUs per node (Total 4)
 #SBATCH --cpus-per-task=16
-#SBATCH --mem=128G
+#SBATCH --mem=32G
 
 # FOR NAMING STICK TO: A–Z  a–z  0–9  .  _  -
 export WANDB_PROJECT="pointpillars4x8"
@@ -28,7 +28,7 @@ export WORK=/tudelft.net/staff-umbrella/MscThesisjverhoog/projects/$WANDB_PROJEC
 mkdir -p "$WORK"
 
 # --- LOCAL DATA SETUP ---
-NETWORK_DATA_ROOT="/tudelft.net/staff-umbrella/MscThesisjverhoog/nuscenes_shadow_root"
+NETWORK_DATA_ROOT="/tudelft.net/staff-umbrella/MscThesisjverhoog/nuscenes_subsets_full/singapore_night_clear"
 TMP_BASE="/tmp/jtverhoog_${SLURM_JOB_ID}"
 
 # FIX: Use srun to create directories on ALL nodes, not just the master
