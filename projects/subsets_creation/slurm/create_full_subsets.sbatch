@@ -9,22 +9,6 @@
 #SBATCH --cpus-per-task=32
 #SBATCH --mem=64G
 
-# remove all old directories
-TARGET="/home/nfs/jtverhoog/mmdet/MscThesisjverhoog/nusc_datasets"
-EMPTY="/tmp/empty_rsync_dir/"
-
-mkdir -p "$EMPTY"
-
-if [ -d "$TARGET" ]; then
-    echo "Syncing empty dir to $TARGET..."
-    # -r: recursive
-    # --delete: remove files in target
-    # --no-p: do not try to sync permissions (fixes your error)
-    rsync -r --delete --no-p "$EMPTY" "$TARGET/"
-    rm -rf "$TARGET" "$EMPTY"
-    echo "Done."
-fi
-
 # define image and work dirs
 export APPTAINER_IMAGE=/tudelft.net/staff-umbrella/MscThesisjverhoog/image/mmdet3d_v1rc5.sif
 
