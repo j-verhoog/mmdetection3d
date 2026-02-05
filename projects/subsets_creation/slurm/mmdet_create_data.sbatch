@@ -1,9 +1,9 @@
 #!/bin/bash
 #SBATCH --partition=general # request partition
 #SBATCH --qos=medium # Quality of service, short default
-#SBATCH --job-name=create_data_all2
-#SBATCH --output=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/nuscenes_data_prep/remaining_recur_%j.out
-#SBATCH --error=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/nuscenes_data_prep/remaining_recur_%j.err
+#SBATCH --job-name=2create_data
+#SBATCH --output=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/nuscenes_data_prep/2create_%j.out
+#SBATCH --error=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/nuscenes_data_prep/2create_%j.err
 #SBATCH --time=18:00:00 # 0:01:00 is one minute, max 4hrs for short QoS, 36hrs for medium
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=16
@@ -15,12 +15,7 @@ APPTAINER_IMAGE="/tudelft.net/staff-umbrella/MscThesisjverhoog/image/mmdet3d_v1r
 
 # --- MANUAL OVERRIDE ---
 # If this list is NOT empty, the script will skip discovery and ONLY process these paths.
-# Example: MANUAL_OVERRIDE=("/path/to/subset1" "/path/to/subset2")
-# --- MANUAL OVERRIDE ---
 MANUAL_OVERRIDE=()
-
-# --- PHASE 1: DISCOVERY ---
-TARGET_PATHS=()
 
 # Paths to explicitly ignore (substring matching)
 MANUAL_EXCLUDE=(
@@ -31,21 +26,28 @@ MANUAL_EXCLUDE=(
     "Exp2_TotalFair_SingleClient/singapore_night_rain"
 )
 
+# --- PHASE 1: DISCOVERY ---
+TARGET_PATHS=()
+
 if [ ${#MANUAL_OVERRIDE[@]} -gt 0 ]; then
     echo "!!! MANUAL OVERRIDE DETECTED !!!"
     TARGET_PATHS=("${MANUAL_OVERRIDE[@]}")
 else
     echo "Searching for nuScenes root directories in: $BASE_DATASETS_FOLDER"
     
-    # Find directories containing v1.0-trainval metadata
-    # Added -L to follow symlinks if your structure uses them
-    while read -r META_DIR; do
+    # Use globbing to find v1.0-trainval at depths 2 and 3
+    # Pattern 1: BASE/*/Subset/v1.0-trainval
+    # Pattern 2: BASE/*/Subset/*/v1.0-trainval
+    for META_DIR in "$BASE_DATASETS_FOLDER"/*/*/v1.0-trainval "$BASE_DATASETS_FOLDER"/*/*/*/v1.0-trainval; do
+        
+        # Check if the path actually exists (prevents literal string errors if no match)
+        [ -e "$META_DIR" ] || continue
+        
         NU_ROOT=$(dirname "$META_DIR")
         
         # --- EXCLUSION CHECK ---
         SKIP_DIR=false
         for EXCLUDE_PATH in "${MANUAL_EXCLUDE[@]}"; do
-            # Check if the exclude string is contained within the found path
             if [[ "$NU_ROOT" == *"$EXCLUDE_PATH"* ]]; then
                 echo "Skipping excluded directory: $NU_ROOT"
                 SKIP_DIR=true
@@ -53,19 +55,17 @@ else
             fi
         done
         
-        if [ "$SKIP_DIR" = true ]; then
-            continue
-        fi
+        [ "$SKIP_DIR" = true ] && continue
         # -----------------------
 
-        # Validation: check for sample.json and samples/ folder
+        # Validation: Ensure it's a real nuScenes root
         if [ -f "$META_DIR/sample.json" ] && [ -d "$NU_ROOT/samples" ]; then
             TARGET_PATHS+=("$NU_ROOT")
             echo "Found valid nuScenes root: $NU_ROOT"
         else
             echo "Skipping invalid candidate: $NU_ROOT (Missing sample.json or samples/)"
         fi
-    done < <(find -L "$BASE_DATASETS_FOLDER" -type d -name "v1.0-trainval")
+    done
 fi
 
 echo "--------------------------------------------------------"
