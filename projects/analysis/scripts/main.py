@@ -36,7 +36,7 @@ def main():
     parser.add_argument('--config', type=str, required=True, help="Model config file")
     parser.add_argument('--pcd_dir', type=str, required=True, help="Directory with .bin files")
     parser.add_argument('--pt', nargs='+', required=True, help="Two model checkpoints")
-    parser.add_argument('--labels', nargs='+', required=True, help="Two model labels")
+    parser.add_argument('--labels', nargs='+', default=['ModelA', 'ModelB'], help="Two model labels")
     parser.add_argument('--max_samples', type=int, default=100, help="Max samples to process")
     parser.add_argument('--output_dir', type=str, default=".", help="Output directory")
     parser.add_argument('--run_name', type=str, default=None, help="Custom name for this comparison run")
@@ -110,7 +110,7 @@ def main():
         all_layers.update(m_scores.keys())
     from comparison_utils import sort_layers_by_network_order
     layer_order = sort_layers_by_network_order(list(all_layers))
-    
+
     consolidated_path = os.path.join(args.output_dir, "consolidated_comparison.png")
     visualizer.plot_consolidated(
         viz_results, 
