@@ -11,6 +11,8 @@
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=16G
 
+# CHANGE PATHSSS TO INCLUDE SING NIGHT RAIN!!!
+
 # OTHER CONFIG FILE AND CHECKPOINT
 
 set -euo pipefail
@@ -59,6 +61,7 @@ SUBSETS[boston_day_clear]="/tudelft.net/staff-umbrella/MscThesisjverhoog/nuscene
 SUBSETS[boston_day_rain]="/tudelft.net/staff-umbrella/MscThesisjverhoog/nuscenes_subsets_full/boston_day_rain"
 SUBSETS[singapore_night_clear]="/tudelft.net/staff-umbrella/MscThesisjverhoog/nuscenes_subsets_full/singapore_night_clear"
 SUBSETS[singapore_day_clear]="/tudelft.net/staff-umbrella/MscThesisjverhoog/nuscenes_subsets_full/singapore_day_clear"
+SUBSETS[singapore_night_rain]="/tudelft.net/staff-umbrella/MscThesisjverhoog/nuscenes_subsets_full/singapore_night_rain"
 
 # ----------------------------
 # KEEP-ALL BINDS (from your train script)
