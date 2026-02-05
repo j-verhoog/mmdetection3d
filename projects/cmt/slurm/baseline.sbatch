@@ -1,9 +1,9 @@
 #!/bin/bash
 #SBATCH --partition=general # request partition
 #SBATCH --qos=short # Quality of service, short default
-#SBATCH --job-name=cmt_distr
-#SBATCH --output=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/cmt/distr_%j.out
-#SBATCH --error=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/cmt/distr_%j.err
+#SBATCH --job-name=cmt_test
+#SBATCH --output=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/cmt/baseline.out
+#SBATCH --error=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/cmt/baseline.err
 #SBATCH --time=01:00:00 # 0:01:00 is one minute, max 4hrs for short QoS, 36hrs for medium
 #SBATCH --nodes=4              # Use four machines
 #SBATCH --ntasks=8             # Total tasks (2 per node)
@@ -82,8 +82,6 @@ srun --ntasks=8 --ntasks-per-node=2 --gpus-per-task=1 bash -lc "
   \"$APPTAINER_IMAGE\" \
   bash -lc '
     cd /workspace/mmdet/mmdetection3d && \
-    # IMPORTANT: Ensure CMT custom modules are in the PYTHONPATH
-    export PYTHONPATH=$PYTHONPATH:$(pwd) && \
     python -u tools_CMT/train.py \
       projects/cmt/configs/fusion/cmt_voxel0075_vov_1600x640_cbgs.py \
       --launcher slurm \
