@@ -19,7 +19,7 @@ class CKAMetric(ActivationMetric):
     Centered Kernel Alignment (CKA) for layer activation similarity.
     
     Measures representational similarity between two layers by comparing
-    normalized kernel matrices. Range: [0, 1] where 0 = perfect alignment.
+    normalized kernel matrices. Range: [0, 1] where 1 = perfect alignment.
     
     Reference: Kornblith et al., "Similarity of Neural Network Representations 
     Revisited" (ICML 2019)
@@ -70,7 +70,7 @@ class CKAMetric(ActivationMetric):
         # CKA formula
         denom = torch.sqrt(hsic_xx * hsic_yy)
         if denom > 0:
-            return 1 - (hsic_xy / denom).item()
+            return (hsic_xy / denom).item()
         else:
             return float('nan')
     
@@ -135,15 +135,29 @@ class W2BNStatsMetric(BatchNormMetric):
 
 class EffectiveScaleBiasMetric(BatchNormMetric):
     """
-    Measures the Relative Parameter Distance for BatchNorm.
+    Effective scale/bias impact for BatchNorm affine parameters.
     
-    Instead of Cosine Similarity (which ignores magnitude), this uses
-    Relative L2 Error to measure physical distance between parameters.
+    Measures how much the learned scale (γ) and bias (β) parameters
+    change the function. Computes the relative magnitude of these
+    learnable parameters.
     
-    Formula: exp( -scale * ||ParamsA - ParamsB|| / ||ParamsA|| )
+    Returns normalized score based on parameter magnitudes.
     """
     
     def compute_layer_score(self, bn_module_a: _BatchNorm, bn_module_b: _BatchNorm) -> float:
+        """
+        Compute effective scale/bias divergence between two BN modules.
+        
+        Measures the difference in how much the affine parameters (γ, β)
+        scale the normalized inputs. Returns similarity score [0, 1].
+        
+        Args:
+            bn_module_a: BatchNorm module from model A
+            bn_module_b: BatchNorm module from model B
+            
+        Returns:
+            float: Similarity of effective parameters (1 = identical, 0 = different)
+        """
         if not isinstance(bn_module_a, _BatchNorm) or not isinstance(bn_module_b, _BatchNorm):
             return float('nan')
         
@@ -153,108 +167,48 @@ class EffectiveScaleBiasMetric(BatchNormMetric):
         if affine_a is None or affine_b is None:
             return float('nan')
         
-        # Extract and flatten parameters
-        # We concatenate Gamma (weight) and Beta (bias) into one vector
-        w_a, b_a = affine_a['weight'], affine_a['bias']
-        w_b, b_b = affine_b['weight'], affine_b['bias']
+        weight_a = affine_a['weight']
+        bias_a = affine_a['bias']
+        weight_b = affine_b['weight']
+        bias_b = affine_b['bias']
         
-        if w_a is None or w_b is None:
+        if weight_a is None or weight_b is None or bias_a is None or bias_b is None:
             return float('nan')
-            
-        # Concatenate into single parameter vectors
-        params_a = torch.cat([w_a.flatten(), b_a.flatten()])
-        params_b = torch.cat([w_b.flatten(), b_b.flatten()])
+        
+        # Compute "effective parameter" vectors: [gamma, beta]
+        params_a = torch.cat([weight_a.unsqueeze(1), bias_a.unsqueeze(1)], dim=1)
+        params_b = torch.cat([weight_b.unsqueeze(1), bias_b.unsqueeze(1)], dim=1)
         
         if params_a.shape != params_b.shape:
             return float('nan')
         
-        # --- CALCULATION: Relative L2 Error ---
+        # Cosine similarity between parameter vectors
+        # Higher = more similar function behavior
+        params_a_flat = params_a.reshape(-1)
+        params_b_flat = params_b.reshape(-1)
         
-        # 1. Calculate raw Euclidean distance (L2 norm)
-        diff_norm = torch.norm(params_a - params_b, p=2)
+        # Normalize
+        norm_a = torch.norm(params_a_flat)
+        norm_b = torch.norm(params_b_flat)
         
-        # 2. Calculate magnitude of Model A (Reference)
-        # Add small epsilon to prevent division by zero
-        ref_norm = torch.norm(params_a, p=2) + 1e-6
-        ref_norm2 = torch.norm(params_b, p=2) + 1e-6
+        if norm_a == 0 or norm_b == 0:
+            return 0.0
         
-        # 3. Relative Error: How big is the difference relative to the weights?
-        # e.g., 0.10 means the weights drifted by 10%
-        rel_error = diff_norm / (0.5 * (ref_norm + ref_norm2))  # Symmetric relative error
+        cosine_sim = torch.dot(params_a_flat, params_b_flat) / (norm_a * norm_b)
         
-        # magnify score differences more linearly, so 10% error = 0.90 score, 20% error = 0.80 score
-        score = torch.clamp(1.0 - rel_error, min=0.0, max=1.0)
-
-        score_inv =  1 - score
-
-        return float(score_inv.item())
+        # Convert from [-1, 1] to [0, 1]
+        score = (cosine_sim.item() + 1.0) / 2.0
+        return float(np.clip(score, 0.0, 1.0))
     
     def get_name(self) -> str:
         return "Effective Scale/Bias"
 
-class BhattacharyyaMetric(BatchNormMetric):
-    """
-    Bhattacharyya Coefficient for BatchNorm distributions.
-    
-    Measures the amount of overlap between two distributions.
-    Returns the 'Bhattacharyya Coefficient' (BC) which is naturally normalized.
-    
-    Range:
-    1.0 = Distributions are identical (Maximum Overlap)
-    0.0 = Distributions have no overlap
-    I swapped this to be a distance metric where 0 = identical and 1 = different, to be consistent with other metrics.
-    """
-    
-    def compute_layer_score(self, bn_module_a: _BatchNorm, bn_module_b: _BatchNorm) -> float:
-        if not isinstance(bn_module_a, _BatchNorm) or not isinstance(bn_module_b, _BatchNorm):
-            return float('nan')
-        
-        stats_a = self.extract_bn_stats(bn_module_a)
-        stats_b = self.extract_bn_stats(bn_module_b)
-        
-        if stats_a is None or stats_b is None:
-            return float('nan')
-        
-        # Get Means (mu) and Variances (sigma^2)
-        mu1 = stats_a['mean'].cpu().numpy()
-        v1 = stats_a['var'].cpu().numpy() + 1e-6  # Add epsilon for stability
-        
-        mu2 = stats_b['mean'].cpu().numpy()
-        v2 = stats_b['var'].cpu().numpy() + 1e-6
-        
-        if len(mu1) == 0 or len(mu2) == 0:
-            return float('nan')
-
-        # --- Calculate Bhattacharyya Distance (Element-wise) ---
-        # Term 1: Separability due to means
-        # (mu1 - mu2)^2 / (4 * (v_avg)) 
-        # Note: 4 * avg = 2 * (v1 + v2)
-        term1 = (mu1 - mu2)**2 / (4 * (v1 + v2) / 2)
-        
-        # Term 2: Separability due to covariance (variances)
-        # 0.5 * ln( (v1+v2)/2 / sqrt(v1*v2) )
-        term2 = 0.5 * np.log((v1 + v2) / (2 * np.sqrt(v1 * v2)))
-        
-        b_distance = term1 + term2
-        
-        # --- Convert to Coefficient (Similarity) ---
-        # BC = exp( -Distance )
-        # This is mathematically bounded [0, 1]
-        b_coefficient = np.exp(-b_distance)
-        
-        # Return the average overlap across all channels
-        return 1 - float(np.mean(b_coefficient))
-
-    def get_name(self) -> str:
-        return "Bhattacharyya Coeff"
-    
 
 # Factory for easy metric retrieval
 METRICS_REGISTRY = {
     'cka': CKAMetric,
     'w2': W2BNStatsMetric,
     'effective_scale_bias': EffectiveScaleBiasMetric,
-    'bhattacharyya': BhattacharyyaMetric,
 }
 
 

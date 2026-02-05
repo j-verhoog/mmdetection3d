@@ -17,10 +17,9 @@ class ComparisonVisualizer:
     
     # Color schemes for different metrics
     COLORMAPS = {
-        'CKA': 'RdYlGn_r',
-        'W2 BN Stats': 'RdYlGn_r',  # Red (high) to Green (low)
-        'Effective Scale/Bias': 'RdYlGn_r',
-        'Bhattacharyya Coeff': 'RdYlGn_r',
+        'CKA': 'viridis',
+        'W2 BN Stats': 'viridis',  # Red (high) to Green (low)
+        'Effective Scale/Bias': 'viridis',
     }
     
     # V-min and max for consistent scaling
@@ -28,7 +27,6 @@ class ComparisonVisualizer:
         'CKA': (0.0, 1.0),
         'W2 BN Stats': (0.0, 1.0),
         'Effective Scale/Bias': (0.0, 1.0),
-        'Bhattacharyya Coeff': (0.0, 1.0),
     }
     
     @staticmethod
@@ -190,7 +188,7 @@ class ComparisonVisualizer:
             total = matrix.size
             print(f"  Matrix Stats -> NaNs: {nans}, Zeros: {zeros}, Total: {total}")
             # -------------------
-
+            
             output_path = os.path.join(
                 output_dir,
                 f"{metric_name.lower().replace(' ', '_').replace('/', '_')}_heatmap.png"
@@ -206,95 +204,7 @@ class ComparisonVisualizer:
             print(f"  Saved: {output_file}")
         
         return output_files
-    
-    @staticmethod
-    def plot_consolidated(
-        results: Dict[str, Dict[str, Dict[str, float]]],
-        comparisons: List[Tuple[str, str, str]],
-        layer_order: List[str],
-        output_path: str,
-        run_name: str = None
-    ):
-        """
-        Plots 4 metrics vertically with NO gaps and simplified labels.
-        """
-        metric_order = [
-            'Effective Scale/Bias',
-            'Bhattacharyya Coeff',
-            'W2 BN Stats',
-            'CKA'
-        ]
-        
-        # 1. Setup Figure
-        # hspace=0 removes vertical empty space between plots
-        fig, axes = plt.subplots(
-            nrows=4, 
-            ncols=1, 
-            figsize=(24, 10), 
-            sharex=True,      
-            gridspec_kw={'hspace': 0} 
-        )
-        
-        # Shared colorbar axis
-        cbar_ax = fig.add_axes([.91, .3, .015, .4]) 
 
-        for i, metric_name in enumerate(metric_order):
-            ax = axes[i]
-            
-            matrix = ComparisonVisualizer._build_matrix(
-                results, metric_name, comparisons, layer_order
-            )
-            
-            cmap = ComparisonVisualizer.COLORMAPS.get(metric_name, 'RdYlGn')
-            base_cmap = plt.get_cmap(cmap).copy()
-            base_cmap.set_bad(color='lightgrey')
-            mask = np.isnan(matrix)
-            
-            # 2. Heatmap
-            sns.heatmap(
-                matrix,
-                xticklabels=layer_order,
-                yticklabels=[], # REMOVE "Run Label" from side
-                annot=False,
-                cmap=base_cmap,
-                vmin=0.0, vmax=1.0,
-                ax=ax,
-                mask=mask,
-                cbar=(i == 0),
-                cbar_ax=cbar_ax if i == 0 else None
-            )
-            
-            # 3. Styling
-            ax.set_facecolor('lightgrey')
-            
-            # Metric Name on LEFT (Y-Axis Label)
-            # We rotate it 0 degrees (horizontal) or 90 (vertical) depending on preference.
-            # Vertical (standard Y-label) usually fits better if names are long.
-            ax.set_ylabel(metric_name, fontsize=11, fontweight='bold', labelpad=10)
-            
-            # Clear individual subplot titles
-            ax.set_title("")
-            
-            # 4. Tick Cleanup
-            ax.tick_params(left=False) # Remove tick marks on Y-axis
-            
-            # Only show X-axis labels on the very bottom plot
-            if i < 3:
-                ax.set_xlabel('')
-                ax.tick_params(axis='x', which='both', bottom=False, top=False, labelbottom=False)
-            else:
-                ax.set_xticklabels(layer_order, rotation=45, ha='right', fontsize=9)
-
-        # 5. Global Title (Run Name)
-        main_title = run_name if run_name else "Model Comparison"
-        fig.suptitle(main_title, fontsize=16, y=0.92, fontweight='bold')
-        
-        # Colorbar Label
-        cbar_ax.set_ylabel('Similarity Score (1.0 = Identical)', fontsize=10)
-
-        plt.savefig(output_path, dpi=150, bbox_inches='tight')
-        plt.close()
-        return output_path
 
 def create_comparison_report(
     results: Dict[str, Dict[str, Dict[str, float]]],

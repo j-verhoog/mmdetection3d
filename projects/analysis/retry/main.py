@@ -23,7 +23,7 @@ INTERNAL_PATH = '/opt/src/mmdetection3d'
 if INTERNAL_PATH not in sys.path:
     sys.path.insert(0, INTERNAL_PATH)
 
-from metrics import CKAMetric, W2BNStatsMetric, EffectiveScaleBiasMetric, BhattacharyyaMetric
+from metrics import CKAMetric, W2BNStatsMetric, EffectiveScaleBiasMetric
 from comparison_engine import ModelComparator
 from comparison_utils import default_hook_filter
 from visualization import ComparisonVisualizer, create_comparison_report
@@ -39,7 +39,6 @@ def main():
     parser.add_argument('--labels', nargs='+', required=True, help="Two model labels")
     parser.add_argument('--max_samples', type=int, default=100, help="Max samples to process")
     parser.add_argument('--output_dir', type=str, default=".", help="Output directory")
-    parser.add_argument('--run_name', type=str, default=None, help="Custom name for this comparison run")
     
     args = parser.parse_args()
     
@@ -74,8 +73,7 @@ def main():
     metrics = [
         CKAMetric(),
         W2BNStatsMetric(),
-        EffectiveScaleBiasMetric(),
-        BhattacharyyaMetric()
+        EffectiveScaleBiasMetric()
     ]
     
     print("\n[Comparisons]")
@@ -86,14 +84,11 @@ def main():
     )
     
     # Prepare visualization data
-    if args.run_name:
-        comp_title = args.run_name
-    else:
-        comp_title = f"{args.labels[0]}_vs_{args.labels[1]}"
+    comp_title = f"{args.labels[0]}_vs_{args.labels[1]}"
     comparisons = [(comp_title, args.labels[0], args.labels[1])]
     
     viz_results = {comp_title: results}
-    metric_names = ['CKA', 'W2 BN Stats', 'Effective Scale/Bias', 'Bhattacharyya Coeff']
+    metric_names = ['CKA', 'W2 BN Stats', 'Effective Scale/Bias']
     
     # Generate visualizations
     print("\n[Visualization]")
@@ -103,24 +98,6 @@ def main():
         output_dir=args.output_dir
     )
     
-    # 1. Generate the Consolidated Plot (The Main Goal)
-    # Collect all layers for ordering
-    all_layers = set()
-    for m_scores in results.values():
-        all_layers.update(m_scores.keys())
-    from comparison_utils import sort_layers_by_network_order
-    layer_order = sort_layers_by_network_order(list(all_layers))
-    
-    consolidated_path = os.path.join(args.output_dir, "consolidated_comparison.png")
-    visualizer.plot_consolidated(
-        viz_results, 
-        comparisons, 
-        layer_order, 
-        consolidated_path,
-        run_name=args.run_name if args.run_name else f"{args.labels[0]} vs {args.labels[1]}"
-    )
-    print(f"  Saved Consolidated Plot: {consolidated_path}")
-
     # Generate report
     report_path = create_comparison_report(
         viz_results, comparisons, metric_names,
