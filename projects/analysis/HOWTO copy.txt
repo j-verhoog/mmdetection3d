@@ -1,0 +1,24 @@
+singularity shell --nv --cleanenv \
+  --bind /home/jolle/mmdet:/workspace/mmdet \
+  --bind /home/jolle/Desktop:/home/jolle/Desktop \
+  /home/jolle/mmdet/image/mmdet3d_v1rc5.sif
+  
+export PATH=/opt/conda/envs/mmdet3d_v100rc5/bin:/opt/conda/bin:$PATH
+export PYTHONPATH=/workspace/mmdet/mmdetection3d:$PYTHONPATH
+cd /workspace/mmdet/visualisations
+
+/usr/local/bin/verify_mmdet3d.sh
+
+ANALYSIS POINTPILLARS:
+cd /home/jolle/mmdet/mmdetection3d/projects/analysis/scripts/
+python main.py --config /home/jolle/mmdet/mmdetection3d/configs/pointpillars/hv_pointpillars_fpn_sbn-all_4x8_2x_nus-3d.py \
+--pcd_dir /home/jolle/Downloads/v1.0-mini/sweeps/LIDAR_TOP/ --pt /home/jolle/Desktop/dcB_12E.pth /home/jolle/Desktop/dcB_12E.pth \
+--max_samples 10 --output_dir /home/jolle/mmdet/mmdetection3d/projects/analysis/scripts/outputs/same --run_name Same
+
+
+ANALYSIS FCOS3D:
+cd /home/jolle/mmdet/mmdetection3d/projects/analysis/scripts/
+python main.py --config /home/jolle/mmdet/mmdetection3d/configs/fcos3d/fcos3d_r101_caffe_fpn_gn-head_dcn_2x8_1x_nus-mono3d.py 
+--data_dir /home/jolle/Downloads/v1.0-mini/sweeps/LIDAR_TOP/ --pt /home/jolle/Desktop/dcB-fcos.pth /home/jolle/Desktop/dcB-fcos.pth 
+--modality lidar --max_samples 10 --output_dir /home/jolle/mmdet/mmdetection3d/projects/analysis/scripts_fcos/outputs/debug 
+--run_name debug
