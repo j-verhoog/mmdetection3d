@@ -84,10 +84,11 @@ def load_model_and_pipeline(config_path: str, checkpoint_path: str):
     model = init_model(config_path, checkpoint_path, device='cuda:0')
     model.eval()
     
+    # model eval should be enough. No need to disable BN updates since we're not training.
     # Disable BatchNorm running stats updates - ensure model is never modified
-    for module in model.modules():
-        if isinstance(module, _BatchNorm):
-            module.track_running_stats = False
+    # for module in model.modules():
+    #     if isinstance(module, _BatchNorm):
+    #         module.track_running_stats = False
     
     cfg = Config.fromfile(config_path)
     test_pipeline = Compose(cfg.data.test.pipeline)
@@ -171,6 +172,17 @@ def process_single_sample(
 
     # 2. Inference
     with torch.no_grad():
+        # # --- SANITY CHECK START ---
+        # if 'points' in final_data:
+        #     pts = final_data['points']
+        #     # Recursively unwrap lists/tuples until we find the Tensor
+        #     while isinstance(pts, (list, tuple)):
+        #         pts = pts[0] if len(pts) > 0 else torch.tensor(0)
+            
+        #     # Now safely print the sum
+        #     if hasattr(pts, 'sum'):
+        #         print(f"DEBUG: Input Sum for {os.path.basename(pcd_path)}: {pts.sum().item():.4f}")
+        # # --- SANITY CHECK END ---
         model(return_loss=False, rescale=True, **final_data)
     
     # 3. Collect Results from hooks

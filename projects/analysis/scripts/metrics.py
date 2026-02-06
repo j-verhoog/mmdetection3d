@@ -16,29 +16,17 @@ from metrics_base import ActivationMetric, BatchNormMetric, MetricCalculator
 
 class CKAMetric(ActivationMetric):
     """
-    Centered Kernel Alignment (CKA) for layer activation similarity.
-    
-    Measures representational similarity between two layers by comparing
-    normalized kernel matrices. Range: [0, 1] where 0 = perfect alignment.
-    
-    Reference: Kornblith et al., "Similarity of Neural Network Representations 
-    Revisited" (ICML 2019)
+    Centered Kernel Alignment (CKA) - Memory Efficient Version.
+    Uses feature-space computation (d x d) instead of sample-space (n x n)
+    to avoid OOM on large feature maps.
     """
     
     def compute_layer_score(self, activation_a: torch.Tensor, activation_b: torch.Tensor) -> float:
-        """
-        Compute CKA between two layer activations.
-        
-        Args:
-            activation_a: Activation tensor from model A
-            activation_b: Activation tensor from model B
-            
-        Returns:
-            float: CKA score in range [0, 1]
-        """
         if activation_a is None or activation_b is None:
             return float('nan')
         
+        # 1. Normalize and Flatten -> (Num_Pixels, Num_Features)
+        # Shape becomes [40000, 256] for a 200x200 map
         x = self._normalize_activation(activation_a)
         y = self._normalize_activation(activation_b)
         
@@ -48,57 +36,71 @@ class CKAMetric(ActivationMetric):
         x, y = self._match_sample_count(x, y)
         if x is None or y is None:
             return float('nan')
-        
-        # Ensure same device for computation
+            
         if x.device != y.device:
             y = y.to(x.device)
+            
+        # 2. Use Double Precision for stability
+        x = x.double() 
+        y = y.double()
         
-        # Center the features
+        # 3. Center the features (Mean centering columns)
         x = x - x.mean(dim=0, keepdim=True)
         y = y - y.mean(dim=0, keepdim=True)
+
+        # 4. MEMORY EFFICIENT COMPUTATION
+        # Instead of Gram Matrix (N x N), we compute Covariance (D x D)
+        # Identity: ||X X^T||_F^2 == ||X^T X||_F^2
         
-        # Compute Gram matrices
-        gram_x = torch.matmul(x.t(), x)
-        gram_y = torch.matmul(y.t(), y)
-        gram_xy = torch.matmul(y.t(), x)
+        # Transpose first: (256, 40000) @ (40000, 256) -> (256, 256)
+        # This matrix is tiny (256x256) regardless of image size!
+        xtx = torch.matmul(x.t(), x)
+        yty = torch.matmul(y.t(), y)
+        xty = torch.matmul(x.t(), y)
         
-        # HSIC computation
-        hsic_xy = torch.norm(gram_xy, p='fro') ** 2
-        hsic_xx = torch.norm(gram_x, p='fro') ** 2
-        hsic_yy = torch.norm(gram_y, p='fro') ** 2
+        # 5. HSIC Calculation using Frobenius Norms
+        # HSIC(X,Y) = ||Y^T X||_F^2
+        hsic_xy = torch.norm(xty, p='fro') ** 2
+        hsic_xx = torch.norm(xtx, p='fro') ** 2
+        hsic_yy = torch.norm(yty, p='fro') ** 2
         
-        # CKA formula
+        # 6. Final Score
         denom = torch.sqrt(hsic_xx * hsic_yy)
+        
         if denom > 0:
-            return 1 - (hsic_xy / denom).item()
+            cka_score = hsic_xy / denom
+            cka_score = torch.clamp(cka_score, 0.0, 1.0)
+            
+            # Debug Print (Only if significant mismatch)
+            val = cka_score.item()
+            
+            # debug if same model is used
+            # if 1.0 - val > 1e-3: 
+            #      print(f"CKA MISMATCH: {1.0 - val:.4f} distance at {activation_a.shape}")
+
+            print(f"CKA Score: {1.0 - val:.4f} (Distance) | {val:.4f} (Similarity)")
+            # Return Distance (0 = Identical)
+            return float(1.0 - val)
         else:
             return float('nan')
     
     def get_name(self) -> str:
         return "CKA"
-
+    
 
 class W2BNStatsMetric(BatchNormMetric):
     """
-    Wasserstein-2 (W2) distance for BatchNorm running statistics.
-    
-    Measures how much the internal statistics (running mean/variance) differ
-    between models. Lower values = more similar distributions.
-    
-    Normalized to [0, 1] where 0 = identical, 1 = completely different.
+    Wasserstein-2 inspired metric for BatchNorm running statistics.
+
+    Computes per-channel normalized mean and sigma differences:
+        d_mu    = |mu_a - mu_b| / sqrt((var_a + var_b)/2)
+        d_sigma = |sigma_a - sigma_b| / ((sigma_a + sigma_b)/2)
+
+    Final score = RMS over channels of sqrt(d_mu^2 + d_sigma^2)
     """
     
     def compute_layer_score(self, bn_module_a: _BatchNorm, bn_module_b: _BatchNorm) -> float:
-        """
-        Compute W2 distance between BN statistics of two modules.
-        
-        Args:
-            bn_module_a: BatchNorm module from model A
-            bn_module_b: BatchNorm module from model B
-            
-        Returns:
-            float: Normalized W2 distance (lower = more similar)
-        """
+        # 1. Validation
         if not isinstance(bn_module_a, _BatchNorm) or not isinstance(bn_module_b, _BatchNorm):
             return float('nan')
         
@@ -108,39 +110,65 @@ class W2BNStatsMetric(BatchNormMetric):
         if stats_a is None or stats_b is None:
             return float('nan')
         
-        mean_a = stats_a['mean'].cpu().numpy()
-        var_a = stats_a['var'].cpu().numpy()
-        mean_b = stats_b['mean'].cpu().numpy()
-        var_b = stats_b['var'].cpu().numpy()
-        
-        if len(mean_a) == 0 or len(mean_b) == 0:
+        # 2. Robust Extraction
+        try:
+            ma, va = stats_a['mean'].cpu().numpy(), stats_a['var'].cpu().numpy()
+            mb, vb = stats_b['mean'].cpu().numpy(), stats_b['var'].cpu().numpy()
+        except Exception:
             return float('nan')
-        
-        # W2 distance between 1D Gaussians: sqrt((mu1-mu2)^2 + (sigma1-sigma2)^2)
-        # This is the standard form for comparing distributions
-        mean_diff_sq = np.sum((mean_a - mean_b) ** 2)
-        var_diff_sq = np.sum((np.sqrt(var_a + 1e-5) - np.sqrt(var_b + 1e-5)) ** 2)
-        
-        w2_distance = np.sqrt(mean_diff_sq + var_diff_sq)
-        
-        # Normalize: assume max reasonable distance is ~10
-        # (can be scaled based on typical values in your models)
-        normalized = np.clip(w2_distance / 10.0, 0.0, 1.0)
-        
-        return float(normalized)
-    
+
+        # Check for model corruption
+        if not (np.isfinite(ma).all() and np.isfinite(va).all() and
+                np.isfinite(mb).all() and np.isfinite(vb).all()):
+            return float('nan')
+
+        eps = 1e-7
+
+        # 3. Robust sigma computation
+        sigma_a = np.sqrt(np.maximum(va, 0) + eps)
+        sigma_b = np.sqrt(np.maximum(vb, 0) + eps)
+
+        # 4. Channel-wise normalized differences
+        pooled_std = np.sqrt(0.5 * (va + vb) + eps)
+        d_mu = np.abs(ma - mb) / pooled_std
+
+        mean_sigma = 0.5 * (sigma_a + sigma_b) + eps
+        d_sigma = np.abs(sigma_a - sigma_b) / mean_sigma
+
+        # 5. Combine per channel
+        per_channel_score = np.sqrt(d_mu**2 + d_sigma**2)
+
+        # 6. Aggregate across channels
+        layer_score = float(np.sqrt(np.mean(per_channel_score**2)))
+
+        # 7. Informative diagnostics
+        mean_mu = float(np.mean(d_mu))
+        mean_sigma_diff = float(np.mean(d_sigma))
+        median_score = float(np.median(per_channel_score))
+        p90_score = float(np.percentile(per_channel_score, 90))
+        max_score = float(np.max(per_channel_score))
+
+        print(
+            f"W2-rel stats | "
+            f"mean(d_mu)={mean_mu:.4f}, "
+            f"mean(d_sigma)={mean_sigma_diff:.4f}, "
+            f"median={median_score:.4f}, "
+            f"p90={p90_score:.4f}, "
+            f"max={max_score:.4f}, "
+            f"layer_score(RMS)={layer_score:.4f}"
+        )
+
+        # 8. Clip for visualization consistency
+        return float(np.clip(layer_score, 0.0, 1.0))
+
     def get_name(self) -> str:
         return "W2 BN Stats"
 
 
 class EffectiveScaleBiasMetric(BatchNormMetric):
     """
-    Measures the Relative Parameter Distance for BatchNorm.
-    
-    Instead of Cosine Similarity (which ignores magnitude), this uses
-    Relative L2 Error to measure physical distance between parameters.
-    
-    Formula: exp( -scale * ||ParamsA - ParamsB|| / ||ParamsA|| )
+    Relative drift of BN affine parameters (gamma=scale, beta=shift),
+    reported as symmetric relative L2 differences for each.
     """
     
     def compute_layer_score(self, bn_module_a: _BatchNorm, bn_module_b: _BatchNorm) -> float:
@@ -153,44 +181,39 @@ class EffectiveScaleBiasMetric(BatchNormMetric):
         if affine_a is None or affine_b is None:
             return float('nan')
         
-        # Extract and flatten parameters
-        # We concatenate Gamma (weight) and Beta (bias) into one vector
         w_a, b_a = affine_a['weight'], affine_a['bias']
         w_b, b_b = affine_b['weight'], affine_b['bias']
         
-        if w_a is None or w_b is None:
+        if w_a is None or w_b is None or b_a is None or b_b is None:
             return float('nan')
-            
-        # Concatenate into single parameter vectors
-        params_a = torch.cat([w_a.flatten(), b_a.flatten()])
-        params_b = torch.cat([w_b.flatten(), b_b.flatten()])
-        
-        if params_a.shape != params_b.shape:
+
+        if w_a.shape != w_b.shape or b_a.shape != b_b.shape:
             return float('nan')
-        
-        # --- CALCULATION: Relative L2 Error ---
-        
-        # 1. Calculate raw Euclidean distance (L2 norm)
-        diff_norm = torch.norm(params_a - params_b, p=2)
-        
-        # 2. Calculate magnitude of Model A (Reference)
-        # Add small epsilon to prevent division by zero
-        ref_norm = torch.norm(params_a, p=2) + 1e-6
-        ref_norm2 = torch.norm(params_b, p=2) + 1e-6
-        
-        # 3. Relative Error: How big is the difference relative to the weights?
-        # e.g., 0.10 means the weights drifted by 10%
-        rel_error = diff_norm / (0.5 * (ref_norm + ref_norm2))  # Symmetric relative error
-        
-        # magnify score differences more linearly, so 10% error = 0.90 score, 20% error = 0.80 score
-        score = torch.clamp(1.0 - rel_error, min=0.0, max=1.0)
 
-        score_inv =  1 - score
+        eps = 1e-6
 
-        return float(score_inv.item())
+        d_gamma_num = torch.norm(w_a.flatten() - w_b.flatten(), p=2)
+        d_gamma_den = 0.5 * (torch.norm(w_a.flatten(), p=2) + torch.norm(w_b.flatten(), p=2)) + eps
+        d_gamma = d_gamma_num / d_gamma_den
+
+        d_beta_num = torch.norm(b_a.flatten() - b_b.flatten(), p=2)
+        d_beta_den = 0.5 * (torch.norm(b_a.flatten(), p=2) + torch.norm(b_b.flatten(), p=2)) + eps
+        d_beta = d_beta_num / d_beta_den
+
+        layer_score = 0.5 * (d_gamma + d_beta)
+
+        print(
+            f"Affine-rel | "
+            f"d_gamma={float(d_gamma.item()):.4f}, "
+            f"d_beta={float(d_beta.item()):.4f}, "
+            f"layer_score(avg)={float(layer_score.item()):.4f}"
+        )
+
+        return float(layer_score.item())
     
     def get_name(self) -> str:
         return "Effective Scale/Bias"
+
 
 class BhattacharyyaMetric(BatchNormMetric):
     """
@@ -242,6 +265,13 @@ class BhattacharyyaMetric(BatchNormMetric):
         # This is mathematically bounded [0, 1]
         b_coefficient = np.exp(-b_distance)
         
+        print(
+            f"Bhattacharyya | "
+            f"mean_term={float(np.mean(term1)):.4f}, "
+            f"cov_term={float(np.mean(term2)):.4f}, "
+            f"avg_distance={float(np.mean(b_distance)):.4f}, "
+            f"b_coefficient={float(np.mean(b_coefficient)):.4f}"
+        )
         # Return the average overlap across all channels
         return 1 - float(np.mean(b_coefficient))
 

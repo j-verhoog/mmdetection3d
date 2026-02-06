@@ -290,11 +290,100 @@ class ComparisonVisualizer:
         fig.suptitle(main_title, fontsize=16, y=0.92, fontweight='bold')
         
         # Colorbar Label
-        cbar_ax.set_ylabel('Similarity Score (1.0 = Identical)', fontsize=10)
+        cbar_ax.set_ylabel('Similarity Score (0.0 = Identical)', fontsize=10)
 
         plt.savefig(output_path, dpi=150, bbox_inches='tight')
         plt.close()
         return output_path
+
+    @staticmethod
+    def _normalize_rows_to_unit_interval(matrix: np.ndarray) -> np.ndarray:
+        m = matrix.copy()
+        for i in range(m.shape[0]):
+            row = m[i]
+            mask = np.isfinite(row)
+            if mask.sum() == 0:
+                continue
+            rmin = np.nanmin(row[mask])
+            rmax = np.nanmax(row[mask])
+            if rmax - rmin < 1e-12:
+                m[i, mask] = 0.0
+            else:
+                m[i, mask] = (row[mask] - rmin) / (rmax - rmin)
+        return m
+
+    @staticmethod
+    def plot_consolidated_row_normalized(
+        results: Dict[str, Dict[str, Dict[str, float]]],
+        comparisons: List[Tuple[str, str, str]],
+        layer_order: List[str],
+        output_path: str,
+        run_name: str = None
+    ):
+        metric_order = [
+            'Effective Scale/Bias',
+            'Bhattacharyya Coeff',
+            'W2 BN Stats',
+            'CKA'
+        ]
+
+        fig, axes = plt.subplots(
+            nrows=4,
+            ncols=1,
+            figsize=(24, 10),
+            sharex=True,
+            gridspec_kw={'hspace': 0}
+        )
+
+        cbar_ax = fig.add_axes([.91, .3, .015, .4])
+
+        for i, metric_name in enumerate(metric_order):
+            ax = axes[i]
+
+            matrix = ComparisonVisualizer._build_matrix(
+                results, metric_name, comparisons, layer_order
+            )
+
+            matrix = ComparisonVisualizer._normalize_rows_to_unit_interval(matrix)
+
+            cmap = ComparisonVisualizer.COLORMAPS.get(metric_name, 'RdYlGn')
+            base_cmap = plt.get_cmap(cmap).copy()
+            base_cmap.set_bad(color='lightgrey')
+            mask = np.isnan(matrix)
+
+            sns.heatmap(
+                matrix,
+                xticklabels=layer_order,
+                yticklabels=[],
+                annot=False,
+                cmap=base_cmap,
+                vmin=0.0, vmax=1.0,
+                ax=ax,
+                mask=mask,
+                cbar=(i == 0),
+                cbar_ax=cbar_ax if i == 0 else None
+            )
+
+            ax.set_facecolor('lightgrey')
+            ax.set_ylabel(metric_name, fontsize=11, fontweight='bold', labelpad=10)
+            ax.set_title("")
+            ax.tick_params(left=False)
+
+            if i < 3:
+                ax.set_xlabel('')
+                ax.tick_params(axis='x', which='both', bottom=False, top=False, labelbottom=False)
+            else:
+                ax.set_xticklabels(layer_order, rotation=45, ha='right', fontsize=9)
+
+        main_title = (run_name + " (Row-normalized)") if run_name else "Model Comparison (Row-normalized)"
+        fig.suptitle(main_title, fontsize=16, y=0.92, fontweight='bold')
+        cbar_ax.set_ylabel('Row-normalized (min→0, max→1)', fontsize=10)
+
+        plt.savefig(output_path, dpi=150, bbox_inches='tight')
+        plt.close()
+        return output_path
+
+
 
 def create_comparison_report(
     results: Dict[str, Dict[str, Dict[str, float]]],

@@ -198,6 +198,7 @@ class ModelComparator:
         common_bn_layers = set(bn_modules_a.keys()) & set(bn_modules_b.keys())
         
         for layer_name in common_bn_layers:
+            print(f"    Comparing BN Layer: {layer_name} ...")
             score = metric.compute_layer_score(
                 bn_modules_a[layer_name],
                 bn_modules_b[layer_name]
@@ -259,3 +260,37 @@ class ModelComparator:
             print(f"  Compared {len(scores)} layers")
         
         return results
+    
+def debug_weight_determinism(config_path, checkpoint_path):
+    print(f"\n[DEBUG] Checking Weight Determinism for: {checkpoint_path}")
+    
+    # Load Model A
+    model_a, _ = load_model_and_pipeline(config_path, checkpoint_path)
+    weights_a = {name: p.clone() for name, p in model_a.named_parameters()}
+    del model_a
+    
+    # Load Model B
+    model_b, _ = load_model_and_pipeline(config_path, checkpoint_path)
+    weights_b = {name: p.clone() for name, p in model_b.named_parameters()}
+    del model_b
+    
+    # Compare
+    mismatched_layers = []
+    for name, p_a in weights_a.items():
+        if name not in weights_b:
+            continue
+            
+        p_b = weights_b[name]
+        if not torch.equal(p_a, p_b):
+            # Calculate how different they are
+            diff = (p_a - p_b).abs().mean().item()
+            mismatched_layers.append((name, diff))
+            
+    if len(mismatched_layers) == 0:
+        print("[SUCCESS] All layer weights are identical across re-loads.")
+    else:
+        print(f"[FAIL] Found {len(mismatched_layers)} layers with different weights!")
+        print("These layers are likely NOT in your checkpoint and are initializing randomly:")
+        for name, diff in mismatched_layers[:10]: # Print first 10
+            print(f"  - {name} (Mean Diff: {diff:.6f})")
+

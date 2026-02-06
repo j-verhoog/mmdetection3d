@@ -10,7 +10,7 @@
 #SBATCH --ntasks-per-node=2    # Spread them evenly
 #SBATCH --gres=gpu:a40:2       # Request 2 GPUs per node (Total 8)
 #SBATCH --cpus-per-task=8
-#SBATCH --mem=128G
+#SBATCH --mem=64G             # memory is per node so this will be 256GB
 
 # cmt baseline test
 

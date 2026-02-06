@@ -24,10 +24,9 @@ if INTERNAL_PATH not in sys.path:
     sys.path.insert(0, INTERNAL_PATH)
 
 from metrics import CKAMetric, W2BNStatsMetric, EffectiveScaleBiasMetric, BhattacharyyaMetric
-from comparison_engine import ModelComparator
+from comparison_engine import ModelComparator, debug_weight_determinism
 from comparison_utils import default_hook_filter
 from visualization import ComparisonVisualizer, create_comparison_report
-
 
 def main():
     parser = argparse.ArgumentParser(
@@ -111,6 +110,10 @@ def main():
     from comparison_utils import sort_layers_by_network_order
     layer_order = sort_layers_by_network_order(list(all_layers))
 
+    # print(f'All layers to plot: {len(layer_order)}')
+    # print(f'Layer names: {layer_order}')
+    
+
     consolidated_path = os.path.join(args.output_dir, "consolidated_comparison.png")
     visualizer.plot_consolidated(
         viz_results, 
@@ -120,6 +123,18 @@ def main():
         run_name=args.run_name if args.run_name else f"{args.labels[0]} vs {args.labels[1]}"
     )
     print(f"  Saved Consolidated Plot: {consolidated_path}")
+
+    # 2. Generate Row-Normalized Consolidated Plot (each comparison row per metric spans 0..1)
+    consolidated_norm_path = os.path.join(args.output_dir, "consolidated_comparison_row_normalized.png")
+    visualizer.plot_consolidated_row_normalized(
+        viz_results,
+        comparisons,
+        layer_order,
+        consolidated_norm_path,
+        run_name=args.run_name if args.run_name else f"{args.labels[0]} vs {args.labels[1]}"
+    )
+    print(f"  Saved Row-Normalized Consolidated Plot: {consolidated_norm_path}")
+
 
     # Generate report
     report_path = create_comparison_report(
