@@ -4,12 +4,12 @@
 #SBATCH --job-name=cmt_test
 #SBATCH --output=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/cmt/baseline.out
 #SBATCH --error=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/cmt/baseline.err
-#SBATCH --time=01:00:00 # 0:01:00 is one minute, max 4hrs for short QoS, 36hrs for medium
+#SBATCH --time=00:15:00 # 0:01:00 is one minute, max 4hrs for short QoS, 36hrs for medium
 #SBATCH --nodes=4              # Use four machines
 #SBATCH --ntasks=8             # Total tasks (2 per node)
 #SBATCH --ntasks-per-node=2    # Spread them evenly
 #SBATCH --gres=gpu:a40:2       # Request 2 GPUs per node (Total 8)
-#SBATCH --cpus-per-task=16
+#SBATCH --cpus-per-task=8
 #SBATCH --mem=128G
 
 # cmt baseline test
