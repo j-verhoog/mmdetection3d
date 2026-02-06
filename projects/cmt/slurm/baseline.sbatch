@@ -51,7 +51,7 @@ echo "MASTER_ADDR=$MASTER_ADDR MASTER_PORT=$MASTER_PORT"
 
 
 echo "=== ENTERING CONTAINER =="
-srun --ntasks=8 --ntasks-per-node=2 --gpus-per-task=1 bash -lc "
+srun --ntasks=8 --gpus-per-task=1 bash -lc "
   apptainer exec --nv --cleanenv \
   --bind \"$HOME/mmdet:/workspace/mmdet\" \
   --bind \"$TMP_BASE:/workspace/tmp\" \
@@ -79,10 +79,11 @@ srun --ntasks=8 --ntasks-per-node=2 --gpus-per-task=1 bash -lc "
   --env MASTER_ADDR=\"$MASTER_ADDR\" \
   --env MASTER_PORT=\"$MASTER_PORT\" \
   --env NCCL_SOCKET_IFNAME=\"campus\" \
+  --env PYTHONPATH="/workspace/mmdet/mmdetection3d:$PYTHONPATH" \
   \"$APPTAINER_IMAGE\" \
   bash -lc '
     cd /workspace/mmdet/mmdetection3d && \
-    python -u tools_CMT/train.py \
+    python -u tools/train.py \
       projects/cmt/configs/fusion/cmt_voxel0075_vov_1600x640_cbgs.py \
       --launcher slurm \
       --work-dir /workspace/work_dirs \
