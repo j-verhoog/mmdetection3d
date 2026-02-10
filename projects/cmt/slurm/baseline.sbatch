@@ -79,10 +79,10 @@ srun --ntasks=8 --gpus-per-task=1 bash -lc "
   --env MASTER_ADDR=\"$MASTER_ADDR\" \
   --env MASTER_PORT=\"$MASTER_PORT\" \
   --env NCCL_SOCKET_IFNAME=\"campus\" \
-  --env PYTHONPATH="/workspace/mmdet/mmdetection3d:$PYTHONPATH" \
   \"$APPTAINER_IMAGE\" \
   bash -lc '
     cd /workspace/mmdet/mmdetection3d && \
+    export PYTHONPATH=/workspace/mmdet/mmdetection3d:/workspace/mmdet:\$PYTHONPATH && \
     python -u tools/train.py \
       projects/cmt/configs/fusion/cmt_voxel0075_vov_1600x640_cbgs.py \
       --launcher slurm \

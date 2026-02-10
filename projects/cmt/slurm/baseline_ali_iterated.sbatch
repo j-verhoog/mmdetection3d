@@ -5,12 +5,12 @@
 #SBATCH --output=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/cmt/IL_iter.out
 #SBATCH --error=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/cmt/IL_iter.err
 #SBATCH --time=00:15:00 # 0:01:00 is one minute, max 4hrs for short QoS, 36hrs for medium
-#SBATCH --nodes=2              # Use four machines
-#SBATCH --ntasks=4             # Total tasks (2 per node)
+#SBATCH --nodes=1              # Amount of machines
+#SBATCH --ntasks=2             # Total tasks (2 per node)
 #SBATCH --ntasks-per-node=2    # Spread them evenly
-#SBATCH --gres=gpu:a40:2       # Request 2 GPUs per node (Total 8)
+#SBATCH --gres=gpu:a40:2       # Request 2 GPUs per node (Total 2)
 #SBATCH --cpus-per-task=8
-#SBATCH --mem=64G             # memory is per node so this will be 256GB
+#SBATCH --mem=64G             # memory is per node so this will be 128GB
 
 # cmt baseline downtuned Ali test
 export SRUN_CPUS_PER_TASK=${SLURM_CPUS_PER_TASK:-1}
@@ -52,7 +52,7 @@ echo "MASTER_ADDR=$MASTER_ADDR MASTER_PORT=$MASTER_PORT"
 
 
 echo "=== ENTERING CONTAINER =="
-srun --ntasks=4 --gpus-per-task=1 bash -lc "
+srun --ntasks=2 --gpus-per-task=1 bash -lc "
   apptainer exec --nv --cleanenv \
   --bind \"$HOME/mmdet:/workspace/mmdet\" \
   --bind \"$TMP_BASE:/workspace/tmp\" \
@@ -80,12 +80,12 @@ srun --ntasks=4 --gpus-per-task=1 bash -lc "
   --env MASTER_ADDR=\"$MASTER_ADDR\" \
   --env MASTER_PORT=\"$MASTER_PORT\" \
   --env NCCL_SOCKET_IFNAME=\"campus\" \
-  --env PYTHONPATH="/workspace/mmdet/mmdetection3d:$PYTHONPATH" \
   \"$APPTAINER_IMAGE\" \
   bash -lc '
     cd /workspace/mmdet/mmdetection3d && \
+    export PYTHONPATH=/workspace/mmdet/mmdetection3d:/workspace/mmdet:\$PYTHONPATH && \
     python -u tools/train.py \
-      projects/cmt/configs/improved_lightweight_cmt_iterated.py\
+      projects/cmt/configs/improved_lightweight_cmt_iterated.py \
       --launcher slurm \
       --work-dir /workspace/work_dirs \
       --cfg-options \
