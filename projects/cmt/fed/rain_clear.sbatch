@@ -14,8 +14,8 @@
 
 # --- FEDERATED SETTINGS ---
 NUM_ROUNDS=2
-EPOCHS_PER_ROUND=1
-EVAL_INTERVAL=1
+EPOCHS_PER_ROUND=1 #### NOT WORKING SET IN CONFIG
+EVAL_INTERVAL=1 ### SET IN CONFIG
 SAMPLES_PER_GPU=8
 
 # Ratios for averaging (e.g., 10k samples vs 5k samples)
@@ -107,9 +107,7 @@ run_training () {
           --launcher slurm \
           --work-dir $WORK_DIR \
           --cfg-options ${LOAD_ARG} \
-            runner.max_epochs=$EPOCHS_PER_ROUND \
             dist_params.port=$MASTER_PORT \
-            evaluation.interval=$EVAL_INTERVAL \
             data.samples_per_gpu=$SAMPLES_PER_GPU
       '
     "
