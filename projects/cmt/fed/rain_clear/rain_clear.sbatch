@@ -103,7 +103,7 @@ run_training () {
         cd /workspace/mmdet/mmdetection3d && \
         export PYTHONPATH=/workspace/mmdet/mmdetection3d:/workspace/mmdet:\$PYTHONPATH && \
         python -u tools/train.py \
-        projects/cmt/configs/improved_lightweight_cmt_iterated.py \
+        projects/cmt/fed/rain_clear/improved_lightweight_cmt_iterated.py \
           --launcher slurm \
           --work-dir $WORK_DIR \
           --cfg-options ${LOAD_ARG} \
