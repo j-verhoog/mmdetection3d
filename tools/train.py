@@ -120,14 +120,6 @@ def main():
     if args.cfg_options is not None:
         cfg.merge_from_dict(args.cfg_options)
 
-    # Addition for WandB logging
-    lc = cfg.get('log_config', None)
-    if lc is not None and 'hooks' in lc:
-        for h in lc['hooks']:
-            if h.get('type') == 'WandbLoggerHook':
-                h.setdefault('init_kwargs', {})
-                h['init_kwargs']['config'] = cfg._cfg_dict.to_dict()
-
     # set multi-process settings
     setup_multi_processes(cfg)
 
@@ -135,7 +127,6 @@ def main():
         from mmcv.utils import import_modules_from_strings
         import_modules_from_strings(**cfg['custom_imports'])
 
-    # addiditon from CMT tools
     # import modules from plguin/xx, registry will be updated
     if hasattr(cfg, 'plugin'):
         if cfg.plugin:
@@ -271,7 +262,7 @@ def main():
         else:
             val_dataset.pipeline = cfg.data.train.pipeline
         # set test_mode=False here in deep copied config
-        # which do not affect AP/AR calculation later
+        # which do not affect AP/AR calc ulation later
         # refer to https://mmdetection3d.readthedocs.io/en/latest/tutorials/customize_runtime.html#customize-workflow  # noqa
         val_dataset.test_mode = False
         datasets.append(build_dataset(val_dataset))

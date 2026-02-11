@@ -43,7 +43,7 @@ from concurrent.futures import ProcessPoolExecutor
 # NUSC_SOURCE_ROOT = Path("/tudelft.net/staff-umbrella/IntelligentVehiclesPublicDatasets/nuscenes")
 # EXCEL_PATH = Path("/home/nfs/jtverhoog/mmdet/mmdetection3d/projects/subsets_creation/scene_domains_summary.xlsx")
 # BASE_OUT_ROOT = Path("/tudelft.net/staff-umbrella/MscThesisjverhoog/datasets/nuscenes_subsets")
-NUSC_SOURCE_ROOT = Path("/home/jolle/nuscenes_img_class/nuscenes")
+NUSC_SOURCE_ROOT = Path("/home/jolle/mmdet/datasets/v1.0-mini")
 EXCEL_PATH = Path("/home/jolle/mmdet/mmdetection3d/projects/subsets_creation/scene_domains_summary.xlsx")
 BASE_OUT_ROOT = Path("/home/jolle/mmdet/datasets/auto_subsets")
 
@@ -74,14 +74,14 @@ CONFIGURATIONS = [
         "clients_per_domain": 1,     # Number of client subsets per domain
         "random_seed": DEFAULT_RANDOM_SEED,
     },
-    {
-        "name": "Exp1_CompFair_SingleClient",
-        "temporal_grouping": False,
-        "drop_strategy": "RANDOM",
-        "fairness_mode": "COMPARATIVE",
-        "clients_per_domain": 1,
-        "random_seed": DEFAULT_RANDOM_SEED,
-    },
+    # {
+    #     "name": "Exp1_CompFair_SingleClient",
+    #     "temporal_grouping": False,
+    #     "drop_strategy": "RANDOM",
+    #     "fairness_mode": "COMPARATIVE",
+    #     "clients_per_domain": 1,
+    #     "random_seed": DEFAULT_RANDOM_SEED,
+    # },
     # {
     #     "name": "Exp2_TotalFair_SingleClient",
     #     "temporal_grouping": False,
@@ -90,22 +90,22 @@ CONFIGURATIONS = [
     #     "clients_per_domain": 1,
     #     "random_seed": DEFAULT_RANDOM_SEED,
     # },
-    {
-        "name": "Exp3_CompFair_DualClient",
-        "temporal_grouping": False,
-        "drop_strategy": "RANDOM",
-        "fairness_mode": "COMPARATIVE",
-        "clients_per_domain": 2,
-        "random_seed": DEFAULT_RANDOM_SEED,
-    },
-    {
-        "name": "Exp4_TotalFair_DualClient",
-        "temporal_grouping": False,
-        "drop_strategy": "RANDOM",
-        "fairness_mode": "TOTAL",
-        "clients_per_domain": 2,
-        "random_seed": DEFAULT_RANDOM_SEED,
-    },
+    # {
+    #     "name": "Exp3_CompFair_DualClient",
+    #     "temporal_grouping": False,
+    #     "drop_strategy": "RANDOM",
+    #     "fairness_mode": "COMPARATIVE",
+    #     "clients_per_domain": 2,
+    #     "random_seed": DEFAULT_RANDOM_SEED,
+    # },
+    # {
+    #     "name": "Exp4_TotalFair_DualClient",
+    #     "temporal_grouping": False,
+    #     "drop_strategy": "RANDOM",
+    #     "fairness_mode": "TOTAL",
+    #     "clients_per_domain": 2,
+    #     "random_seed": DEFAULT_RANDOM_SEED,
+    # },
 ]
 
 # Global dictionary to track excluded scenes per configuration per domain
@@ -224,14 +224,14 @@ def load_scene_map(file_path: Path) -> Tuple[Dict[str, str], Dict[str, str]]:
     return scene_to_subset, scene_to_split
 
 def load_json_table(root: Path, table_name: str) -> List[Dict]:
-    p = root / "v1.0-trainval" / f"{table_name}.json"
+    p = root / "v1.0-mini" / f"{table_name}.json"
     if not p.exists():
         raise FileNotFoundError(f"Missing metadata table: {p}")
     with open(p, 'r') as f:
         return json.load(f)
 
 def save_json_table(data: List[Dict], root: Path, table_name: str):
-    out_dir = root / "v1.0-trainval"
+    out_dir = root / "v1.0-mini"
     out_dir.mkdir(parents=True, exist_ok=True)
     with open(out_dir / f"{table_name}.json", 'w') as f:
         json.dump(data, f, indent=0)
@@ -1012,7 +1012,7 @@ def main():
     scene_to_subset, scene_to_split = load_scene_map(EXCEL_PATH)
     
     logger.info("Initializing NuScenes DB...")
-    nusc = NuScenes(version='v1.0-trainval', dataroot=str(NUSC_SOURCE_ROOT), verbose=True)
+    nusc = NuScenes(version='v1.0-mini', dataroot=str(NUSC_SOURCE_ROOT), verbose=True)
 
     logger.info("Loading raw JSON tables...")
     raw_tables = {}
