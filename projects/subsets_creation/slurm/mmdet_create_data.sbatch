@@ -16,11 +16,11 @@ APPTAINER_IMAGE="/tudelft.net/staff-umbrella/MscThesisjverhoog/image/mmdet3d_v1r
 # --- MANUAL OVERRIDE ---
 # If this list is NOT empty, the script will skip discovery and ONLY process these paths.
 MANUAL_OVERRIDE=(
-    "Default_NoFair_SingleClient/boston_day_clear"
-    "Default_NoFair_SingleClient/boston_day_rain"
-    "Default_NoFair_SingleClient/singapore_day_clear"
-    "Default_NoFair_SingleClient/singapore_night_clear"
-    "Default_NoFair_SingleClient/singapore_night_rain"
+    "$BASE_DATASETS_FOLDER/Default_NoFair_SingleClient/boston_day_clear"
+    "$BASE_DATASETS_FOLDER/Default_NoFair_SingleClient/boston_day_rain"
+    "$BASE_DATASETS_FOLDER/Default_NoFair_SingleClient/singapore_day_clear"
+    "$BASE_DATASETS_FOLDER/Default_NoFair_SingleClient/singapore_night_clear"
+    "$BASE_DATASETS_FOLDER/Default_NoFair_SingleClient/singapore_night_rain"
 )
 
 # Paths to explicitly ignore (substring matching)
