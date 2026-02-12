@@ -26,8 +26,8 @@ SIZE_B=125
 # GLOBAL_MODEL="/path/to/pretrained.pth"
 GLOBAL_MODEL=""
 
-DAY_CLEAR_DATAROOT="/tudelft.net/staff-umbrella/MscThesisjverhoog/datasets/nuscenes_subsets/Default_NoFair_SingleClient/boston_day_clear"
-DAY_RAIN_DATAROOT="/tudelft.net/staff-umbrella/MscThesisjverhoog/datasets/nuscenes_subsets/Default_NoFair_SingleClient/boston_day_rain"
+DAY_CLEAR_DATAROOT="/tudelft.net/staff-umbrella/MscThesisjverhoog/datasets/cmt_subsets/Default_NoFair_SingleClient/boston_day_clear"
+DAY_RAIN_DATAROOT="/tudelft.net/staff-umbrella/MscThesisjverhoog/datasets/cmt_subsets/Default_NoFair_SingleClient/boston_day_rain"
 
 CONFIG_A=$DAY_CLEAR_DATAROOT
 CONFIG_B=$DAY_RAIN_DATAROOT

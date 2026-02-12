@@ -1,13 +1,13 @@
 #!/bin/bash
 #SBATCH --partition=general # request partition
 #SBATCH --qos=medium # Quality of service, short default
-#SBATCH --job-name=nuscenes_data_prep
-#SBATCH --output=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/nuscenes_data_prep/shadow_%j.out
-#SBATCH --error=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/nuscenes_data_prep/shadow_%j.err
+#SBATCH --job-name=cmt_data_prep
+#SBATCH --output=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/cmt_data_prep/shadow_cmt.out
+#SBATCH --error=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/cmt_data_prep/shadow_cmt.err
 #SBATCH --time=12:00:00 # 0:01:00 is one minute, max 4hrs for short QoS, 36hrs for medium
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=16
-#SBATCH --mem=32G
+#SBATCH --mem=40G
 
 export WANDB_PROJECT="test"
 export WANDB_NAME="pointpillars_test"
@@ -25,7 +25,7 @@ mkdir -p "$TMP_BASE"/{wandb,torch,xdg,tmp,home}
 
 echo "===WORK WITH SHADOW ROOT==="
 NU_ROOT_REAL="/tudelft.net/staff-umbrella/IntelligentVehiclesPublicDatasets/nuscenes"
-NU_ROOT_SHADOW="/tudelft.net/staff-umbrella/MscThesisjverhoog/nuscenes_shadow_root"
+NU_ROOT_SHADOW="/tudelft.net/staff-umbrella/MscThesisjverhoog/datasets/nuscenes_cmt_full"
 
 mkdir -p "$NU_ROOT_SHADOW"
 
@@ -61,9 +61,9 @@ apptainer exec --cleanenv \
 bash -lc '
 cd /workspace/mmdet/mmdetection3d && \
 python tools/create_data.py nuscenes \
-  --root-path /tudelft.net/staff-umbrella/MscThesisjverhoog/nuscenes_shadow_root \
+  --root-path /tudelft.net/staff-umbrella/MscThesisjverhoog/datasets/nuscenes_cmt_full \
   --version v1.0 \
-  --out-dir /tudelft.net/staff-umbrella/MscThesisjverhoog/nuscenes_shadow_root \
+  --out-dir /tudelft.net/staff-umbrella/MscThesisjverhoog/datasets/nuscenes_cmt_full \
   --extra-tag nuscenes \
   --workers 16
 '
