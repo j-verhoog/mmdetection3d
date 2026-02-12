@@ -40,17 +40,17 @@ from concurrent.futures import ProcessPoolExecutor
 
 # ================= GLOBAL CONFIGURATION =================
 # Paths (same for all configurations)
-# NUSC_SOURCE_ROOT = Path("/tudelft.net/staff-umbrella/IntelligentVehiclesPublicDatasets/nuscenes")
-# EXCEL_PATH = Path("/home/nfs/jtverhoog/mmdet/mmdetection3d/projects/subsets_creation/scene_domains_summary.xlsx")
-# BASE_OUT_ROOT = Path("/tudelft.net/staff-umbrella/MscThesisjverhoog/datasets/nuscenes_subsets")
-NUSC_SOURCE_ROOT = Path("/home/jolle/nuscenes_img_class/nuscenes")
-EXCEL_PATH = Path("/home/jolle/mmdet/mmdetection3d/projects/subsets_creation/scene_domains_summary.xlsx")
-BASE_OUT_ROOT = Path("/home/jolle/mmdet/datasets/auto_subsets")
+NUSC_SOURCE_ROOT = Path("/tudelft.net/staff-umbrella/IntelligentVehiclesPublicDatasets/nuscenes")
+EXCEL_PATH = Path("/home/nfs/jtverhoog/mmdet/mmdetection3d/projects/subsets_creation/scene_domains_summary.xlsx")
+BASE_OUT_ROOT = Path("/tudelft.net/staff-umbrella/MscThesisjverhoog/datasets/cmt_subsets")
+# NUSC_SOURCE_ROOT = Path("/home/jolle/nuscenes_img_class/nuscenes")
+# EXCEL_PATH = Path("/home/jolle/mmdet/mmdetection3d/projects/subsets_creation/scene_domains_summary.xlsx")
+# BASE_OUT_ROOT = Path("/home/jolle/mmdet/datasets/auto_subsets")
 
 # Global options
 COPY_METHOD = "symlink"  # not used, but symlinks now by default
 OVERWRITE = True  # Overwrite existing files in output
-DEFAULT_RANDOM_SEED = 2026
+DEFAULT_RANDOM_SEED = 1234 # used 2026 for the first round, now using 1234 for cmt subdir
 
 # Domain mapping
 DOMAIN_MAPPING = {
@@ -74,14 +74,14 @@ CONFIGURATIONS = [
         "clients_per_domain": 1,     # Number of client subsets per domain
         "random_seed": DEFAULT_RANDOM_SEED,
     },
-    {
-        "name": "Exp1_CompFair_SingleClient",
-        "temporal_grouping": False,
-        "drop_strategy": "RANDOM",
-        "fairness_mode": "COMPARATIVE",
-        "clients_per_domain": 1,
-        "random_seed": DEFAULT_RANDOM_SEED,
-    },
+    # {
+    #     "name": "Exp1_CompFair_SingleClient",
+    #     "temporal_grouping": False,
+    #     "drop_strategy": "RANDOM",
+    #     "fairness_mode": "COMPARATIVE",
+    #     "clients_per_domain": 1,
+    #     "random_seed": DEFAULT_RANDOM_SEED,
+    # },
     # {
     #     "name": "Exp2_TotalFair_SingleClient",
     #     "temporal_grouping": False,
@@ -90,22 +90,22 @@ CONFIGURATIONS = [
     #     "clients_per_domain": 1,
     #     "random_seed": DEFAULT_RANDOM_SEED,
     # },
-    {
-        "name": "Exp3_CompFair_DualClient",
-        "temporal_grouping": False,
-        "drop_strategy": "RANDOM",
-        "fairness_mode": "COMPARATIVE",
-        "clients_per_domain": 2,
-        "random_seed": DEFAULT_RANDOM_SEED,
-    },
-    {
-        "name": "Exp4_TotalFair_DualClient",
-        "temporal_grouping": False,
-        "drop_strategy": "RANDOM",
-        "fairness_mode": "TOTAL",
-        "clients_per_domain": 2,
-        "random_seed": DEFAULT_RANDOM_SEED,
-    },
+    # {
+    #     "name": "Exp3_CompFair_DualClient",
+    #     "temporal_grouping": False,
+    #     "drop_strategy": "RANDOM",
+    #     "fairness_mode": "COMPARATIVE",
+    #     "clients_per_domain": 2,
+    #     "random_seed": DEFAULT_RANDOM_SEED,
+    # },
+    # {
+    #     "name": "Exp4_TotalFair_DualClient",
+    #     "temporal_grouping": False,
+    #     "drop_strategy": "RANDOM",
+    #     "fairness_mode": "TOTAL",
+    #     "clients_per_domain": 2,
+    #     "random_seed": DEFAULT_RANDOM_SEED,
+    # },
 ]
 
 # Global dictionary to track excluded scenes per configuration per domain
