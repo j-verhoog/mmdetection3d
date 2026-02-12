@@ -1,30 +1,35 @@
 #!/bin/bash
 #SBATCH --partition=general # request partition
 #SBATCH --qos=medium # Quality of service, short default
-#SBATCH --job-name=2create_data
-#SBATCH --output=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/nuscenes_data_prep/2create_%j.out
-#SBATCH --error=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/nuscenes_data_prep/2create_%j.err
+#SBATCH --job-name=cmt_create_data
+#SBATCH --output=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/cmt_data_prep/default_create_data.out
+#SBATCH --error=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/cmt_data_prep/default_create_data.err
 #SBATCH --time=18:00:00 # 0:01:00 is one minute, max 4hrs for short QoS, 36hrs for medium
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=16
 #SBATCH --mem=16G
 
 # --- CONFIGURATION ---
-BASE_DATASETS_FOLDER="/tudelft.net/staff-umbrella/MscThesisjverhoog/datasets/nuscenes_subsets"
+BASE_DATASETS_FOLDER="/tudelft.net/staff-umbrella/MscThesisjverhoog/datasets/cmt_subsets"
 APPTAINER_IMAGE="/tudelft.net/staff-umbrella/MscThesisjverhoog/image/mmdet3d_v1rc5.sif"
 
 # --- MANUAL OVERRIDE ---
 # If this list is NOT empty, the script will skip discovery and ONLY process these paths.
-MANUAL_OVERRIDE=()
+MANUAL_OVERRIDE=(
+    "Default_NoFair_SingleClient/boston_day_clear"
+    "Default_NoFair_SingleClient/boston_day_rain"
+    "Default_NoFair_SingleClient/singapore_day_clear"
+    "Default_NoFair_SingleClient/singapore_night_clear"
+    "Default_NoFair_SingleClient/singapore_night_rain"
+)
 
 # Paths to explicitly ignore (substring matching)
-MANUAL_EXCLUDE=(
-    "Exp2_TotalFair_SingleClient/boston_day_clear"
-    "Exp2_TotalFair_SingleClient/boston_day_rain"
-    "Exp2_TotalFair_SingleClient/singapore_day_clear"
-    "Exp2_TotalFair_SingleClient/singapore_night_clear"
-    "Exp2_TotalFair_SingleClient/singapore_night_rain"
-)
+MANUAL_EXCLUDE=()
+    # "Exp2_TotalFair_SingleClient/boston_day_clear"
+    # "Exp2_TotalFair_SingleClient/boston_day_rain"
+    # "Exp2_TotalFair_SingleClient/singapore_day_clear"
+    # "Exp2_TotalFair_SingleClient/singapore_night_clear"
+    # "Exp2_TotalFair_SingleClient/singapore_night_rain"
 
 # --- PHASE 1: DISCOVERY ---
 TARGET_PATHS=()
