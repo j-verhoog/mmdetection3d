@@ -348,7 +348,7 @@ optimizer_config = dict(
     type='CustomFp16OptimizerHook',
     loss_scale='dynamic',
     grad_clip=dict(max_norm=35, norm_type=2),
-    custom_fp16=dict(pts_voxel_encoder=True, pts_middle_encoder=True, pts_bbox_head=True)) # use flash attn wheel
+    custom_fp16=dict(pts_voxel_encoder=False, pts_middle_encoder=False, pts_bbox_head=False))
 
 lr_config = dict(
     policy='cyclic',
