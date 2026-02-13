@@ -1,9 +1,9 @@
 #!/bin/bash
 #SBATCH --partition=general
 #SBATCH --qos=short
-#SBATCH --job-name=cmt_fedavg_TEST
-#SBATCH --output=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/cmt/fedavg_%j.out
-#SBATCH --error=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/cmt/fedavg_%j.err
+#SBATCH --job-name=fedavg_TEST
+#SBATCH --output=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/cmt/fedavg_test.out
+#SBATCH --error=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/cmt/fedavg_test.err
 #SBATCH --time=04:00:00
 #SBATCH --nodes=1
 #SBATCH --ntasks=2
