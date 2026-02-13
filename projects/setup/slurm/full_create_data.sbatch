@@ -7,7 +7,7 @@
 #SBATCH --time=12:00:00 # 0:01:00 is one minute, max 4hrs for short QoS, 36hrs for medium
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=16
-#SBATCH --mem=40G
+#SBATCH --mem=16G
 
 export WANDB_PROJECT="test"
 export WANDB_NAME="pointpillars_test"
