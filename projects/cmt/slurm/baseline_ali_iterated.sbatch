@@ -28,7 +28,8 @@ export WORK=/tudelft.net/staff-umbrella/MscThesisjverhoog/projects/$WANDB_PROJEC
 mkdir -p "$WORK"
 
 # --- LOCAL DATA SETUP ---
-NETWORK_DATA_ROOT="/tudelft.net/staff-umbrella/MscThesisjverhoog/nuscenes_shadow_root"
+NETWORK_DATA_ROOT="/tudelft.net/staff-umbrella/MscThesisjverhoog/datasets/nuscenes_cmt_full
+"
 TMP_BASE="/tmp/jtverhoog_${SLURM_JOB_ID}"
 
 # FIX: Use srun to create directories on ALL nodes, not just the master

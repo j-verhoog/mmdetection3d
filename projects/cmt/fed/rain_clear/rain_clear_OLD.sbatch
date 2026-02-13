@@ -4,7 +4,7 @@
 #SBATCH --job-name=cmt_fedavg_TEST
 #SBATCH --output=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/cmt/fedavg_%j.out
 #SBATCH --error=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/cmt/fedavg_%j.err
-#SBATCH --time=04:00:00
+#SBATCH --time=02:00:00
 #SBATCH --nodes=1
 #SBATCH --ntasks=2
 #SBATCH --ntasks-per-node=2
@@ -14,24 +14,29 @@
 
 # --- FEDERATED SETTINGS ---
 NUM_ROUNDS=2
-EPOCHS_PER_ROUND=1 
+EPOCHS_PER_ROUND=1 #### NOT WORKING SET IN CONFIG
+EVAL_INTERVAL=1 ### SET IN CONFIG
 SAMPLES_PER_GPU=8
+
+# Ratios for averaging (e.g., 10k samples vs 5k samples)
 SIZE_A=265
 SIZE_B=125
 
-# Paths
+# Initial Checkpoint (Optional: set to a path if starting from pre-trained, else leave empty)
+# GLOBAL_MODEL="/path/to/pretrained.pth"
+GLOBAL_MODEL=""
+
 DAY_CLEAR_DATAROOT="/tudelft.net/staff-umbrella/MscThesisjverhoog/datasets/cmt_subsets/Default_NoFair_SingleClient/boston_day_clear"
 DAY_RAIN_DATAROOT="/tudelft.net/staff-umbrella/MscThesisjverhoog/datasets/cmt_subsets/Default_NoFair_SingleClient/boston_day_rain"
+
 CONFIG_A=$DAY_CLEAR_DATAROOT
 CONFIG_B=$DAY_RAIN_DATAROOT
 
-# Initial backbone weights (only used in Round 1)
-PRETRAINED_BACKBONE="ckpts/nuim_r50.pth"
+
 
 # --- STANDARD SETUP ---
 export SRUN_CPUS_PER_TASK=${SLURM_CPUS_PER_TASK:-1}
 export WANDB_PROJECT="cmt_fedavg"
-# Gets API key robustly
 export WANDB_API_KEY=$(awk '$1=="machine" && $2=="api.wandb.ai" {found=1}found && $1=="password" {print $2; exit}' "$HOME/.netrc")
 
 export APPTAINER_IMAGE=/tudelft.net/staff-umbrella/MscThesisjverhoog/image/mmdet3d_v1rc5.sif
@@ -48,29 +53,22 @@ export MASTER_ADDR=$(scontrol show hostnames "$SLURM_JOB_NODELIST" | head -n 1)
 export MASTER_PORT=$(( ((RANDOM<<15)|RANDOM) % 49152 + 10000 ))
 
 # --- TRAINING FUNCTION ---
+# This function runs one training session inside the container
 run_training () {
     local MODEL_NAME=$1
     local DATASET_PATH=$2
-    local CHECKPOINT=$3
+    local LOAD_FROM=$3
     local ROUND=$4
-    local TARGET_EPOCHS=$5
-    local IS_RESUME=$6
-    
     local WORK_DIR="$WORK/round_${ROUND}/${MODEL_NAME}"
     
-    # Configure Load vs Resume arguments
-    local CFG_LOAD_ARG=""
-    local RESUME_ARG=""
-    
-    if [ "$IS_RESUME" == "true" ]; then
-        # In rounds > 1, we RESUME. This loads optimizer state and epoch count.
-        RESUME_ARG="--resume-from ${CHECKPOINT}"
-    else
-        # In round 1, we LOAD weights only (backbone). Optimizer starts fresh.
-        CFG_LOAD_ARG="load_from='${CHECKPOINT}'"
+    # Logic to handle the load_from argument dynamically
+    local LOAD_ARG=""
+    if [ ! -z "$LOAD_FROM" ]; then
+        # FIX: Removed internal quotes to prevent parsing issues in cfg-options
+        LOAD_ARG="load_from=${LOAD_FROM}"
     fi
 
-    echo "=== ROUND $ROUND | Training $MODEL_NAME | Target Epochs: $TARGET_EPOCHS ==="
+    echo "=== ROUND $ROUND | Training Model $MODEL_NAME ==="
     
     srun --ntasks=2 --gpus-per-task=1 bash -lc "
       apptainer exec --nv --cleanenv \
@@ -108,15 +106,15 @@ run_training () {
         projects/cmt/fed/rain_clear/improved_lightweight_cmt_iterated.py \
           --launcher slurm \
           --work-dir $WORK_DIR \
-          $RESUME_ARG \
-          --cfg-options ${CFG_LOAD_ARG} dist_params.port=$MASTER_PORT \
-            data.samples_per_gpu=$SAMPLES_PER_GPU \
-            total_epochs=$TARGET_EPOCHS
+          --cfg-options ${LOAD_ARG} \
+            dist_params.port=$MASTER_PORT \
+            data.samples_per_gpu=$SAMPLES_PER_GPU
       '
     "
 }
 
 # --- MERGE FUNCTION ---
+# Runs the python merge script inside the container (single process, no srun needed really, but kept for env consistency)
 run_merge () {
     local CKPT_A=$1
     local CKPT_B=$2
@@ -138,43 +136,31 @@ run_merge () {
       "
 }
 
+
 # ==========================================
 # MAIN LOOP
 # ==========================================
 
-# Initialize Global Model variable
-GLOBAL_MODEL="$PRETRAINED_BACKBONE"
-
 for ((i=1; i<=NUM_ROUNDS; i++)); do
-    
-    # Calculate cumulative epochs (e.g., Round 1 -> 2 epochs, Round 2 -> 4 epochs)
-    CURRENT_MAX_EPOCHS=$((i * EPOCHS_PER_ROUND))
-    
     echo "-------------------------------------"
     echo "       STARTING FEDAVG ROUND $i      "
-    echo "       Target Max Epochs: $CURRENT_MAX_EPOCHS"
     echo "-------------------------------------"
 
-    # Determine if we are resuming or starting fresh
-    if [ "$i" -eq 1 ]; then
-        IS_RESUME="false"
-    else
-        IS_RESUME="true"
-    fi
-
     # 1. Train Model A
-    run_training "ModelA" "$CONFIG_A" "$GLOBAL_MODEL" "$i" "$CURRENT_MAX_EPOCHS" "$IS_RESUME"
+    # Note: We use the GLOBAL_MODEL from the previous round
+    run_training "ModelA" "$CONFIG_A" "$GLOBAL_MODEL" "$i"
     CKPT_A="$WORK/round_${i}/ModelA/latest.pth"
 
     # 2. Train Model B
-    run_training "ModelB" "$CONFIG_B" "$GLOBAL_MODEL" "$i" "$CURRENT_MAX_EPOCHS" "$IS_RESUME"
+    # Note: We use the SAME global model start point
+    run_training "ModelB" "$CONFIG_B" "$GLOBAL_MODEL" "$i"
     CKPT_B="$WORK/round_${i}/ModelB/latest.pth"
 
     # 3. Aggregate
     GLOBAL_MODEL="$WORK/round_${i}/global_model.pth"
     run_merge "$CKPT_A" "$CKPT_B" "$GLOBAL_MODEL"
     
-    echo "Round $i complete. Global model saved."
+    echo "Round $i complete. Global model saved to: $GLOBAL_MODEL"
 done
 
 # Cleanup
