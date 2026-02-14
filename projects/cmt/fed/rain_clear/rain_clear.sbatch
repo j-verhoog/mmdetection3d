@@ -10,7 +10,7 @@
 #SBATCH --ntasks-per-node=2
 #SBATCH --gres=gpu:a40:2
 #SBATCH --cpus-per-task=8
-#SBATCH --mem=20G
+#SBATCH --mem=32G
 
 set -e # stop if something fails
 
