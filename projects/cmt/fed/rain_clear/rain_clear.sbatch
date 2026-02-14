@@ -1,21 +1,21 @@
 #!/bin/bash
 #SBATCH --partition=general
-#SBATCH --qos=short
-#SBATCH --job-name=fedavg_TEST
-#SBATCH --output=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/cmt/fedavg_test.out
-#SBATCH --error=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/cmt/fedavg_test.err
-#SBATCH --time=04:00:00
+#SBATCH --qos=medium
+#SBATCH --job-name=fedAVG_rain
+#SBATCH --output=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/cmt/fedavg_rain.out
+#SBATCH --error=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/cmt/fedavg_rain.err
+#SBATCH --time=21:00:00
 #SBATCH --nodes=1
 #SBATCH --ntasks=2
 #SBATCH --ntasks-per-node=2
 #SBATCH --gres=gpu:a40:2
 #SBATCH --cpus-per-task=8
-#SBATCH --mem=64G
+#SBATCH --mem=20G
 
 set -e # stop if something fails
 
 # --- FEDERATED SETTINGS ---
-NUM_ROUNDS=4 # approx an hour per round of 1 Epoch
+NUM_ROUNDS=20 # approx an hour per round of 1 Epoch
 EPOCHS_PER_ROUND=1 
 SAMPLES_PER_GPU=8
 SIZE_A=265  # A > B for logging
@@ -48,6 +48,9 @@ module use /opt/insy/modulefiles
 module load cuda
 export MASTER_ADDR=$(scontrol show hostnames "$SLURM_JOB_NODELIST" | head -n 1)
 export MASTER_PORT=$(( ((RANDOM<<15)|RANDOM) % 49152 + 10000 ))
+
+# Measure GPU usage of your job (initialization)
+previous=$(/usr/bin/nvidia-smi --query-accounted-apps='gpu_instance_id,gpu_utilization,mem_utilization,max_memory_usage,time' --format='csv' 2>/dev/null || true)
 
 # --- TRAINING FUNCTION ---
 run_training () {
@@ -92,7 +95,7 @@ run_training () {
       --env WANDB_DIR=\"/workspace/tmp/wandb/\$SLURM_PROCID\" \
       --env TMPDIR=\"/workspace/tmp/tmp/\$SLURM_PROCID\" \
       --env WANDB_PROJECT=\"$WANDB_PROJECT\" \
-      --env WANDB_NAME=\"R${ROUND}_${MODEL_NAME}_\$SLURM_PROCID\" \
+      --env WANDB_NAME=\"Rain_R${ROUND}_${MODEL_NAME}" \
       --env WANDB_API_KEY=\"$WANDB_API_KEY\" \
       --env OMP_NUM_THREADS=1 \
       --env MKL_NUM_THREADS=1 \
@@ -184,6 +187,9 @@ for ((i=1; i<=NUM_ROUNDS; i++)); do
     
     echo "Round $i complete. Global model saved."
 done
+
+# Measure GPU usage of your job (result) for all allocated GPUs
+/usr/bin/nvidia-smi --query-accounted-apps='gpu_instance_id,gpu_utilization,mem_utilization,max_memory_usage,time' --format='csv' 2>/dev/null || true
 
 # Cleanup
 srun --nodes=$SLURM_NNODES --ntasks-per-node=1 rm -rf "$TMP_BASE"
