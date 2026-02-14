@@ -18,7 +18,7 @@ set -e # stop if something fails
 NUM_ROUNDS=4 # approx an hour per round of 1 Epoch
 EPOCHS_PER_ROUND=1 
 SAMPLES_PER_GPU=8
-SIZE_A=265
+SIZE_A=265  # A > B for logging
 SIZE_B=125
 
 # Paths
@@ -130,6 +130,7 @@ run_merge () {
     apptainer exec --nv --cleanenv \
       --bind "$HOME/mmdet:/workspace/mmdet" \
       --bind "$WORK:/workspace/work_dirs" \
+      --bind "/tudelft.net/staff-umbrella/MscThesisjverhoog:/tudelft.net/staff-umbrella/MscThesisjverhoog" \
       "$APPTAINER_IMAGE" \
       bash -lc "
         cd /workspace/mmdet/mmdetection3d && \

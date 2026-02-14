@@ -26,33 +26,34 @@ def main():
     ckpt_a = torch.load(args.model_a, map_location='cpu')
     ckpt_b = torch.load(args.model_b, map_location='cpu')
 
+    # --- UPDATED LOGIC: Deepcopy Model A ---
+    # This preserves the exact structure of Model A (meta, optimizer, author, etc.)
+    print("Deepcopying Model A to preserve full state...")
+    merged_ckpt = copy.deepcopy(ckpt_a)
+
     state_dict_a = ckpt_a['state_dict']
     state_dict_b = ckpt_b['state_dict']
     
-    new_state_dict = {}
-    
-    # 1. Average the Model Weights
+    # Iterate over keys in A (which are also in our merged_ckpt)
+    print("Averaging weights...")
     for key in state_dict_a.keys():
         if key in state_dict_b:
-            new_state_dict[key] = (state_dict_a[key] * wa) + (state_dict_b[key] * wb)
+            # Calculate the weighted average
+            new_val = (state_dict_a[key] * wa) + (state_dict_b[key] * wb)
+            
+            # Update the value in the deepcopied checkpoint
+            merged_ckpt['state_dict'][key] = new_val
         else:
-            new_state_dict[key] = state_dict_a[key]
-
-    # 2. Preserve Optimizer & Meta from Client A
-    # This tricks MMDet into thinking we are just continuing Client A's training,
-    # but with the new averaged weights.
-    new_ckpt = {
-        'meta': ckpt_a.get('meta', {}),
-        'optimizer': ckpt_a.get('optimizer', {}), # CRITICAL: Keeps momentum/Adam states
-        'state_dict': new_state_dict
-    }
+            # If the key is missing in B, we keep the value from A.
+            # Since merged_ckpt is a clone of A, we don't need to do anything here.
+            pass
 
     # Optional: Log the epoch we are merging at
-    epoch = new_ckpt['meta'].get('epoch', 'Unknown')
+    epoch = merged_ckpt.get('meta', {}).get('epoch', 'Unknown')
     print(f"Merging at end of Epoch: {epoch}")
     
     os.makedirs(os.path.dirname(args.output), exist_ok=True)
-    torch.save(new_ckpt, args.output)
+    torch.save(merged_ckpt, args.output)
     print(f"Saved merged model with optimizer state to {args.output}")
 
 if __name__ == '__main__':
