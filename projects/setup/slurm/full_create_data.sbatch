@@ -27,6 +27,8 @@ echo "===WORK WITH SHADOW ROOT==="
 NU_ROOT_REAL="/tudelft.net/staff-umbrella/IntelligentVehiclesPublicDatasets/nuscenes"
 NU_ROOT_SHADOW="/tudelft.net/staff-umbrella/MscThesisjverhoog/datasets/nuscenes_cmt_full"
 
+# Remove directory and recreate it
+rm -rf "$NU_ROOT_SHADOW"
 mkdir -p "$NU_ROOT_SHADOW"
 
 # Copy real to shadow with symlinks only if not yet done
