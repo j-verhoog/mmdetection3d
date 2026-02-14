@@ -1,4 +1,4 @@
-from mmcv.runner.hooks import HOOKS, Hook
+from mmcv.runner import HOOKS, Hook
 
 @HOOKS.register_module()
 class DisableGTImportanceHook(Hook):

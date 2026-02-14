@@ -1,19 +1,3 @@
-from mmcv.runner import Hook, HOOKS
-
-@HOOKS.register_module()
-class ForceStopHook(Hook):
-    """Stops training at a specific epoch, regardless of total_epochs."""
-    def __init__(self, stop_epoch):
-        self.stop_epoch = stop_epoch
-
-    def after_train_epoch(self, runner):
-        # runner.epoch is 0-indexed. If we want to stop after epoch 1,
-        # runner.epoch will be 0.
-        if (runner.epoch + 1) >= self.stop_epoch:
-            runner.logger.info(f"ForceStopHook: Reached target epoch {self.stop_epoch}. Stopping.")
-            # Trick the runner into thinking it's done
-            runner._max_epochs = runner.epoch + 1
-
 plugin=True
 plugin_dir='projects/mmdet3d_plugin/'
 
@@ -399,8 +383,9 @@ log_config = dict(
 
 # 1. Tell MMDet3D to import your CMT project
 custom_imports = dict(
-    imports=['projects.cmt.hooks.disable_gt_sampling'], 
+    imports=['projects.cmt.hooks.disable_gt_sampling', 'projects.cmt.hooks.force_stop'], 
     allow_failed_imports=False)
+
 custom_hooks = [
     dict(
         type='DisableGTImportanceHook',
