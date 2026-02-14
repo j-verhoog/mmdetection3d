@@ -12,8 +12,10 @@
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=64G
 
+set -e # stop if something fails
+
 # --- FEDERATED SETTINGS ---
-NUM_ROUNDS=2
+NUM_ROUNDS=4 # approx an hour per round of 1 Epoch
 EPOCHS_PER_ROUND=1 
 SAMPLES_PER_GPU=8
 SIZE_A=265
@@ -53,8 +55,9 @@ run_training () {
     local DATASET_PATH=$2
     local CHECKPOINT=$3
     local ROUND=$4
-    local TARGET_EPOCHS=$5
-    local IS_RESUME=$6
+    local GLOBAL_EPOCHS=$5    # Changed from TARGET_EPOCHS
+    local STOP_EPOCH=$6       # NEW ARGUMENT
+    local IS_RESUME=$7
     
     local WORK_DIR="$WORK/round_${ROUND}/${MODEL_NAME}"
     
@@ -70,7 +73,7 @@ run_training () {
         CFG_LOAD_ARG="load_from='${CHECKPOINT}'"
     fi
 
-    echo "=== ROUND $ROUND | Training $MODEL_NAME | Target Epochs: $TARGET_EPOCHS ==="
+    echo "=== ROUND $ROUND | Training $MODEL_NAME | Stop Epoch: $STOP_EPOCH (Global: $GLOBAL_EPOCHS) ==="
     
     srun --ntasks=2 --gpus-per-task=1 bash -lc "
       apptainer exec --nv --cleanenv \
@@ -111,7 +114,8 @@ run_training () {
           $RESUME_ARG \
           --cfg-options ${CFG_LOAD_ARG} dist_params.port=$MASTER_PORT \
             data.samples_per_gpu=$SAMPLES_PER_GPU \
-            total_epochs=$TARGET_EPOCHS
+            total_epochs=$GLOBAL_EPOCHS \
+            custom_hooks.1.stop_epoch=$STOP_EPOCH 
       '
     "
 }
@@ -144,31 +148,34 @@ run_merge () {
 
 # Initialize Global Model variable
 GLOBAL_MODEL="$PRETRAINED_BACKBONE"
+# CALCULATE GLOBAL TOTAL ONCE
+# This ensures the LR scheduler sees the full picture (e.g., 20 epochs) from Round 1
+GLOBAL_MAX_EPOCHS=$((NUM_ROUNDS * EPOCHS_PER_ROUND))
 
 for ((i=1; i<=NUM_ROUNDS; i++)); do
     
-    # Calculate cumulative epochs (e.g., Round 1 -> 2 epochs, Round 2 -> 4 epochs)
-    CURRENT_MAX_EPOCHS=$((i * EPOCHS_PER_ROUND))
+    # This is where we want to STOP in this specific round
+    CURRENT_STOP_EPOCH=$((i * EPOCHS_PER_ROUND))
     
     echo "-------------------------------------"
     echo "       STARTING FEDAVG ROUND $i      "
-    echo "       Target Max Epochs: $CURRENT_MAX_EPOCHS"
+    echo "       Scheduler Horizon: $GLOBAL_MAX_EPOCHS epochs"
+    echo "       Stop Training At:  $CURRENT_STOP_EPOCH epochs"
     echo "-------------------------------------"
 
-    # Determine if we are resuming or starting fresh
     if [ "$i" -eq 1 ]; then
         IS_RESUME="false"
     else
         IS_RESUME="true"
     fi
 
-    # 1. Train Model A
-    run_training "ModelA" "$CONFIG_A" "$GLOBAL_MODEL" "$i" "$CURRENT_MAX_EPOCHS" "$IS_RESUME"
-    CKPT_A="$WORK/round_${i}/ModelA/latest.pth"
+    # UPDATE: Pass both GLOBAL total and LOCAL stop to the training function
+    # Note: I am updating the function call arguments below
+    run_training "ModelA" "$CONFIG_A" "$GLOBAL_MODEL" "$i" "$GLOBAL_MAX_EPOCHS" "$CURRENT_STOP_EPOCH" "$IS_RESUME"
+    CKPT_A="$WORK/round_${i}/ModelA/epoch_${CURRENT_STOP_EPOCH}.pth" # Use specific epoch
 
-    # 2. Train Model B
-    run_training "ModelB" "$CONFIG_B" "$GLOBAL_MODEL" "$i" "$CURRENT_MAX_EPOCHS" "$IS_RESUME"
-    CKPT_B="$WORK/round_${i}/ModelB/latest.pth"
+    run_training "ModelB" "$CONFIG_B" "$GLOBAL_MODEL" "$i" "$GLOBAL_MAX_EPOCHS" "$CURRENT_STOP_EPOCH" "$IS_RESUME"
+    CKPT_B="$WORK/round_${i}/ModelB/epoch_${CURRENT_STOP_EPOCH}.pth" # Use specific epoch
 
     # 3. Aggregate
     GLOBAL_MODEL="$WORK/round_${i}/global_model.pth"
