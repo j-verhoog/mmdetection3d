@@ -95,7 +95,7 @@ run_training () {
       --env WANDB_DIR=\"/workspace/tmp/wandb/\$SLURM_PROCID\" \
       --env TMPDIR=\"/workspace/tmp/tmp/\$SLURM_PROCID\" \
       --env WANDB_PROJECT=\"$WANDB_PROJECT\" \
-      --env WANDB_NAME=\"Rain_R${ROUND}_${MODEL_NAME}" \
+      --env WANDB_NAME=\"Rain_R${ROUND}_${MODEL_NAME}\" \
       --env WANDB_API_KEY=\"$WANDB_API_KEY\" \
       --env OMP_NUM_THREADS=1 \
       --env MKL_NUM_THREADS=1 \
