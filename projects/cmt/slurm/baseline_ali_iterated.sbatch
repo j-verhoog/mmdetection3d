@@ -10,7 +10,7 @@
 #SBATCH --ntasks-per-node=2    # Spread them evenly
 #SBATCH --gres=gpu:a40:2       # Request 2 GPUs per node (Total 2)
 #SBATCH --cpus-per-task=8
-#SBATCH --mem=64G             # memory is per node so this will be 128GB
+#SBATCH --mem=32G             
 
 set -e # Good practice to fail fast
 
@@ -95,7 +95,7 @@ srun --ntasks=2 --gpus-per-task=1 bash -lc "
       --launcher slurm \
       --work-dir /workspace/work_dirs \
       --cfg-options \
-        evaluation.interval=2 \
+        evaluation.interval=1 \
         load_from='"$PRETRAINED_BACKBONE"' \
         total_epochs=$TARGET_EPOCHS \
         data.samples_per_gpu=8 \
