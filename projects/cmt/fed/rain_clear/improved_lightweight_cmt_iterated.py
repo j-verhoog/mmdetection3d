@@ -398,10 +398,7 @@ custom_hooks = [
     )
 ]
 
-
-# New config (Example: increase to 60 or 120 minutes)
-from datetime import timedelta
-dist_params = dict(backend='nccl', timeout=timedelta(minutes=60))
+dist_params = dict(backend='nccl')
 log_level = 'INFO'
 work_dir = f'workdirs/centralized_improved_lw_cmt_run_{exp_no}'
 load_from='ckpts/nuim_r50.pth'  # ResNet-50 backbone weights
