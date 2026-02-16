@@ -21,6 +21,9 @@ SAMPLES_PER_GPU=8
 SIZE_A=265  # A > B for logging
 SIZE_B=125
 
+START_ROUND=6  # <--- NEW: Set to 1 for new run, or X to start loop at round X
+RESUME_CHECKPOINT="/tudelft.net/staff-umbrella/MscThesisjverhoog/projects/cmt_fedavg/12214816/round_5/global_model.pth"
+
 # Paths
 DAY_CLEAR_DATAROOT="/tudelft.net/staff-umbrella/MscThesisjverhoog/datasets/cmt_subsets/Default_NoFair_SingleClient/boston_day_clear"
 DAY_RAIN_DATAROOT="/tudelft.net/staff-umbrella/MscThesisjverhoog/datasets/cmt_subsets/Default_NoFair_SingleClient/boston_day_rain"
@@ -150,14 +153,21 @@ run_merge () {
 # MAIN LOOP
 # ==========================================
 
-# Initialize Global Model variable
-GLOBAL_MODEL="$PRETRAINED_BACKBONE"
+# --- NEW LOGIC START ---
+# Initialize Global Model based on START_ROUND
+if [ "$START_ROUND" -eq 1 ]; then
+    echo "Starting fresh run from Round 1"
+    GLOBAL_MODEL="$PRETRAINED_BACKBONE"
+else
+    echo "Resuming run from Round $START_ROUND using checkpoint: $RESUME_CHECKPOINT"
+    GLOBAL_MODEL="$RESUME_CHECKPOINT"
+fi
+
 # CALCULATE GLOBAL TOTAL ONCE
 # This ensures the LR scheduler sees the full picture (e.g., 20 epochs) from Round 1
 GLOBAL_MAX_EPOCHS=$((NUM_ROUNDS * EPOCHS_PER_ROUND))
 
-for ((i=1; i<=NUM_ROUNDS; i++)); do
-    
+for ((i=START_ROUND; i<=NUM_ROUNDS; i++)); do
     # This is where we want to STOP in this specific round
     CURRENT_STOP_EPOCH=$((i * EPOCHS_PER_ROUND))
     

@@ -1,10 +1,10 @@
 #!/bin/bash
 #SBATCH --partition=general # request partition
-#SBATCH --qos=short # Quality of service, short default
-#SBATCH --job-name=cmt_test_IL
-#SBATCH --output=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/cmt/IL_iter.out
-#SBATCH --error=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/cmt/IL_iter.err
-#SBATCH --time=00:15:00 # 0:01:00 is one minute, max 4hrs for short QoS, 36hrs for medium
+#SBATCH --qos=medium # Quality of service, short default
+#SBATCH --job-name=centr_base
+#SBATCH --output=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/cmt/centr_base.out
+#SBATCH --error=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/cmt/centr_base.err
+#SBATCH --time=28:00:00 # 0:01:00 is one minute, max 4hrs for short QoS, 36hrs for medium
 #SBATCH --nodes=1              # Amount of machines
 #SBATCH --ntasks=2             # Total tasks (2 per node)
 #SBATCH --ntasks-per-node=2    # Spread them evenly
