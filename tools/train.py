@@ -29,6 +29,18 @@ try:
 except ImportError:
     from mmdet3d.utils import setup_multi_processes
 
+import torch
+import torch.distributed as dist
+from datetime import timedelta
+
+# Add this BEFORE the main() function or inside main() before init_dist
+# This sets the default timeout for the entire process group globally
+torch.distributed.init_process_group(
+    backend='nccl', 
+    init_method='env://', 
+    timeout=timedelta(minutes=120) # Set your long timeout here
+)
+
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Train a detector')
@@ -197,8 +209,20 @@ def main():
     if args.launcher == 'none':
         distributed = False
     else:
-        distributed = True
-        init_dist(args.launcher, **cfg.dist_params)
+        distributed = True                                                  ################################## change
+        if 'SLURM_PROCID' in os.environ:
+             rank = int(os.environ['SLURM_PROCID'])
+             _, world_size = get_dist_info()
+             
+             dist.init_process_group(
+                 backend='nccl',
+                 init_method='env://',
+                 world_size=world_size,
+                 rank=rank,
+                 timeout=timedelta(minutes=120) # <--- The fix
+             )
+             distributed = True
+
         # re-set gpu_ids with distributed training mode
         _, world_size = get_dist_info()
         cfg.gpu_ids = range(world_size)
