@@ -12,12 +12,18 @@
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=64G             # memory is per node so this will be 128GB
 
+set -e # Good practice to fail fast
+
 # cmt baseline downtuned Ali test
 export SRUN_CPUS_PER_TASK=${SLURM_CPUS_PER_TASK:-1}
 
+# --- CONFIGURATION MATCHING FEDAVG ---
+PRETRAINED_BACKBONE="ckpts/nuim_r50.pth"
+TARGET_EPOCHS=20  # Matches FedAvg (20 Rounds * 1 Epoch)
+
 # FOR NAMING STICK TO: A–Z  a–z  0–9  .  _  -
-export WANDB_PROJECT="cmt"
-export WANDB_NAME="IL_Iter"
+export WANDB_PROJECT="cmt_fedavg"
+export WANDB_NAME="centralized_baseline"
 export WANDB_API_KEY=$(awk '$1=="machine" && $2=="api.wandb.ai" {found=1}found && $1=="password" {print $2; exit}' "$HOME/.netrc")
 
 /usr/bin/scontrol show job -d "$SLURM_JOB_ID" # check sbatch working
@@ -90,6 +96,8 @@ srun --ntasks=2 --gpus-per-task=1 bash -lc "
       --work-dir /workspace/work_dirs \
       --cfg-options \
         evaluation.interval=2 \
+        load_from='"$PRETRAINED_BACKBONE"' \
+        total_epochs=$TARGET_EPOCHS \
         data.samples_per_gpu=8 \
         dist_params.port='"$MASTER_PORT"'
   '
