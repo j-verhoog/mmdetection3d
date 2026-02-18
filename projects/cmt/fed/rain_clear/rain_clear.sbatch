@@ -4,7 +4,7 @@
 #SBATCH --job-name=fedAVG_rain
 #SBATCH --output=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/cmt/fedavg_rain.out
 #SBATCH --error=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/cmt/fedavg_rain.err
-#SBATCH --time=21:00:00
+#SBATCH --time=5:00:00 #hr per round for rainclear
 #SBATCH --nodes=1
 #SBATCH --ntasks=2
 #SBATCH --ntasks-per-node=2
@@ -22,7 +22,7 @@ SIZE_A=265  # A > B for logging
 SIZE_B=125
 
 START_ROUND=6  # <--- NEW: Set to 1 for new run, or X to start loop at round X
-RESUME_CHECKPOINT="/tudelft.net/staff-umbrella/MscThesisjverhoog/projects/cmt_fedavg/12214816/round_5/global_model.pth"
+RESUME_CHECKPOINT="/tudelft.net/staff-umbrella/MscThesisjverhoog/projects/cmt_fedavg/12214816/round_15/global_model.pth"
 
 # Paths
 DAY_CLEAR_DATAROOT="/tudelft.net/staff-umbrella/MscThesisjverhoog/datasets/cmt_subsets/Default_NoFair_SingleClient/boston_day_clear"
