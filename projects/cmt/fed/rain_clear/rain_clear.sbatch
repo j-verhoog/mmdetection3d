@@ -1,16 +1,16 @@
 #!/bin/bash
 #SBATCH --partition=general
-#SBATCH --qos=medium
-#SBATCH --job-name=fedAVG_rain
-#SBATCH --output=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/cmt/fedavg_rain.out
-#SBATCH --error=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/cmt/fedavg_rain.err
-#SBATCH --time=5:00:00 #hr per round for rainclear
+#SBATCH --qos=short
+#SBATCH --job-name=fedAVG_rain_final5
+#SBATCH --output=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/cmt/fedavg_rain_final5.out
+#SBATCH --error=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/cmt/fedavg_rain._final5.err
+#SBATCH --time=4:00:00 #hr per round for rainclear
 #SBATCH --nodes=1
 #SBATCH --ntasks=2
 #SBATCH --ntasks-per-node=2
 #SBATCH --gres=gpu:a40:2
 #SBATCH --cpus-per-task=8
-#SBATCH --mem=32G
+#SBATCH --mem=38G
 
 set -e # stop if something fails
 
@@ -21,7 +21,7 @@ SAMPLES_PER_GPU=8
 SIZE_A=265  # A > B for logging
 SIZE_B=125
 
-START_ROUND=6  # <--- NEW: Set to 1 for new run, or X to start loop at round X
+START_ROUND=16  # <--- NEW: Set to 1 for new run, or X to start loop at round X, round 16 mains load from global 15.pth
 RESUME_CHECKPOINT="/tudelft.net/staff-umbrella/MscThesisjverhoog/projects/cmt_fedavg/12214816/round_15/global_model.pth"
 
 # Paths
