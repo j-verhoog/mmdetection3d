@@ -10,7 +10,7 @@
 #SBATCH --ntasks-per-node=2    # Spread them evenly
 #SBATCH --gres=gpu:a40:2       # Request 2 GPUs per node (Total 2)
 #SBATCH --cpus-per-task=8
-#SBATCH --mem=64G             
+#SBATCH --mem=40G             
 
 set -e # Good practice to fail fast
 
