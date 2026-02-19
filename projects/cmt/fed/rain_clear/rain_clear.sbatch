@@ -22,7 +22,7 @@ SIZE_A=265  # A > B for logging
 SIZE_B=125
 
 START_ROUND=16  # <--- NEW: Set to 1 for new run, or X to start loop at round X, round 16 mains load from global 15.pth
-RESUME_CHECKPOINT="/tudelft.net/staff-umbrella/MscThesisjverhoog/projects/cmt_fedavg/12214816/round_15/global_model.pth"
+RESUME_CHECKPOINT="/tudelft.net/staff-umbrella/MscThesisjverhoog/projects/cmt_fedavg/12215490/round_15/global_model.pth"
 
 # Paths
 DAY_CLEAR_DATAROOT="/tudelft.net/staff-umbrella/MscThesisjverhoog/datasets/cmt_subsets/Default_NoFair_SingleClient/boston_day_clear"
