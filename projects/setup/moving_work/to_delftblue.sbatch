@@ -12,10 +12,15 @@
 echo "Current Disk usage:"
 du -h '/tudelft.net/staff-umbrella/MscThesisjverhoog/' | sort -h | tail
 
+DEST="/tudelft.net/staff-umbrella/MscThesisjverhoog/"
+
 echo "Starting rsync at $(date)"
-# Use -a to preserve symlinks and -h for human readable stats
-# Ensure there is NO trailing slash on the source folder
-rsync -ahv ~/mmdet /tudelft.net/staff-umbrella/MscThesisjverhoog/
+
+# --exclude='MscThesisjverhoog' tells rsync to skip that specific entry inside ~/mmdet
+# -a ensures other symlinks (like datasets) stay as links and aren't expanded
+rsync -ahv \
+    --exclude='MscThesisjverhoog' \
+    ~/mmdet "$DEST"
 
 echo "Rsync completed at $(date)"
 
