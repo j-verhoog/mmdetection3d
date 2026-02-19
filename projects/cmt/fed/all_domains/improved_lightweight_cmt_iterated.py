@@ -342,7 +342,7 @@ optimizer = dict(
             'img_backbone': dict(lr_mult=0.01, decay_mult=5),
             'img_neck': dict(lr_mult=0.1),
         }),
-    weight_decay=0.01)  # lr 0.00014 for 8gpu * 4sample_per_gpu, halved it for now
+    weight_decay=0.01)  # lr 0.00014 for 8gpu * 4sample_per_gpu, halved it for batchsize 16
 
 optimizer_config = dict(
     type='CustomFp16OptimizerHook',

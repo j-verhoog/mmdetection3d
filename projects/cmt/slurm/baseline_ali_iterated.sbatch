@@ -12,6 +12,8 @@
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=40G             
 
+
+## SCRIPT WORKING FINE. BATCHSIZE TOO SMALL FOR A40 ONLY USING 15GB of VRAM
 set -e # Good practice to fail fast
 
 # cmt baseline downtuned Ali test

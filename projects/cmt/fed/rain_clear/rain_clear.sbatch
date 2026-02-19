@@ -6,18 +6,21 @@
 #SBATCH --error=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/cmt/fedavg_rain_final4.err
 #SBATCH --time=4:00:00 #hr per round for rainclear
 #SBATCH --nodes=1
-#SBATCH --ntasks=2
-#SBATCH --ntasks-per-node=2
-#SBATCH --gres=gpu:a40:2
+#SBATCH --ntasks=1
+#SBATCH --ntasks-per-node=1
+#SBATCH --gres=gpu:a40:1
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=38G
+
+
+## SCRIPT WORKING FINE.
 
 set -e # stop if something fails
 
 # --- FEDERATED SETTINGS ---
 NUM_ROUNDS=20 # approx an hour per round of 1 Epoch
 EPOCHS_PER_ROUND=1 
-SAMPLES_PER_GPU=8
+SAMPLES_PER_GPU=16
 SIZE_A=265  # A > B for logging
 SIZE_B=125
 
@@ -81,7 +84,7 @@ run_training () {
 
     echo "=== ROUND $ROUND | Training $MODEL_NAME | Stop Epoch: $STOP_EPOCH (Global: $GLOBAL_EPOCHS) ==="
     
-    srun --ntasks=2 --gpus-per-task=1 bash -lc "
+    srun --ntasks=1 --gpus-per-task=1 bash -lc "
       apptainer exec --nv --cleanenv \
       --bind \"$HOME/mmdet:/workspace/mmdet\" \
       --bind \"$TMP_BASE:/workspace/tmp\" \
