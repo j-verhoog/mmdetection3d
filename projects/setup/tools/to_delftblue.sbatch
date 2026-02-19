@@ -9,9 +9,6 @@
 #SBATCH --cpus-per-task=2
 #SBATCH --mem=16G
 
-echo "Current Disk usage:"
-du -h '/tudelft.net/staff-umbrella/MscThesisjverhoog/' | sort -h | tail
-
 DEST="/tudelft.net/staff-umbrella/MscThesisjverhoog/"
 
 echo "Starting rsync at $(date)"
@@ -23,6 +20,3 @@ rsync -ahv \
     ~/mmdet "$DEST"
 
 echo "Rsync completed at $(date)"
-
-echo "Now disk usage after rsync:"
-du -h '/tudelft.net/staff-umbrella/MscThesisjverhoog/' | sort -h | tail
