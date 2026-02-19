@@ -1,16 +1,16 @@
 #!/bin/bash
 #SBATCH --partition=general
-#SBATCH --qos=medium
-#SBATCH --job-name=fedAVG_rain
-#SBATCH --output=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/cmt/fedavg_rain.out
-#SBATCH --error=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/cmt/fedavg_rain.err
-#SBATCH --time=21:00:00
+#SBATCH --qos=short
+#SBATCH --job-name=fedAVG_all_test
+#SBATCH --output=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/cmt/fedavg_all_test.out
+#SBATCH --error=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/cmt/fedavg_all_test.err
+#SBATCH --time=2:00:00 #hr per round for rainclear
 #SBATCH --nodes=1
 #SBATCH --ntasks=2
 #SBATCH --ntasks-per-node=2
 #SBATCH --gres=gpu:a40:2
 #SBATCH --cpus-per-task=8
-#SBATCH --mem=32G
+#SBATCH --mem=40G
 
 set -e # stop if something fails
 
@@ -18,21 +18,34 @@ set -e # stop if something fails
 NUM_ROUNDS=20 # approx an hour per round of 1 Epoch
 EPOCHS_PER_ROUND=1 
 SAMPLES_PER_GPU=8
-SIZE_A=265  # A > B for logging
+SIZE_A=265  # A MUST BE BIGGEST for logging
 SIZE_B=125
+SIZE_C=226
+SIZE_D=71
+SIZE_E=13
+
+START_ROUND=1  # <--- NEW: Set to 1 for new run, or X to start loop at round X, round 16 mains load from global 15.pth
+RESUME_CHECKPOINT="/tudelft.net/staff-umbrella/MscThesisjverhoog/projects/cmt_fedavg/12215490/round_15/global_model.pth"
 
 # Paths
 DAY_CLEAR_DATAROOT="/tudelft.net/staff-umbrella/MscThesisjverhoog/datasets/cmt_subsets/Default_NoFair_SingleClient/boston_day_clear"
 DAY_RAIN_DATAROOT="/tudelft.net/staff-umbrella/MscThesisjverhoog/datasets/cmt_subsets/Default_NoFair_SingleClient/boston_day_rain"
+DAY_CLEAR_DATAROOT_SING="/tudelft.net/staff-umbrella/MscThesisjverhoog/datasets/cmt_subsets/Default_NoFair_SingleClient/singapore_day_clear"
+NIGHT_CLEAR_DATAROOT="/tudelft.net/staff-umbrella/MscThesisjverhoog/datasets/cmt_subsets/Default_NoFair_SingleClient/singapore_night_clear"
+NIGHT_RAIN_DATAROOT="/tudelft.net/staff-umbrella/MscThesisjverhoog/datasets/cmt_subsets/Default_NoFair_SingleClient/singapore_night_rain"
+
 CONFIG_A=$DAY_CLEAR_DATAROOT
 CONFIG_B=$DAY_RAIN_DATAROOT
+CONFIG_C=$DAY_CLEAR_DATAROOT_SING
+CONFIG_D=$NIGHT_CLEAR_DATAROOT
+CONFIG_E=$NIGHT_RAIN_DATAROOT
 
 # Initial backbone weights (only used in Round 1)
 PRETRAINED_BACKBONE="ckpts/nuim_r50.pth"
 
 # --- STANDARD SETUP ---
 export SRUN_CPUS_PER_TASK=${SLURM_CPUS_PER_TASK:-1}
-export WANDB_PROJECT="cmt_fedavg"
+export WANDB_PROJECT="cmt_fedavg_all"
 # Gets API key robustly
 export WANDB_API_KEY=$(awk '$1=="machine" && $2=="api.wandb.ai" {found=1}found && $1=="password" {print $2; exit}' "$HOME/.netrc")
 
@@ -127,7 +140,10 @@ run_training () {
 run_merge () {
     local CKPT_A=$1
     local CKPT_B=$2
-    local OUT_PATH=$3
+    local CKPT_C=$3
+    local CKPT_D=$4
+    local CKPT_E=$5
+    local OUT_PATH=$6
     
     echo "=== Merging Models ==="
     apptainer exec --nv --cleanenv \
@@ -138,11 +154,14 @@ run_merge () {
       bash -lc "
         cd /workspace/mmdet/mmdetection3d && \
         export PYTHONPATH=/workspace/mmdet/mmdetection3d:/workspace/mmdet:\$PYTHONPATH && \
-        python projects/cmt/fed/fed_avg_merge.py \
+        python projects/cmt/fed/all_domains/fed_avg_merge.py \
             $CKPT_A \
             $CKPT_B \
+            $CKPT_C \
+            $CKPT_D \
+            $CKPT_E \
             $OUT_PATH \
-            --weight-a $SIZE_A --weight-b $SIZE_B
+            --weight-a $SIZE_A --weight-b $SIZE_B --weight-c $SIZE_C --weight-d $SIZE_D --weight-e $SIZE_E
       "
 }
 
@@ -150,14 +169,21 @@ run_merge () {
 # MAIN LOOP
 # ==========================================
 
-# Initialize Global Model variable
-GLOBAL_MODEL="$PRETRAINED_BACKBONE"
+# --- NEW LOGIC START ---
+# Initialize Global Model based on START_ROUND
+if [ "$START_ROUND" -eq 1 ]; then
+    echo "Starting fresh run from Round 1"
+    GLOBAL_MODEL="$PRETRAINED_BACKBONE"
+else
+    echo "Resuming run from Round $START_ROUND using checkpoint: $RESUME_CHECKPOINT"
+    GLOBAL_MODEL="$RESUME_CHECKPOINT"
+fi
+
 # CALCULATE GLOBAL TOTAL ONCE
 # This ensures the LR scheduler sees the full picture (e.g., 20 epochs) from Round 1
 GLOBAL_MAX_EPOCHS=$((NUM_ROUNDS * EPOCHS_PER_ROUND))
 
-for ((i=1; i<=NUM_ROUNDS; i++)); do
-    
+for ((i=START_ROUND; i<=NUM_ROUNDS; i++)); do
     # This is where we want to STOP in this specific round
     CURRENT_STOP_EPOCH=$((i * EPOCHS_PER_ROUND))
     
@@ -181,9 +207,18 @@ for ((i=1; i<=NUM_ROUNDS; i++)); do
     run_training "ModelB" "$CONFIG_B" "$GLOBAL_MODEL" "$i" "$GLOBAL_MAX_EPOCHS" "$CURRENT_STOP_EPOCH" "$IS_RESUME"
     CKPT_B="$WORK/round_${i}/ModelB/epoch_${CURRENT_STOP_EPOCH}.pth" # Use specific epoch
 
+    run_training "ModelC" "$CONFIG_C" "$GLOBAL_MODEL" "$i" "$GLOBAL_MAX_EPOCHS" "$CURRENT_STOP_EPOCH" "$IS_RESUME"
+    CKPT_C="$WORK/round_${i}/ModelC/epoch_${CURRENT_STOP_EPOCH}.pth" # Use specific epoch
+
+    run_training "ModelD" "$CONFIG_D" "$GLOBAL_MODEL" "$i" "$GLOBAL_MAX_EPOCHS" "$CURRENT_STOP_EPOCH" "$IS_RESUME"
+    CKPT_D="$WORK/round_${i}/ModelD/epoch_${CURRENT_STOP_EPOCH}.pth" # Use specific epoch
+
+    run_training "ModelE" "$CONFIG_E" "$GLOBAL_MODEL" "$i" "$GLOBAL_MAX_EPOCHS" "$CURRENT_STOP_EPOCH" "$IS_RESUME"
+    CKPT_E="$WORK/round_${i}/ModelE/epoch_${CURRENT_STOP_EPOCH}.pth" # Use specific epoch
+
     # 3. Aggregate
     GLOBAL_MODEL="$WORK/round_${i}/global_model.pth"
-    run_merge "$CKPT_A" "$CKPT_B" "$GLOBAL_MODEL"
+    run_merge "$CKPT_A" "$CKPT_B" "$CKPT_C" "$CKPT_D" "$CKPT_E" "$GLOBAL_MODEL"
     
     echo "Round $i complete. Global model saved."
 done
