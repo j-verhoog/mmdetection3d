@@ -336,13 +336,13 @@ model = dict(
 
 optimizer = dict(
     type='AdamW',
-    lr=0.00007,
+    lr=0.00014,
     paramwise_cfg=dict(
         custom_keys={
             'img_backbone': dict(lr_mult=0.01, decay_mult=5),
             'img_neck': dict(lr_mult=0.1),
         }),
-    weight_decay=0.01)  # lr 0.00014 for 8gpu * 4sample_per_gpu, halved it for batchsize 16
+    weight_decay=0.01)  # lr 0.00014 for 8gpu * 4sample_per_gpu,
 
 optimizer_config = dict(
     type='CustomFp16OptimizerHook',

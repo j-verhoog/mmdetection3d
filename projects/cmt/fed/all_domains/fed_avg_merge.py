@@ -1,6 +1,5 @@
 import argparse
 import torch
-import shutil
 import os
 import copy
 import string
@@ -86,6 +85,16 @@ def main():
         # This mirrors the old logic perfectly: if a key was missing in later models,
         # it normalizes correctly to keep the original un-averaged Model A weights.
         merged_ckpt['state_dict'][k] = running_sum[k] / presence_weights[k]
+
+    # NEW: Zero out optimizer momentum to prevent bleed-over across domains, 
+    # while keeping the state structure intact so --resume-from doesn't crash.
+    if 'optimizer' in merged_ckpt and 'state' in merged_ckpt['optimizer']:
+        for param_id in merged_ckpt['optimizer']['state']:
+            for key in merged_ckpt['optimizer']['state'][param_id]:
+                # If the state holds a tensor (like momentum buffers), zero it out
+                if torch.is_tensor(merged_ckpt['optimizer']['state'][param_id][key]):
+                    merged_ckpt['optimizer']['state'][param_id][key].zero_()
+                    
 
     # Optional: Log the epoch we are merging at
     epoch = merged_ckpt.get('meta', {}).get('epoch', 'Unknown')

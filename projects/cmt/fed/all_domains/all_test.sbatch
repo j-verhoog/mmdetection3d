@@ -4,13 +4,13 @@
 #SBATCH --job-name=fedAVG_all_test
 #SBATCH --output=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/cmt/fedavg_all_test.out
 #SBATCH --error=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/cmt/fedavg_all_test.err
-#SBATCH --time=2:00:00 #hr per round for rainclear
-#SBATCH --nodes=1
-#SBATCH --ntasks=1
-#SBATCH --ntasks-per-node=1
-#SBATCH --gres=gpu:a40:1
+#SBATCH --time=04:00:00        #hr per round for rainclear
+#SBATCH --nodes=1              # Amount of machines
+#SBATCH --ntasks=2             # Total tasks (2 per node)
+#SBATCH --ntasks-per-node=2    # Spread them evenly
+#SBATCH --gres=gpu:a40:2       # Request 2 GPUs per node (Total 2)
 #SBATCH --cpus-per-task=8
-#SBATCH --mem=40G
+#SBATCH --mem=40G        
 
 set -e # stop if something fails
 
@@ -91,7 +91,7 @@ run_training () {
 
     echo "=== ROUND $ROUND | Training $MODEL_NAME | Stop Epoch: $STOP_EPOCH (Global: $GLOBAL_EPOCHS) ==="
     
-    srun --ntasks=1 --gpus-per-task=1 bash -lc "
+    srun --ntasks=2 --gpus-per-task=1 bash -lc "
       apptainer exec --nv --cleanenv \
       --bind \"$HOME/mmdet:/workspace/mmdet\" \
       --bind \"$TMP_BASE:/workspace/tmp\" \
@@ -108,7 +108,7 @@ run_training () {
       --env WANDB_DIR=\"/workspace/tmp/wandb/\$SLURM_PROCID\" \
       --env TMPDIR=\"/workspace/tmp/tmp/\$SLURM_PROCID\" \
       --env WANDB_PROJECT=\"$WANDB_PROJECT\" \
-      --env WANDB_NAME=\"Rain_R${ROUND}_${MODEL_NAME}\" \
+      --env WANDB_NAME=\"FedAvg_${MODEL_NAME}\" \
       --env WANDB_API_KEY=\"$WANDB_API_KEY\" \
       --env OMP_NUM_THREADS=1 \
       --env MKL_NUM_THREADS=1 \
