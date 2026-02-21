@@ -4,13 +4,13 @@
 #SBATCH --job-name=fedAVG_all_test
 #SBATCH --output=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/cmt/fedavg_all_test.out
 #SBATCH --error=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/cmt/fedavg_all_test.err
-#SBATCH --time=04:00:00        #hr per round for rainclear
-#SBATCH --nodes=1              # Amount of machines
-#SBATCH --ntasks=2             # Total tasks (2 per node)
-#SBATCH --ntasks-per-node=2    # Spread them evenly
-#SBATCH --gres=gpu:a40:2       # Request 2 GPUs per node (Total 2)
+#SBATCH --time=04:00:00
+#SBATCH --nodes=1
+#SBATCH --ntasks=2
+#SBATCH --ntasks-per-node=2
+#SBATCH --gres=gpu:a40:2
 #SBATCH --cpus-per-task=8
-#SBATCH --mem=40G        
+#SBATCH --mem=40G
 
 set -e # stop if something fails
 
@@ -131,7 +131,7 @@ run_training () {
           --cfg-options ${CFG_LOAD_ARG} dist_params.port=$MASTER_PORT \
             data.samples_per_gpu=$SAMPLES_PER_GPU \
             total_epochs=$GLOBAL_EPOCHS \
-            custom_hooks.1.stop_epoch=$STOP_EPOCH 
+            custom_hooks.1.stop_epoch=$STOP_EPOCH
       '
     "
 }

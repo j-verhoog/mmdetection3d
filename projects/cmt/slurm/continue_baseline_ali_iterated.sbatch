@@ -1,19 +1,18 @@
 #!/bin/bash
-#SBATCH --partition=general # request partition
-#SBATCH --qos=short # Quality of service, short default
+#SBATCH --partition=general
+#SBATCH --qos=short
 #SBATCH --job-name=centr_base_final
 #SBATCH --output=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/cmt/centr_base_final.out
 #SBATCH --error=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/cmt/centr_base_final.err
 #SBATCH --time=02:00:00 # 0:01:00 is one minute, max 4hrs for short QoS, 36hrs for medium
-#SBATCH --nodes=1              # Amount of machines
-#SBATCH --ntasks=2             # Total tasks (2 per node)
-#SBATCH --ntasks-per-node=2    # Spread them evenly
-#SBATCH --gres=gpu:a40:2       # Request 2 GPUs per node (Total 2)
+#SBATCH --nodes=1
+#SBATCH --ntasks=2
+#SBATCH --ntasks-per-node=2
+#SBATCH --gres=gpu:a40:2
 #SBATCH --cpus-per-task=8
-#SBATCH --mem=40G             
+#SBATCH --mem=40G
 
-
-## SCRIPT WORKING FINE. BATCHSIZE TOO SMALL FOR A40 ONLY USING 15GB of VRAM
+## SCRIPT WORKING FINE. BATCHSIZE (8) TOO SMALL FOR A40 ONLY USING 15GB of VRAM
 set -e # Good practice to fail fast
 
 # cmt baseline downtuned Ali test
