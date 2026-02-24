@@ -9,7 +9,7 @@ model = dict(
         stage_with_dcn=(False, False, True, True),
         norm_eval=False,     # <-- ADD THIS: Puts BN layers in training mode
     #    frozen_stages=-1,     # <-- ADD THIS: Ensures no backbone stages are frozen
-        norm_cfg=dict(type='BN', requires_grad=True)  # Unfreezes the BN scale and shift parameters
+        norm_cfg=dict(type='SyncBN', requires_grad=True)  # Unfreezes the BN scale and shift parameters
         ),)
 
 class_names = [
