@@ -1,10 +1,10 @@
 #!/bin/bash
 #SBATCH --partition=general
 #SBATCH --qos=medium
-#SBATCH --job-name=fedAVG_rain_final4_forreal
-#SBATCH --output=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/cmt/fedavg_rain_final4_fr.out
-#SBATCH --error=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/cmt/fedavg_rain_final4_fr.err
-#SBATCH --time=5:30:00 #hr per round for rainclear
+#SBATCH --job-name=fedAVG_rain_final5_forreal
+#SBATCH --output=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/cmt/fedavg_rain_final5_fr.out
+#SBATCH --error=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/cmt/fedavg_rain_final5_fr.err
+#SBATCH --time=08:30:00 #hr per round for rainclear
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --ntasks-per-node=1
@@ -24,8 +24,8 @@ SAMPLES_PER_GPU=16
 SIZE_A=265  # A > B for logging
 SIZE_B=125
 
-START_ROUND=17  # <--- NEW: Set to 1 for new run, or X to start loop at round X, round 16 mains load from global 15.pth
-RESUME_CHECKPOINT="/tudelft.net/staff-umbrella/MscThesisjverhoog/projects/cmt_fedavg/12221133/round_17/global_model.pth"
+START_ROUND=16  # <--- NEW: Set to 1 for new run, or X to start loop at round X, round 16 mains load from global 15.pth
+RESUME_CHECKPOINT="/tudelft.net/staff-umbrella/MscThesisjverhoog/projects/cmt_fedavg/12215490/round_15/global_model.pth"
 
 # Paths
 DAY_CLEAR_DATAROOT="/tudelft.net/staff-umbrella/MscThesisjverhoog/datasets/cmt_subsets/Default_NoFair_SingleClient/boston_day_clear"
