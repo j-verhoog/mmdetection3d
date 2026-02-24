@@ -361,7 +361,7 @@ lr_config = dict(
 #     cyclic_times=1,
 #     step_ratio_up=0.4)
 # total_epochs = 2
-evaluation = dict(interval=1)
+evaluation = dict(interval=1, min_gt_count=5)
 checkpoint_config = dict(interval=1)
 # log_config = dict(
 #     interval=50,
