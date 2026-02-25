@@ -73,9 +73,11 @@ srun --ntasks=2 --gpus-per-task=1 bash -lc "
   --env TORCH_DISTRIBUTED_DEBUG=DETAIL \
   --env MASTER_ADDR=\"$MASTER_ADDR\" \
   --env MASTER_PORT=\"$MASTER_PORT\" \
+  --env NCCL_SOCKET_IFNAME=\"campus\" \
   \"$APPTAINER_IMAGE\" \
   bash -lc '
     cd /workspace/mmdet/mmdetection3d && \
+    export PYTHONPATH=/workspace/mmdet/mmdetection3d:/workspace/mmdet:\$PYTHONPATH && \
     python -u tools/train.py \
       configs/fcos3d/fcos3d_r101_caffe_fpn_gn-head_dcn_2x8_1x_nus-mono3d_bn_unfrozen.py \
       --launcher slurm \
