@@ -8,13 +8,14 @@ def parse_args():
     parser = argparse.ArgumentParser(description='Merge N models via FedAvg and preserve state')
     
     # Using nargs='+' allows us to accept any number of positional arguments.
-    # The last argument will be treated as the output path, the rest as models.
-    parser.add_argument('paths', nargs='+', help='Paths to model checkpoints, with the LAST path being the output destination.')
-    
+
+    parser.add_argument('--inputs', nargs='+', required=True, help='Paths to input model checkpoints')
+    parser.add_argument('--outputs', nargs='+', required=True, help='Paths to save the distinct merged models')
+
     # Dynamically add weight arguments up to 'z' (26 models max). 
     # We show help for the first few to keep the menu clean, and suppress the rest.
     for i, char in enumerate(string.ascii_lowercase):
-        help_text = f'Weight for model {char.upper()}' if i < 4 else argparse.SUPPRESS
+        help_text = f'Weight for model {char.upper()}' if i < 5 else argparse.SUPPRESS
         parser.add_argument(f'--weight-{char}', type=float, default=None, help=help_text)
         
     args = parser.parse_args()
@@ -23,12 +24,11 @@ def parse_args():
 def main():
     args = parse_args()
     
-    # Ensure minimum required arguments are present (2 models + 1 output)
-    if len(args.paths) < 3:
-        raise ValueError("You must provide at least two model paths and one output path.")
+    if len(args.inputs) != len(args.outputs):
+        raise ValueError("Number of input paths must match number of output paths.")
         
-    models = args.paths[:-1]
-    output_path = args.paths[-1]
+    models = args.inputs
+    output_paths = args.outputs
     
     # Extract weights dynamically based on how many models were provided
     raw_weights = []
@@ -48,31 +48,29 @@ def main():
     for i, (m_path, w) in enumerate(zip(models, norm_weights)):
         print(f" Model {string.ascii_uppercase[i]}: {m_path} (normalized w={w:.4f})")
         
-    # 1. Load the first model (Model A) as the base and deepcopy to preserve state/meta
-    print("Deepcopying Model A to preserve full state...")
-    base_ckpt = torch.load(models[0], map_location='cpu')
-    merged_ckpt = copy.deepcopy(base_ckpt)
-    base_keys = list(merged_ckpt['state_dict'].keys())
+    # # 1. Load the first model (Model A) as the base and deepcopy to preserve state/meta
+    # print("Deepcopying Model A to preserve full state...")
+    # base_ckpt = torch.load(models[0], map_location='cpu')
     
+    # 1. Setup accumulators for the N-way average using the first model's structure
+    temp_ckpt = torch.load(models[0], map_location='cpu')
+
     # 2. Setup accumulators for the N-way average
     running_sum = {}
     presence_weights = {}
     
-    for k in base_keys:
-        # NEW FIX: Skip integer tensors (like num_batches_tracked or step counts)
-        # They will remain exactly as they were in Model A via the deepcopy.
-        if not base_ckpt['state_dict'][k].is_floating_point() or 'num_batches_tracked' in k:
-            continue
-            
-        running_sum[k] = base_ckpt['state_dict'][k] * norm_weights[0]
-        presence_weights[k] = norm_weights[0]
-    
-    # Free base_ckpt to save RAM, we only need merged_ckpt and accumulators now
-    del base_ckpt
+    for k, v in temp_ckpt['state_dict'].items():
+        if not v.is_floating_point() or 'num_batches_tracked' in k:
+             continue
+             
+        running_sum[k] = torch.zeros_like(v)
+        presence_weights[k] = 0.0
+        
+    del temp_ckpt
     
     # 3. Iterate sequentially through remaining models
     print("Averaging weights...")
-    for i in range(1, len(models)):
+    for i in range(len(models)):
         m_path = models[i]
         w_i = norm_weights[i]
         
@@ -88,30 +86,37 @@ def main():
         # Free memory after processing each model to remain robust against large N
         del ckpt_i 
         
-    # 4. Finalize the average and assign back to merged_ckpt
-    # Again, only update the keys we actually averaged
-    for k in running_sum.keys():
-        merged_ckpt['state_dict'][k] = running_sum[k] / presence_weights[k]
+    # 3. Calculate final averaged weights
+    averaged_weights = {k: running_sum[k] / presence_weights[k] for k in running_sum.keys()}
 
-    # ... [Optimizer zeroing and saving logic remains exactly the same] ...
+    # # ... [Optimizer zeroing and saving logic remains exactly the same] ...
 
-    # NEW: Zero out optimizer momentum to prevent bleed-over across domains, 
-    # while keeping the state structure intact so --resume-from doesn't crash.
-    if 'optimizer' in merged_ckpt and 'state' in merged_ckpt['optimizer']:
-        for param_id in merged_ckpt['optimizer']['state']:
-            for key in merged_ckpt['optimizer']['state'][param_id]:
-                # If the state holds a tensor (like momentum buffers), zero it out
-                if torch.is_tensor(merged_ckpt['optimizer']['state'][param_id][key]):
-                    merged_ckpt['optimizer']['state'][param_id][key].zero_()
-                    
+    # # NEW: Zero out optimizer momentum to prevent bleed-over across domains, 
+    # # while keeping the state structure intact so --resume-from doesn't crash.
+    # if 'optimizer' in merged_ckpt and 'state' in merged_ckpt['optimizer']:
+    #     for param_id in merged_ckpt['optimizer']['state']:
+    #         for key in merged_ckpt['optimizer']['state'][param_id]:
+    #             # If the state holds a tensor (like momentum buffers), zero it out
+    #             if torch.is_tensor(merged_ckpt['optimizer']['state'][param_id][key]):
+    #                 merged_ckpt['optimizer']['state'][param_id][key].zero_()
+                    # 4. Inject Averaged Weights into EACH Model and Save
 
-    # Optional: Log the epoch we are merging at
-    epoch = merged_ckpt.get('meta', {}).get('epoch', 'Unknown')
-    print(f"Merging at end of Epoch: {epoch}")
-    
-    os.makedirs(os.path.dirname(output_path), exist_ok=True)
-    torch.save(merged_ckpt, output_path)
-    print(f"Saved merged model with optimizer state to {output_path}")
+    for in_path, out_path in zip(models, output_paths):
+        print(f"Updating and saving individual state for: {out_path}")
+        ckpt = torch.load(in_path, map_location='cpu')
+        
+        for k in averaged_weights.keys():
+            ckpt['state_dict'][k] = averaged_weights[k]
+            
+        if 'optimizer' in ckpt and 'state' in ckpt['optimizer']:
+            for param_id in ckpt['optimizer']['state']:
+                for key in ckpt['optimizer']['state'][param_id]:
+                    if torch.is_tensor(ckpt['optimizer']['state'][param_id][key]):
+                        ckpt['optimizer']['state'][param_id][key].zero_()
+                        
+        os.makedirs(os.path.dirname(out_path), exist_ok=True)
+        torch.save(ckpt, out_path)
+        print(f"Saved merged model with optimizer state to {out_path}")
 
 if __name__ == '__main__':
     main()

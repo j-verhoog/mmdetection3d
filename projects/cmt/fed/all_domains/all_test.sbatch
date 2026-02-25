@@ -46,11 +46,13 @@ PRETRAINED_BACKBONE="ckpts/nuim_r50.pth"
 # --- STANDARD SETUP ---
 export SRUN_CPUS_PER_TASK=${SLURM_CPUS_PER_TASK:-1}
 export WANDB_PROJECT="cmt_fedavg_all"
+export RUN_NAME="run_$(date +%Y%m%d_%H%M%S)"
+
 # Gets API key robustly
 export WANDB_API_KEY=$(awk '$1=="machine" && $2=="api.wandb.ai" {found=1}found && $1=="password" {print $2; exit}' "$HOME/.netrc")
 
 export APPTAINER_IMAGE=/tudelft.net/staff-umbrella/MscThesisjverhoog/image/mmdet3d_v1rc5.sif
-export WORK=/tudelft.net/staff-umbrella/MscThesisjverhoog/projects/$WANDB_PROJECT/$SLURM_JOB_ID
+export WORK=/tudelft.net/staff-umbrella/MscThesisjverhoog/projects/$WANDB_PROJECT/$RUN_NAME
 mkdir -p "$WORK"
 
 TMP_BASE="/tmp/jtverhoog_${SLURM_JOB_ID}"
@@ -74,6 +76,7 @@ run_training () {
     local GLOBAL_EPOCHS=$5    # Changed from TARGET_EPOCHS
     local STOP_EPOCH=$6       # NEW ARGUMENT
     local IS_RESUME=$7
+    local WANDB_RUN_ID=$8       # get run consistency
     
     local WORK_DIR="$WORK/round_${ROUND}/${MODEL_NAME}"
     
@@ -119,6 +122,8 @@ run_training () {
       --env MASTER_ADDR=\"$MASTER_ADDR\" \
       --env MASTER_PORT=\"$MASTER_PORT\" \
       --env NCCL_SOCKET_IFNAME=\"campus\" \
+      --env WANDB_RUN_ID=\"$WANDB_RUN_ID\" \
+      --env WANDB_RESUME=\"allow\" \
       \"$APPTAINER_IMAGE\" \
       bash -lc '
         cd /workspace/mmdet/mmdetection3d && \
@@ -143,7 +148,11 @@ run_merge () {
     local CKPT_C=$3
     local CKPT_D=$4
     local CKPT_E=$5
-    local OUT_PATH=$6
+    local OUT_A=$6
+    local OUT_B=$7
+    local OUT_C=$8
+    local OUT_D=$9
+    local OUT_E=${10}
     
     echo "=== Merging Models ==="
     apptainer exec --nv --cleanenv \
@@ -155,12 +164,8 @@ run_merge () {
         cd /workspace/mmdet/mmdetection3d && \
         export PYTHONPATH=/workspace/mmdet/mmdetection3d:/workspace/mmdet:\$PYTHONPATH && \
         python projects/cmt/fed/tools/fed_avg_merge.py \
-            $CKPT_A \
-            $CKPT_B \
-            $CKPT_C \
-            $CKPT_D \
-            $CKPT_E \
-            $OUT_PATH \
+            --inputs $CKPT_A $CKPT_B $CKPT_C $CKPT_D $CKPT_E \
+            --outputs $OUT_A $OUT_B $OUT_C $OUT_D $OUT_E \
             --weight-a $SIZE_A --weight-b $SIZE_B --weight-c $SIZE_C --weight-d $SIZE_D --weight-e $SIZE_E
       "
 }
@@ -169,14 +174,28 @@ run_merge () {
 # MAIN LOOP
 # ==========================================
 
-# --- NEW LOGIC START ---
-# Initialize Global Model based on START_ROUND
+# Create persistent WandB Run IDs so each model logs to the same run across rounds
+export WANDB_ID_A="fedavg_A_${SLURM_JOB_ID}"
+export WANDB_ID_B="fedavg_B_${SLURM_JOB_ID}"
+export WANDB_ID_C="fedavg_C_${SLURM_JOB_ID}"
+export WANDB_ID_D="fedavg_D_${SLURM_JOB_ID}"
+export WANDB_ID_E="fedavg_E_${SLURM_JOB_ID}"
+
 if [ "$START_ROUND" -eq 1 ]; then
     echo "Starting fresh run from Round 1"
-    GLOBAL_MODEL="$PRETRAINED_BACKBONE"
+    MODEL_A="$PRETRAINED_BACKBONE"
+    MODEL_B="$PRETRAINED_BACKBONE"
+    MODEL_C="$PRETRAINED_BACKBONE"
+    MODEL_D="$PRETRAINED_BACKBONE"
+    MODEL_E="$PRETRAINED_BACKBONE"
 else
-    echo "Resuming run from Round $START_ROUND using checkpoint: $RESUME_CHECKPOINT"
-    GLOBAL_MODEL="$RESUME_CHECKPOINT"
+    echo "Resuming run from Round $START_ROUND"
+    PREV_ROUND=$((START_ROUND - 1))
+    MODEL_A="$WORK/round_${PREV_ROUND}/merged_A.pth"
+    MODEL_B="$WORK/round_${PREV_ROUND}/merged_B.pth"
+    MODEL_C="$WORK/round_${PREV_ROUND}/merged_C.pth"
+    MODEL_D="$WORK/round_${PREV_ROUND}/merged_D.pth"
+    MODEL_E="$WORK/round_${PREV_ROUND}/merged_E.pth"
 fi
 
 # CALCULATE GLOBAL TOTAL ONCE
@@ -201,26 +220,39 @@ for ((i=START_ROUND; i<=NUM_ROUNDS; i++)); do
 
     # UPDATE: Pass both GLOBAL total and LOCAL stop to the training function
     # Note: I am updating the function call arguments below
-    # run_training "ModelA" "$CONFIG_A" "$GLOBAL_MODEL" "$i" "$GLOBAL_MAX_EPOCHS" "$CURRENT_STOP_EPOCH" "$IS_RESUME"
-    # CKPT_A="$WORK/round_${i}/ModelA/epoch_${CURRENT_STOP_EPOCH}.pth" # Use specific epoch
+    run_training "ModelA" "$CONFIG_A" "$MODEL_A" "$i" "$GLOBAL_MAX_EPOCHS" "$CURRENT_STOP_EPOCH" "$IS_RESUME" "$WANDB_ID_A"
+    CKPT_A="$WORK/round_${i}/ModelA/epoch_${CURRENT_STOP_EPOCH}.pth" # Use specific epoch
 
-    # run_training "ModelB" "$CONFIG_B" "$GLOBAL_MODEL" "$i" "$GLOBAL_MAX_EPOCHS" "$CURRENT_STOP_EPOCH" "$IS_RESUME"
-    # CKPT_B="$WORK/round_${i}/ModelB/epoch_${CURRENT_STOP_EPOCH}.pth" # Use specific epoch
+    run_training "ModelB" "$CONFIG_B" "$MODEL_B" "$i" "$GLOBAL_MAX_EPOCHS" "$CURRENT_STOP_EPOCH" "$IS_RESUME" "$WANDB_ID_B"
+    CKPT_B="$WORK/round_${i}/ModelB/epoch_${CURRENT_STOP_EPOCH}.pth" # Use specific epoch
 
-    # run_training "ModelC" "$CONFIG_C" "$GLOBAL_MODEL" "$i" "$GLOBAL_MAX_EPOCHS" "$CURRENT_STOP_EPOCH" "$IS_RESUME"
-    # CKPT_C="$WORK/round_${i}/ModelC/epoch_${CURRENT_STOP_EPOCH}.pth" # Use specific epoch
+    run_training "ModelC" "$CONFIG_C" "$MODEL_C" "$i" "$GLOBAL_MAX_EPOCHS" "$CURRENT_STOP_EPOCH" "$IS_RESUME" "$WANDB_ID_C"
+    CKPT_C="$WORK/round_${i}/ModelC/epoch_${CURRENT_STOP_EPOCH}.pth" # Use specific epoch
 
-    run_training "ModelD" "$CONFIG_D" "$GLOBAL_MODEL" "$i" "$GLOBAL_MAX_EPOCHS" "$CURRENT_STOP_EPOCH" "$IS_RESUME"
+    run_training "ModelD" "$CONFIG_D" "$MODEL_D" "$i" "$GLOBAL_MAX_EPOCHS" "$CURRENT_STOP_EPOCH" "$IS_RESUME" "$WANDB_ID_D"
     CKPT_D="$WORK/round_${i}/ModelD/epoch_${CURRENT_STOP_EPOCH}.pth" # Use specific epoch
 
-    run_training "ModelE" "$CONFIG_E" "$GLOBAL_MODEL" "$i" "$GLOBAL_MAX_EPOCHS" "$CURRENT_STOP_EPOCH" "$IS_RESUME"
+    run_training "ModelE" "$CONFIG_E" "$MODEL_E" "$i" "$GLOBAL_MAX_EPOCHS" "$CURRENT_STOP_EPOCH" "$IS_RESUME" "$WANDB_ID_E"
     CKPT_E="$WORK/round_${i}/ModelE/epoch_${CURRENT_STOP_EPOCH}.pth" # Use specific epoch
 
-    # 3. Aggregate
-    GLOBAL_MODEL="$WORK/round_${i}/global_model.pth"
-    run_merge "$CKPT_A" "$CKPT_B" "$CKPT_C" "$CKPT_D" "$CKPT_E" "$GLOBAL_MODEL"
+    # 3. Aggregate and Save 5 Distinct Models
+    MERGED_A="$WORK/round_${i}/merged_A.pth"
+    MERGED_B="$WORK/round_${i}/merged_B.pth"
+    MERGED_C="$WORK/round_${i}/merged_C.pth"
+    MERGED_D="$WORK/round_${i}/merged_D.pth"
+    MERGED_E="$WORK/round_${i}/merged_E.pth"
     
-    echo "Round $i complete. Global model saved."
+    run_merge "$CKPT_A" "$CKPT_B" "$CKPT_C" "$CKPT_D" "$CKPT_E" \
+              "$MERGED_A" "$MERGED_B" "$MERGED_C" "$MERGED_D" "$MERGED_E"
+    
+    # Setup for next round
+    MODEL_A="$MERGED_A"
+    MODEL_B="$MERGED_B"
+    MODEL_C="$MERGED_C"
+    MODEL_D="$MERGED_D"
+    MODEL_E="$MERGED_E"
+    
+    echo "Round $i complete. 5 distinct merged models saved."
 done
 
 # Measure GPU usage of your job (result) for all allocated GPUs
