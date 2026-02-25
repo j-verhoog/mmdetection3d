@@ -8,8 +8,8 @@ model = dict(
         dcn=dict(type='DCNv2', deform_groups=1, fallback_on_stride=False),
         stage_with_dcn=(False, False, True, True),
         norm_eval=False,     # <-- ADD THIS: Puts BN layers in training mode
-    #    frozen_stages=-1,     # <-- ADD THIS: Ensures no backbone stages are frozen
-        norm_cfg=dict(type='SyncBN', requires_grad=True)  # Unfreezes the BN scale and shift parameters
+        frozen_stages=-1,     # <-- ADD THIS: Ensures no backbone stages are frozen
+        norm_cfg=dict(type='SyncBN', requires_grad=True, momentum=0.001)  # Unfreezes the BN scale and shift parameters, makes momentum10x smaller
         ),)
 
 class_names = [
@@ -63,11 +63,22 @@ data = dict(
     train=dict(pipeline=train_pipeline),
     val=dict(pipeline=test_pipeline),
     test=dict(pipeline=test_pipeline))
+# old # optimizer
+# optimizer = dict(
+#     lr=0.002, paramwise_cfg=dict(bias_lr_mult=2., bias_decay_mult=0.))
 # optimizer
 optimizer = dict(
-    lr=0.002, paramwise_cfg=dict(bias_lr_mult=2., bias_decay_mult=0.))
+    lr=0.002, 
+    paramwise_cfg=dict(
+        bias_lr_mult=2., 
+        bias_decay_mult=0.,
+        custom_keys={
+            'bn': dict(lr_mult=0.01)  # Applies a 0.01x LR multiplier ONLY to parameters with 'bn' in their name
+        }
+    )
+)
 optimizer_config = dict(
-    _delete_=True, grad_clip=dict(max_norm=35, norm_type=2))
+    _delete_=True, grad_clip=dict(max_norm=10, norm_type=2)) # <--- Lowers the maximum allowed gradient norm
 # learning policy
 lr_config = dict(
     policy='step',

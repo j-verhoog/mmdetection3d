@@ -14,7 +14,7 @@
 
 # FOR NAMING STICK TO: A–Z  a–z  0–9  .  _  -
 export WANDB_PROJECT="fcos3d"
-export WANDB_NAME="ncS_distr_bn_unfrozen"
+export WANDB_NAME="ncS_bn_001LRMomentum"
 export WANDB_API_KEY=$(awk '$1=="machine" && $2=="api.wandb.ai" {found=1}found && $1=="password" {print $2; exit}' "$HOME/.netrc")
 
 /usr/bin/scontrol show job -d "$SLURM_JOB_ID" # check sbatch working
