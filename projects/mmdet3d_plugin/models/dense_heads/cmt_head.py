@@ -350,9 +350,19 @@ class CmtHead(BaseModule):
 
             known_indice = torch.nonzero(unmask_label + unmask_bbox)
             known_indice = known_indice.view(-1)
-            # add noise
-            groups = min(self.scalar, self.num_query // max(known_num))
+
+            # add noise safely to prevent ZeroDivisionError on empty batches
+            max_known_num = max(known_num)
+            if max_known_num == 0:
+                groups = 0
+            else:
+                groups = min(self.scalar, self.num_query // max_known_num)
+                
             known_indice = known_indice.repeat(groups, 1).view(-1)
+
+            # add noise (old method, kept for reference)
+            # groups = min(self.scalar, self.num_query // max(known_num))
+            # known_indice = known_indice.repeat(groups, 1).view(-1)
             known_labels = labels.repeat(groups, 1).view(-1).long().to(reference_points.device)
             known_labels_raw = labels.repeat(groups, 1).view(-1).long().to(reference_points.device)
             known_bid = batch_idx.repeat(groups, 1).view(-1)
