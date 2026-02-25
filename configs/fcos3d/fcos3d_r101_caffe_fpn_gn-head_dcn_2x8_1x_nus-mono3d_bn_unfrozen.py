@@ -7,9 +7,9 @@ model = dict(
     backbone=dict(
         dcn=dict(type='DCNv2', deform_groups=1, fallback_on_stride=False),
         stage_with_dcn=(False, False, True, True),
-        norm_eval=False,     # <-- ADD THIS: Puts BN layers in training mode
+        norm_eval=True,     # <-- True freezes BN stats (running mean and var), but not the affine parameters (scale and shift)
         frozen_stages=-1,     # <-- ADD THIS: Ensures no backbone stages are frozen
-        norm_cfg=dict(type='SyncBN', requires_grad=True, momentum=0.001)  # Unfreezes the BN scale and shift parameters, makes momentum10x smaller
+        norm_cfg=dict(type='SyncBN', requires_grad=True)  # Unfreezes the BN scale and shift parameters, makes momentum10x smaller (, momentum=0.001) only for normeval=False
         ),)
 
 class_names = [
@@ -78,7 +78,7 @@ optimizer = dict(
     )
 )
 optimizer_config = dict(
-    _delete_=True, grad_clip=dict(max_norm=10, norm_type=2)) # <--- Lowers the maximum allowed gradient norm
+    _delete_=True, grad_clip=dict(max_norm=35, norm_type=2))
 # learning policy
 lr_config = dict(
     policy='step',
