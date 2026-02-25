@@ -144,7 +144,7 @@ run_merge () {
       bash -lc "
         cd /workspace/mmdet/mmdetection3d && \
         export PYTHONPATH=/workspace/mmdet/mmdetection3d:/workspace/mmdet:\$PYTHONPATH && \
-        python projects/cmt/fed/rain_clear/fed_avg_merge.py \
+        python projects/cmt/fed/tools/fed_avg_merge.py \
             $CKPT_A \
             $CKPT_B \
             $OUT_PATH \

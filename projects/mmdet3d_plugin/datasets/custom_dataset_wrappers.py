@@ -1,7 +1,7 @@
 # Copyright (c) OpenMMLab. All rights reserved.
 import numpy as np
 
-from .builder import DATASETS
+from mmdet3d.datasets.builder import DATASETS
 
 
 @DATASETS.register_module()
