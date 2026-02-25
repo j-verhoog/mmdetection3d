@@ -169,9 +169,9 @@ def fedbn(models, output_paths, norm_weights, model_instance):
 def fedper(models, output_paths, norm_weights):
     """
     FedPer implementation. Averages the backbone and neck, but keeps the 
-    task head (pts_bbox_head) completely local and personalized.
+    task head subsets completely local and personalized.
     """
-    print("Running FedPer. Keeping task head (pts_bbox_head) local...")
+    print("Running FedPer. Keeping task head local...")
     
     # 1. Setup accumulators using the first model's structure
     temp_ckpt = torch.load(models[0], map_location='cpu')
@@ -179,15 +179,19 @@ def fedper(models, output_paths, norm_weights):
     running_sum = {}
     presence_weights = {}
     
-    # The prefix for the head based on your MMDet3D config
-    head_prefix = 'pts_bbox_head'
+    # Define specifically which sub-components of the head to keep local
+    local_prefixes = (
+        'pts_bbox_head.common_heads',
+        'pts_bbox_head.separate_head',
+        'pts_bbox_head.tasks'
+    )
     
     for k, v in temp_ckpt['state_dict'].items():
         if not v.is_floating_point() or 'num_batches_tracked' in k:
              continue
              
-        # Skip this key if it belongs to the bounding box head
-        if k.startswith(head_prefix):
+        # Only skip the specific task-prediction heads, not the whole transformer
+        if any(k.startswith(prefix) for prefix in local_prefixes):
             continue
              
         running_sum[k] = torch.zeros_like(v)
