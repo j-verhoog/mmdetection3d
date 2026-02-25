@@ -114,7 +114,7 @@ class UnifiedDataBaseSampler(object):
         """
         for name, min_num in min_gt_points_dict.items():
             min_num = int(min_num)
-            if min_num > 0:
+            if min_num > 0 and name in db_infos:    # add check to avoid key error
                 filtered_infos = []
                 for info in db_infos[name]:
                     if info['num_points_in_gt'] >= min_num:
@@ -239,6 +239,10 @@ class UnifiedDataBaseSampler(object):
         Returns:
             list[dict]: Valid samples after collision test.
         """
+        # Add this check to safely handle missing classes
+        if name not in self.sampler_dict:
+            return []
+        
         sampled = self.sampler_dict[name].sample(num)
         sampled = copy.deepcopy(sampled)
         num_gt = gt_bboxes.shape[0]

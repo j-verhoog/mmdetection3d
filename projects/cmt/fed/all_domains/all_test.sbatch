@@ -154,7 +154,7 @@ run_merge () {
       bash -lc "
         cd /workspace/mmdet/mmdetection3d && \
         export PYTHONPATH=/workspace/mmdet/mmdetection3d:/workspace/mmdet:\$PYTHONPATH && \
-        python projects/cmt/fed/all_domains/fed_avg_merge.py \
+        python projects/cmt/fed/tools/fed_avg_merge.py \
             $CKPT_A \
             $CKPT_B \
             $CKPT_C \
@@ -201,14 +201,14 @@ for ((i=START_ROUND; i<=NUM_ROUNDS; i++)); do
 
     # UPDATE: Pass both GLOBAL total and LOCAL stop to the training function
     # Note: I am updating the function call arguments below
-    run_training "ModelA" "$CONFIG_A" "$GLOBAL_MODEL" "$i" "$GLOBAL_MAX_EPOCHS" "$CURRENT_STOP_EPOCH" "$IS_RESUME"
-    CKPT_A="$WORK/round_${i}/ModelA/epoch_${CURRENT_STOP_EPOCH}.pth" # Use specific epoch
+    # run_training "ModelA" "$CONFIG_A" "$GLOBAL_MODEL" "$i" "$GLOBAL_MAX_EPOCHS" "$CURRENT_STOP_EPOCH" "$IS_RESUME"
+    # CKPT_A="$WORK/round_${i}/ModelA/epoch_${CURRENT_STOP_EPOCH}.pth" # Use specific epoch
 
-    run_training "ModelB" "$CONFIG_B" "$GLOBAL_MODEL" "$i" "$GLOBAL_MAX_EPOCHS" "$CURRENT_STOP_EPOCH" "$IS_RESUME"
-    CKPT_B="$WORK/round_${i}/ModelB/epoch_${CURRENT_STOP_EPOCH}.pth" # Use specific epoch
+    # run_training "ModelB" "$CONFIG_B" "$GLOBAL_MODEL" "$i" "$GLOBAL_MAX_EPOCHS" "$CURRENT_STOP_EPOCH" "$IS_RESUME"
+    # CKPT_B="$WORK/round_${i}/ModelB/epoch_${CURRENT_STOP_EPOCH}.pth" # Use specific epoch
 
-    run_training "ModelC" "$CONFIG_C" "$GLOBAL_MODEL" "$i" "$GLOBAL_MAX_EPOCHS" "$CURRENT_STOP_EPOCH" "$IS_RESUME"
-    CKPT_C="$WORK/round_${i}/ModelC/epoch_${CURRENT_STOP_EPOCH}.pth" # Use specific epoch
+    # run_training "ModelC" "$CONFIG_C" "$GLOBAL_MODEL" "$i" "$GLOBAL_MAX_EPOCHS" "$CURRENT_STOP_EPOCH" "$IS_RESUME"
+    # CKPT_C="$WORK/round_${i}/ModelC/epoch_${CURRENT_STOP_EPOCH}.pth" # Use specific epoch
 
     run_training "ModelD" "$CONFIG_D" "$GLOBAL_MODEL" "$i" "$GLOBAL_MAX_EPOCHS" "$CURRENT_STOP_EPOCH" "$IS_RESUME"
     CKPT_D="$WORK/round_${i}/ModelD/epoch_${CURRENT_STOP_EPOCH}.pth" # Use specific epoch

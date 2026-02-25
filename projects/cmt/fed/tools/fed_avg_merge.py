@@ -55,9 +55,17 @@ def main():
     base_keys = list(merged_ckpt['state_dict'].keys())
     
     # 2. Setup accumulators for the N-way average
-    # We start with Model A's values scaled by its normalized weight
-    running_sum = {k: base_ckpt['state_dict'][k] * norm_weights[0] for k in base_keys}
-    presence_weights = {k: norm_weights[0] for k in base_keys}
+    running_sum = {}
+    presence_weights = {}
+    
+    for k in base_keys:
+        # NEW FIX: Skip integer tensors (like num_batches_tracked or step counts)
+        # They will remain exactly as they were in Model A via the deepcopy.
+        if not base_ckpt['state_dict'][k].is_floating_point() or 'num_batches_tracked' in k:
+            continue
+            
+        running_sum[k] = base_ckpt['state_dict'][k] * norm_weights[0]
+        presence_weights[k] = norm_weights[0]
     
     # Free base_ckpt to save RAM, we only need merged_ckpt and accumulators now
     del base_ckpt
@@ -71,7 +79,8 @@ def main():
         ckpt_i = torch.load(m_path, map_location='cpu')
         state_dict_i = ckpt_i['state_dict']
         
-        for k in base_keys:
+        # Iterate over running_sum.keys() instead of base_keys to naturally skip integers
+        for k in running_sum.keys():
             if k in state_dict_i:
                 running_sum[k] += state_dict_i[k] * w_i
                 presence_weights[k] += w_i
@@ -80,11 +89,11 @@ def main():
         del ckpt_i 
         
     # 4. Finalize the average and assign back to merged_ckpt
-    for k in base_keys:
-        # Divide by the sum of weights of models that actually contained this key.
-        # This mirrors the old logic perfectly: if a key was missing in later models,
-        # it normalizes correctly to keep the original un-averaged Model A weights.
+    # Again, only update the keys we actually averaged
+    for k in running_sum.keys():
         merged_ckpt['state_dict'][k] = running_sum[k] / presence_weights[k]
+
+    # ... [Optimizer zeroing and saving logic remains exactly the same] ...
 
     # NEW: Zero out optimizer momentum to prevent bleed-over across domains, 
     # while keeping the state structure intact so --resume-from doesn't crash.
