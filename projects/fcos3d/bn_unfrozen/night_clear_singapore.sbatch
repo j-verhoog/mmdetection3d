@@ -1,9 +1,9 @@
 #!/bin/bash
 #SBATCH --partition=general # request partition
 #SBATCH --qos=short # Quality of service, short default
-#SBATCH --job-name=ncS_distr
-#SBATCH --output=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/fcos3d/ncS_distr_%j.out
-#SBATCH --error=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/fcos3d/ncS_distr_%j.err
+#SBATCH --job-name=ncS_bn_unfr
+#SBATCH --output=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/fcos3d/ncS_bn_unfr_%j.out
+#SBATCH --error=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/fcos3d/ncS_bn_unfr_%j.err
 #SBATCH --time=04:00:00 # 0:01:00 is one minute, max 4hrs for short QoS, 36hrs for medium
 #SBATCH --nodes=1              # Force 1 node (Shared /tmp)
 #SBATCH --gres=gpu:a40:2       # REQUEST 2 GPUs

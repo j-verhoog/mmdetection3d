@@ -127,10 +127,10 @@ def main():
         from mmcv.utils import import_modules_from_strings
         import_modules_from_strings(**cfg['custom_imports'])
 
+    import importlib
     # import modules from plguin/xx, registry will be updated
     if hasattr(cfg, 'plugin'):
         if cfg.plugin:
-            import importlib
             if hasattr(cfg, 'plugin_dir'):
                 plugin_dir = cfg.plugin_dir
                 _module_dir = os.path.dirname(plugin_dir)
@@ -151,7 +151,7 @@ def main():
                 print(_module_path)
                 plg_lib = importlib.import_module(_module_path)
                 
-    plg_lib = importlib.import_module('mmdetection3d.mmdet3d')
+    plg_lib_base = importlib.import_module('mmdetection3d.mmdet3d')
 
     # set cudnn_benchmark
     if cfg.get('cudnn_benchmark', False):
