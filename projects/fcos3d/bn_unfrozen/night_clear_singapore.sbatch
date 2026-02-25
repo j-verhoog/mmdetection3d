@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --partition=general # request partition
 #SBATCH --qos=short # Quality of service, short default
-#SBATCH --job-name=ncS_bn_unfr
+#SBATCH --job-name=ncS_bn_unfr_2
 #SBATCH --output=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/fcos3d/ncS_bn_unfr_%j.out
 #SBATCH --error=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/fcos3d/ncS_bn_unfr_%j.err
 #SBATCH --time=04:00:00 # 0:01:00 is one minute, max 4hrs for short QoS, 36hrs for medium
@@ -14,7 +14,7 @@
 
 # FOR NAMING STICK TO: A–Z  a–z  0–9  .  _  -
 export WANDB_PROJECT="fcos3d"
-export WANDB_NAME="ncS_bn_runningstats_0001Mom"
+export WANDB_NAME="ncS_bn_runningstatsOnly_lr10x"
 export WANDB_API_KEY=$(awk '$1=="machine" && $2=="api.wandb.ai" {found=1}found && $1=="password" {print $2; exit}' "$HOME/.netrc")
 
 /usr/bin/scontrol show job -d "$SLURM_JOB_ID" # check sbatch working
@@ -83,7 +83,7 @@ srun --ntasks=2 --gpus-per-task=1 bash -lc "
       --launcher slurm \
       --work-dir /workspace/work_dirs \
       --cfg-options load_from=checkpoints/fcos3d_baseline.pth \
-      optimizer.lr=0.00001 evaluation.interval=1 runner.max_epochs=6 data.samples_per_gpu=8 total_epochs=6
+      optimizer.lr=0.0001 evaluation.interval=1 runner.max_epochs=6 data.samples_per_gpu=8 total_epochs=6
   '
 "
 
