@@ -1,7 +1,7 @@
 # Copyright (c) OpenMMLab. All rights reserved.
 import numpy as np
 
-from mmdet3d.datasets.builder import DATASETS
+from mmdet3d.datasets.builder import DATASETS, build_dataset
 
 
 @DATASETS.register_module()
@@ -17,6 +17,10 @@ class CustomCBGSDataset(object):
     """
 
     def __init__(self, dataset):
+        # FIX: If the builder passed a config dict instead of an object, build it here!
+        if isinstance(dataset, dict):
+            dataset = build_dataset(dataset)
+
         self.dataset = dataset
         self.CLASSES = dataset.CLASSES
         self.cat2id = {name: i for i, name in enumerate(self.CLASSES)}
