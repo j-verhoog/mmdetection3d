@@ -7,9 +7,9 @@ model = dict(
     backbone=dict(
         dcn=dict(type='DCNv2', deform_groups=1, fallback_on_stride=False),
         stage_with_dcn=(False, False, True, True),
-        norm_eval=True,     # <-- True freezes BN stats (running mean and var), but not the affine parameters (scale and shift)
+        norm_eval=False,     # <-- True freezes BN stats (running mean and var), but not the affine parameters (scale and shift)
         frozen_stages=-1,     # <-- ADD THIS: Ensures no backbone stages are frozen
-        norm_cfg=dict(type='SyncBN', requires_grad=True)  # Unfreezes the BN scale and shift parameters, makes momentum10x smaller (, momentum=0.001) only for normeval=False
+        norm_cfg=dict(type='SyncBN', requires_grad=False, momentum=0.001)  # Unfreezes the BN scale and shift parameters, makes momentum10x smaller (, momentum=0.001) only for normeval=False
         ),)
 
 class_names = [
@@ -73,7 +73,7 @@ optimizer = dict(
         bias_lr_mult=2., 
         bias_decay_mult=0.,
         custom_keys={
-            'bn': dict(lr_mult=0.01)  # Applies a 0.01x LR multiplier ONLY to parameters with 'bn' in their name
+            'bn': dict(lr_mult=0.1)  # Applies a 0.1x LR multiplier ONLY to parameters with 'bn' in their name
         }
     )
 )
