@@ -111,7 +111,7 @@ run_training () {
       --env WANDB_DIR=\"/workspace/tmp/wandb/\$SLURM_PROCID\" \
       --env TMPDIR=\"/workspace/tmp/tmp/\$SLURM_PROCID\" \
       --env WANDB_PROJECT=\"$WANDB_PROJECT\" \
-      --env WANDB_NAME=\"FedBN_${MODEL_NAME}\" \
+      --env WANDB_NAME=\"FedRep_${MODEL_NAME}\" \
       --env WANDB_API_KEY=\"$WANDB_API_KEY\" \
       --env OMP_NUM_THREADS=1 \
       --env MKL_NUM_THREADS=1 \
@@ -166,8 +166,8 @@ run_merge () {
         python projects/cmt/fed/tools/modular_merging.py \
             --inputs $CKPT_A $CKPT_B $CKPT_C $CKPT_D $CKPT_E \
             --outputs $OUT_A $OUT_B $OUT_C $OUT_D $OUT_E \
-            --weight-a $SIZE_A --weight-b $SIZE_B --weight-c $SIZE_C --weight-d $SIZE_D --weight-e $SIZE_E
-            --method fedper
+            --weight-a $SIZE_A --weight-b $SIZE_B --weight-c $SIZE_C --weight-d $SIZE_D --weight-e $SIZE_E \
+            --method fedper \
             --config projects/cmt/fed/all_domains/improved_lightweight_cmt_iterated.py
       "
 }
@@ -177,11 +177,11 @@ run_merge () {
 # ==========================================
 
 # Create persistent WandB Run IDs so each model logs to the same run across rounds
-export WANDB_ID_A="fedavg_A_${SLURM_JOB_ID}"
-export WANDB_ID_B="fedavg_B_${SLURM_JOB_ID}"
-export WANDB_ID_C="fedavg_C_${SLURM_JOB_ID}"
-export WANDB_ID_D="fedavg_D_${SLURM_JOB_ID}"
-export WANDB_ID_E="fedavg_E_${SLURM_JOB_ID}"
+export WANDB_ID_A="fedrep_A_${SLURM_JOB_ID}"
+export WANDB_ID_B="fedrep_B_${SLURM_JOB_ID}"
+export WANDB_ID_C="fedrep_C_${SLURM_JOB_ID}"
+export WANDB_ID_D="fedrep_D_${SLURM_JOB_ID}"
+export WANDB_ID_E="fedrep_E_${SLURM_JOB_ID}"
 
 if [ "$START_ROUND" -eq 1 ]; then
     echo "Starting fresh run from Round 1"

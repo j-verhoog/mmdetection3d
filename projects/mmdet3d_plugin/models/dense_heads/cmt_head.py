@@ -522,29 +522,33 @@ class CmtHead(BaseModule):
             outs['center'] = _center
             outs['height'] = _height
             
-            if mask_dict and mask_dict['pad_size'] > 0:
+            if mask_dict is not None:
+            #if mask_dict and mask_dict['pad_size'] > 0:
                 task_mask_dict = copy.deepcopy(mask_dict)
                 class_name = self.class_names[task_id]
 
-                known_lbs_bboxes_label =  task_mask_dict['known_lbs_bboxes'][0]
-                known_labels_raw = task_mask_dict['known_labels_raw']
-                new_lbs_bboxes_label = known_lbs_bboxes_label.new_zeros(known_lbs_bboxes_label.shape)
-                new_lbs_bboxes_label[:] = len(class_name)
-                new_labels_raw = known_labels_raw.new_zeros(known_labels_raw.shape)
-                new_labels_raw[:] = len(class_name)
-                task_masks = [
-                    torch.where(known_lbs_bboxes_label == class_name.index(i) + flag)
-                    for i in class_name
-                ]
-                task_masks_raw = [
-                    torch.where(known_labels_raw == class_name.index(i) + flag)
-                    for i in class_name
-                ]
-                for cname, task_mask, task_mask_raw in zip(class_name, task_masks, task_masks_raw):
-                    new_lbs_bboxes_label[task_mask] = class_name.index(cname)
-                    new_labels_raw[task_mask_raw] = class_name.index(cname)
-                task_mask_dict['known_lbs_bboxes'] = (new_lbs_bboxes_label, task_mask_dict['known_lbs_bboxes'][1])
-                task_mask_dict['known_labels_raw'] = new_labels_raw
+                # Only do the label remapping if there are actual objects
+                if mask_dict['pad_size'] > 0: # added this line and indented all below
+                    known_lbs_bboxes_label =  task_mask_dict['known_lbs_bboxes'][0]
+                    known_labels_raw = task_mask_dict['known_labels_raw']
+                    new_lbs_bboxes_label = known_lbs_bboxes_label.new_zeros(known_lbs_bboxes_label.shape)
+                    new_lbs_bboxes_label[:] = len(class_name)
+                    new_labels_raw = known_labels_raw.new_zeros(known_labels_raw.shape)
+                    new_labels_raw[:] = len(class_name)
+                    task_masks = [
+                        torch.where(known_lbs_bboxes_label == class_name.index(i) + flag)
+                        for i in class_name
+                    ]
+                    task_masks_raw = [
+                        torch.where(known_labels_raw == class_name.index(i) + flag)
+                        for i in class_name
+                    ]
+                    for cname, task_mask, task_mask_raw in zip(class_name, task_masks, task_masks_raw):
+                        new_lbs_bboxes_label[task_mask] = class_name.index(cname)
+                        new_labels_raw[task_mask_raw] = class_name.index(cname)
+                    task_mask_dict['known_lbs_bboxes'] = (new_lbs_bboxes_label, task_mask_dict['known_lbs_bboxes'][1])
+                    task_mask_dict['known_labels_raw'] = new_labels_raw
+
                 flag += len(class_name)
                 
                 for key in list(outs.keys()):
@@ -974,29 +978,33 @@ class CmtImageHead(CmtHead):
             outs['center'] = _center
             outs['height'] = _height
             
-            if mask_dict and mask_dict['pad_size'] > 0:
+            if mask_dict is not None:
+            #if mask_dict and mask_dict['pad_size'] > 0:
                 task_mask_dict = copy.deepcopy(mask_dict)
                 class_name = self.class_names[task_id]
 
-                known_lbs_bboxes_label =  task_mask_dict['known_lbs_bboxes'][0]
-                known_labels_raw = task_mask_dict['known_labels_raw']
-                new_lbs_bboxes_label = known_lbs_bboxes_label.new_zeros(known_lbs_bboxes_label.shape)
-                new_lbs_bboxes_label[:] = len(class_name)
-                new_labels_raw = known_labels_raw.new_zeros(known_labels_raw.shape)
-                new_labels_raw[:] = len(class_name)
-                task_masks = [
-                    torch.where(known_lbs_bboxes_label == class_name.index(i) + flag)
-                    for i in class_name
-                ]
-                task_masks_raw = [
-                    torch.where(known_labels_raw == class_name.index(i) + flag)
-                    for i in class_name
-                ]
-                for cname, task_mask, task_mask_raw in zip(class_name, task_masks, task_masks_raw):
-                    new_lbs_bboxes_label[task_mask] = class_name.index(cname)
-                    new_labels_raw[task_mask_raw] = class_name.index(cname)
-                task_mask_dict['known_lbs_bboxes'] = (new_lbs_bboxes_label, task_mask_dict['known_lbs_bboxes'][1])
-                task_mask_dict['known_labels_raw'] = new_labels_raw
+                # Only do the label remapping if there are actual objects
+                if mask_dict['pad_size'] > 0: # added this line and indented all below
+                    known_lbs_bboxes_label =  task_mask_dict['known_lbs_bboxes'][0]
+                    known_labels_raw = task_mask_dict['known_labels_raw']
+                    new_lbs_bboxes_label = known_lbs_bboxes_label.new_zeros(known_lbs_bboxes_label.shape)
+                    new_lbs_bboxes_label[:] = len(class_name)
+                    new_labels_raw = known_labels_raw.new_zeros(known_labels_raw.shape)
+                    new_labels_raw[:] = len(class_name)
+                    task_masks = [
+                        torch.where(known_lbs_bboxes_label == class_name.index(i) + flag)
+                        for i in class_name
+                    ]
+                    task_masks_raw = [
+                        torch.where(known_labels_raw == class_name.index(i) + flag)
+                        for i in class_name
+                    ]
+                    for cname, task_mask, task_mask_raw in zip(class_name, task_masks, task_masks_raw):
+                        new_lbs_bboxes_label[task_mask] = class_name.index(cname)
+                        new_labels_raw[task_mask_raw] = class_name.index(cname)
+                    task_mask_dict['known_lbs_bboxes'] = (new_lbs_bboxes_label, task_mask_dict['known_lbs_bboxes'][1])
+                    task_mask_dict['known_labels_raw'] = new_labels_raw
+
                 flag += len(class_name)
                 
                 for key in list(outs.keys()):
@@ -1061,29 +1069,33 @@ class CmtLidarHead(CmtHead):
             outs['center'] = _center
             outs['height'] = _height
             
-            if mask_dict and mask_dict['pad_size'] > 0:
+            if mask_dict is not None:
+            #if mask_dict and mask_dict['pad_size'] > 0:
                 task_mask_dict = copy.deepcopy(mask_dict)
                 class_name = self.class_names[task_id]
 
-                known_lbs_bboxes_label =  task_mask_dict['known_lbs_bboxes'][0]
-                known_labels_raw = task_mask_dict['known_labels_raw']
-                new_lbs_bboxes_label = known_lbs_bboxes_label.new_zeros(known_lbs_bboxes_label.shape)
-                new_lbs_bboxes_label[:] = len(class_name)
-                new_labels_raw = known_labels_raw.new_zeros(known_labels_raw.shape)
-                new_labels_raw[:] = len(class_name)
-                task_masks = [
-                    torch.where(known_lbs_bboxes_label == class_name.index(i) + flag)
-                    for i in class_name
-                ]
-                task_masks_raw = [
-                    torch.where(known_labels_raw == class_name.index(i) + flag)
-                    for i in class_name
-                ]
-                for cname, task_mask, task_mask_raw in zip(class_name, task_masks, task_masks_raw):
-                    new_lbs_bboxes_label[task_mask] = class_name.index(cname)
-                    new_labels_raw[task_mask_raw] = class_name.index(cname)
-                task_mask_dict['known_lbs_bboxes'] = (new_lbs_bboxes_label, task_mask_dict['known_lbs_bboxes'][1])
-                task_mask_dict['known_labels_raw'] = new_labels_raw
+                # Only do the label remapping if there are actual objects
+                if mask_dict['pad_size'] > 0: # added this line and indented all below
+                    known_lbs_bboxes_label =  task_mask_dict['known_lbs_bboxes'][0]
+                    known_labels_raw = task_mask_dict['known_labels_raw']
+                    new_lbs_bboxes_label = known_lbs_bboxes_label.new_zeros(known_lbs_bboxes_label.shape)
+                    new_lbs_bboxes_label[:] = len(class_name)
+                    new_labels_raw = known_labels_raw.new_zeros(known_labels_raw.shape)
+                    new_labels_raw[:] = len(class_name)
+                    task_masks = [
+                        torch.where(known_lbs_bboxes_label == class_name.index(i) + flag)
+                        for i in class_name
+                    ]
+                    task_masks_raw = [
+                        torch.where(known_labels_raw == class_name.index(i) + flag)
+                        for i in class_name
+                    ]
+                    for cname, task_mask, task_mask_raw in zip(class_name, task_masks, task_masks_raw):
+                        new_lbs_bboxes_label[task_mask] = class_name.index(cname)
+                        new_labels_raw[task_mask_raw] = class_name.index(cname)
+                    task_mask_dict['known_lbs_bboxes'] = (new_lbs_bboxes_label, task_mask_dict['known_lbs_bboxes'][1])
+                    task_mask_dict['known_labels_raw'] = new_labels_raw
+
                 flag += len(class_name)
                 
                 for key in list(outs.keys()):
