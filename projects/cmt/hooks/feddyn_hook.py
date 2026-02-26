@@ -1,5 +1,4 @@
 import os
-from mmdetection3d.projects.mmdet3d_plugin.mmcv_custom import runner
 import torch
 from mmcv.runner import HOOKS, Hook
 
