@@ -385,14 +385,14 @@ def main():
             raise ValueError("You must provide a --config file to use FedBN so the model architecture can be built.")
             
         print(f"Building model from config: {args.config}")
+        # ADD THIS IMPORT LINE HERE:
+        from mmcv.utils import import_modules_from_strings
+        import_modules_from_strings(['projects.mmdet3d_plugin.models.detectors.cmt'])
+        
         cfg = Config.fromfile(args.config)
-        
-        # Build the model instance using MMDet3D's registry
         model_instance = build_detector(cfg.model)
-        
-        # Run FedBN using the instantiated model
         fedbn(models, output_paths, norm_weights, model_instance)
-    
+
     elif args.method == 'fedper':
         fedper(models, output_paths, norm_weights)
         
@@ -403,6 +403,6 @@ def main():
     elif args.method == 'feddyn':
         feddyn(models, output_paths, norm_weights, alpha=0.01, work_dir="workdirs/feddyn_states")
 
-        
+
 if __name__ == '__main__':
     main()
