@@ -1,5 +1,4 @@
 import argparse
-from mmdetection3d.projects.mmdet3d_plugin import models
 import torch
 import torch.nn as nn
 import os
