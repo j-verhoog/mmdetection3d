@@ -1,10 +1,11 @@
 import argparse
+from mmdetection3d.projects.mmdet3d_plugin import models
 import torch
 import torch.nn as nn
 import os
 import string
 from mmcv import Config
-from mmdet3d.models import build_detector
+from mmdet3d.models import build_model
 
 
 def parse_args():
@@ -359,12 +360,12 @@ def main():
     if len(args.inputs) != len(args.outputs):
         raise ValueError("Number of input paths must match number of output paths.")
         
-    models = args.inputs
+    model_paths = args.inputs
     output_paths = args.outputs
     
     # Extract and normalize weights
     raw_weights = []
-    for i in range(len(models)):
+    for i in range(len(model_paths)):
         char = string.ascii_lowercase[i]
         w = getattr(args, f'weight_{char}', None)
         raw_weights.append(w if w is not None else 1.0)
@@ -372,36 +373,68 @@ def main():
     total_weight = sum(raw_weights)
     norm_weights = [w / total_weight for w in raw_weights]
 
-    print(f"Loading {len(models)} models for merge via {args.method.upper()}...")
-    for i, (m_path, w) in enumerate(zip(models, norm_weights)):
+    print(f"Loading {len(model_paths)} models for merge via {args.method.upper()}...")
+    for i, (m_path, w) in enumerate(zip(model_paths, norm_weights)):
         print(f" Model {string.ascii_uppercase[i]}: {m_path} (normalized w={w:.4f})")
         
     # Route to the appropriate modular function
     if args.method == 'fedavg':
-        fedavg(models, output_paths, norm_weights)
+        fedavg(model_paths, output_paths, norm_weights)
         
     elif args.method == 'fedbn':
         if args.config is None:
             raise ValueError("You must provide a --config file to use FedBN so the model architecture can be built.")
             
         print(f"Building model from config: {args.config}")
-        # ADD THIS IMPORT LINE HERE:
         from mmcv.utils import import_modules_from_strings
         import_modules_from_strings(['projects.mmdet3d_plugin.models.detectors.cmt'])
         
         cfg = Config.fromfile(args.config)
-        model_instance = build_detector(cfg.model)
-        fedbn(models, output_paths, norm_weights, model_instance)
+        if cfg.get('custom_imports', None):
+            import_modules_from_strings(**cfg['custom_imports'])
 
+        import importlib
+        # import modules from plguin/xx, registry will be updated
+        if hasattr(cfg, 'plugin'):
+            if cfg.plugin:
+                if hasattr(cfg, 'plugin_dir'):
+                    plugin_dir = cfg.plugin_dir
+                    _module_dir = os.path.dirname(plugin_dir)
+                    _module_dir = _module_dir.split('/')
+                    _module_path = _module_dir[0]
+
+                    for m in _module_dir[1:]:
+                        _module_path = _module_path + '.' + m
+                    print(_module_path)
+                    plg_lib = importlib.import_module(_module_path)
+                else:
+                    # import dir is the dirpath for the config file
+                    _module_dir = os.path.dirname(args.config)
+                    _module_dir = _module_dir.split('/')
+                    _module_path = _module_dir[0]
+                    for m in _module_dir[1:]:
+                        _module_path = _module_path + '.' + m
+                    print(_module_path)
+                    plg_lib = importlib.import_module(_module_path)
+                    
+        plg_lib_base = importlib.import_module('mmdetection3d.mmdet3d')
+
+
+        model_instance = build_model(
+            cfg.model,
+            train_cfg=cfg.get('train_cfg'),
+            test_cfg=cfg.get('test_cfg'))
+
+        fedbn(model_paths, output_paths, norm_weights, model_instance)
     elif args.method == 'fedper':
-        fedper(models, output_paths, norm_weights)
+        fedper(model_paths, output_paths, norm_weights)
         
     elif args.method == 'fedmedian':
         # FedMedian ignores scalar norm_weights
-        fedmedian(models, output_paths)
+        fedmedian(model_paths, output_paths)
         
     elif args.method == 'feddyn':
-        feddyn(models, output_paths, norm_weights, alpha=0.01, work_dir="workdirs/feddyn_states")
+        feddyn(model_paths, output_paths, norm_weights, alpha=0.01, work_dir="workdirs/feddyn_states")
 
 
 if __name__ == '__main__':
