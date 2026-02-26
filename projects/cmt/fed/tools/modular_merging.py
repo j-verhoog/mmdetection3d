@@ -320,14 +320,20 @@ def feddyn(models, output_paths, norm_weights, alpha=0.01, work_dir="work_dirs/f
 
     # Sum up all client h_states
     client_ids = ["ModelA", "ModelB", "ModelC", "ModelD", "ModelE"]
+    skipped = 0
     for i, cid in enumerate(client_ids):
         client_h_path = os.path.join(work_dir, f"{cid}_h_state.pth")
         if os.path.exists(client_h_path):
             client_h = torch.load(client_h_path)
             for k in h_global.keys():
-                # Server H update math
-                h_global[k] -= (alpha * norm_weights[i]) * (averaged_weights[k] - client_h[k])
-                
+                # Safety check: Only update if the client actually tracked this parameter's state
+                if k in client_h:
+                    h_global[k] -= (alpha * norm_weights[i]) * (averaged_weights[k] - client_h[k])
+                else:
+                    print(f"Warning: {client_h_path} does not contain state for {k}. Skipping update for this key.")
+                    skipped += 1
+                    
+    print(f"FedDyn: Updated global state with client contributions. Skipped {skipped} keys due to missing client states.")
     torch.save(h_global, h_global_path)
 
     # 3. Apply Global State to Averaged Weights
