@@ -47,6 +47,7 @@ PRETRAINED_BACKBONE="ckpts/nuim_r50.pth"
 export SRUN_CPUS_PER_TASK=${SLURM_CPUS_PER_TASK:-1}
 export WANDB_PROJECT="cmt_fedavg_all"
 export RUN_NAME="run_$(date +%Y%m%d_%H%M%S)"
+export RUN_NAME="run_20260226_154257"
 
 # Gets API key robustly
 export WANDB_API_KEY=$(awk '$1=="machine" && $2=="api.wandb.ai" {found=1}found && $1=="password" {print $2; exit}' "$HOME/.netrc")
@@ -184,6 +185,7 @@ export WANDB_ID_B="feddyn_B_${SLURM_JOB_ID}"
 export WANDB_ID_C="feddyn_C_${SLURM_JOB_ID}"
 export WANDB_ID_D="feddyn_D_${SLURM_JOB_ID}"
 export WANDB_ID_E="feddyn_E_${SLURM_JOB_ID}"
+
 if [ "$START_ROUND" -eq 1 ]; then
     echo "Starting fresh run from Round 1"
     MODEL_A="$PRETRAINED_BACKBONE"
@@ -235,19 +237,19 @@ for ((i=START_ROUND; i<=NUM_ROUNDS; i++)); do
 
     # UPDATE: Pass both GLOBAL total and LOCAL stop to the training function
     # Note: I am updating the function call arguments below
-    run_training "ModelA" "$CONFIG_A" "$MODEL_A" "$i" "$GLOBAL_MAX_EPOCHS" "$CURRENT_STOP_EPOCH" "$IS_RESUME" "$WANDB_ID_A"
+    #run_training "ModelA" "$CONFIG_A" "$MODEL_A" "$i" "$GLOBAL_MAX_EPOCHS" "$CURRENT_STOP_EPOCH" "$IS_RESUME" "$WANDB_ID_A"
     CKPT_A="$WORK/round_${i}/ModelA/epoch_${CURRENT_STOP_EPOCH}.pth" # Use specific epoch
 
-    run_training "ModelB" "$CONFIG_B" "$MODEL_B" "$i" "$GLOBAL_MAX_EPOCHS" "$CURRENT_STOP_EPOCH" "$IS_RESUME" "$WANDB_ID_B"
+    #run_training "ModelB" "$CONFIG_B" "$MODEL_B" "$i" "$GLOBAL_MAX_EPOCHS" "$CURRENT_STOP_EPOCH" "$IS_RESUME" "$WANDB_ID_B"
     CKPT_B="$WORK/round_${i}/ModelB/epoch_${CURRENT_STOP_EPOCH}.pth" # Use specific epoch
 
-    run_training "ModelC" "$CONFIG_C" "$MODEL_C" "$i" "$GLOBAL_MAX_EPOCHS" "$CURRENT_STOP_EPOCH" "$IS_RESUME" "$WANDB_ID_C"
+    #run_training "ModelC" "$CONFIG_C" "$MODEL_C" "$i" "$GLOBAL_MAX_EPOCHS" "$CURRENT_STOP_EPOCH" "$IS_RESUME" "$WANDB_ID_C"
     CKPT_C="$WORK/round_${i}/ModelC/epoch_${CURRENT_STOP_EPOCH}.pth" # Use specific epoch
 
-    run_training "ModelD" "$CONFIG_D" "$MODEL_D" "$i" "$GLOBAL_MAX_EPOCHS" "$CURRENT_STOP_EPOCH" "$IS_RESUME" "$WANDB_ID_D"
+    #run_training "ModelD" "$CONFIG_D" "$MODEL_D" "$i" "$GLOBAL_MAX_EPOCHS" "$CURRENT_STOP_EPOCH" "$IS_RESUME" "$WANDB_ID_D"
     CKPT_D="$WORK/round_${i}/ModelD/epoch_${CURRENT_STOP_EPOCH}.pth" # Use specific epoch
 
-    run_training "ModelE" "$CONFIG_E" "$MODEL_E" "$i" "$GLOBAL_MAX_EPOCHS" "$CURRENT_STOP_EPOCH" "$IS_RESUME" "$WANDB_ID_E"
+    #run_training "ModelE" "$CONFIG_E" "$MODEL_E" "$i" "$GLOBAL_MAX_EPOCHS" "$CURRENT_STOP_EPOCH" "$IS_RESUME" "$WANDB_ID_E"
     CKPT_E="$WORK/round_${i}/ModelE/epoch_${CURRENT_STOP_EPOCH}.pth" # Use specific epoch
 
     # 3. Aggregate and Save 5 Distinct Models
@@ -269,6 +271,8 @@ for ((i=START_ROUND; i<=NUM_ROUNDS; i++)); do
     MODEL_E="$MERGED_E"
     
     echo "Round $i complete. 5 distinct merged models saved."
+    echo "If no errors above, debugging good to go"
+    exit 0
 done
 
 # Measure GPU usage of your job (result) for all allocated GPUs
