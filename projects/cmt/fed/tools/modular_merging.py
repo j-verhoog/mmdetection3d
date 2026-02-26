@@ -15,7 +15,7 @@ def parse_args():
     
     # Optional method flag. Defaults to fedavg to preserve original behavior.
     parser.add_argument('--method', type=str, default='fedavg', 
-                    choices=['fedavg', 'fedbn', 'fedper', 'fedmedian'],
+                    choices=['fedavg', 'fedbn', 'fedper', 'fedmedian', 'feddyn'],
                     help='Aggregation method. Default is fedavg.')
     parser.add_argument('--config', type=str, default=None, 
                         help='Path to the MMDet3D config file (e.g., improved_lightweight_cmt_iterated.py). Required for FedBN.')
@@ -297,6 +297,62 @@ def fedmedian(models, output_paths):
         torch.save(ckpt, out_path)
         print(f"Saved merged model to {out_path}")
 
+def feddyn(models, output_paths, norm_weights, alpha=0.01, work_dir="workdirs/feddyn_states"):
+    print("Running FedDyn Aggregation...")
+    
+    # 1. Standard FedAvg of the incoming client weights
+    temp_ckpt = torch.load(models[0], map_location='cpu')
+    running_sum = {k: torch.zeros_like(v) for k, v in temp_ckpt['state_dict'].items() if v.is_floating_point() and 'num_batches_tracked' not in k}
+    del temp_ckpt
+    
+    for i, m_path in enumerate(models):
+        ckpt_i = torch.load(m_path, map_location='cpu')
+        for k in running_sum.keys():
+            if k in ckpt_i['state_dict']:
+                running_sum[k] += ckpt_i['state_dict'][k] * norm_weights[i]
+        del ckpt_i
+        
+    averaged_weights = {k: running_sum[k] for k in running_sum.keys()}
+
+    # 2. Update Global Server State (h_global)
+    h_global_path = os.path.join(work_dir, "server_h_state.pth")
+    if os.path.exists(h_global_path):
+        h_global = torch.load(h_global_path)
+    else:
+        h_global = {k: torch.zeros_like(v) for k, v in averaged_weights.items()}
+
+    # Sum up all client h_states
+    client_ids = ["ModelA", "ModelB", "ModelC", "ModelD", "ModelE"]
+    for i, cid in enumerate(client_ids):
+        client_h_path = os.path.join(work_dir, f"{cid}_h_state.pth")
+        if os.path.exists(client_h_path):
+            client_h = torch.load(client_h_path)
+            for k in h_global.keys():
+                # Server H update math
+                h_global[k] -= (alpha * norm_weights[i]) * (averaged_weights[k] - client_h[k])
+                
+    torch.save(h_global, h_global_path)
+
+    # 3. Apply Global State to Averaged Weights
+    for k in averaged_weights.keys():
+        averaged_weights[k] += (1.0 / alpha) * h_global[k]
+
+    # 4. Inject and Save
+    for in_path, out_path in zip(models, output_paths):
+        ckpt = torch.load(in_path, map_location='cpu')
+        for k in averaged_weights.keys():
+            ckpt['state_dict'][k] = averaged_weights[k]
+        
+        # Zero out optimizer momentum
+        if 'optimizer' in ckpt and 'state' in ckpt['optimizer']:
+            for param_id in ckpt['optimizer']['state']:
+                for key in ckpt['optimizer']['state'][param_id]:
+                    if torch.is_tensor(ckpt['optimizer']['state'][param_id][key]):
+                        ckpt['optimizer']['state'][param_id][key].zero_()
+                        
+        os.makedirs(os.path.dirname(out_path), exist_ok=True)
+        torch.save(ckpt, out_path)
+
 def main():
     args = parse_args()
     
@@ -343,6 +399,10 @@ def main():
     elif args.method == 'fedmedian':
         # FedMedian ignores scalar norm_weights
         fedmedian(models, output_paths)
+        
+    elif args.method == 'feddyn':
+        feddyn(models, output_paths, norm_weights, alpha=0.01, work_dir="workdirs/feddyn_states")
 
+        
 if __name__ == '__main__':
     main()
