@@ -47,7 +47,7 @@ PRETRAINED_BACKBONE="ckpts/nuim_r50.pth"
 export SRUN_CPUS_PER_TASK=${SLURM_CPUS_PER_TASK:-1}
 export WANDB_PROJECT="cmt_fedavg_all"
 export RUN_NAME="run_$(date +%Y%m%d_%H%M%S)"
-export RUN_NAME="run_20260226_112349"
+export RUN_NAME="run_20260226_114653"
 
 # Gets API key robustly
 export WANDB_API_KEY=$(awk '$1=="machine" && $2=="api.wandb.ai" {found=1}found && $1=="password" {print $2; exit}' "$HOME/.netrc")

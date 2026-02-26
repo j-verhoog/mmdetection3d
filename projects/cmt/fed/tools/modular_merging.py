@@ -1,11 +1,7 @@
 import argparse
 import torch
-import torch.nn as nn
 import os
 import string
-from mmcv import Config
-from mmdet3d.models import build_model
-
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Merge N models via FedAvg/FedBN and preserve state')
@@ -88,7 +84,6 @@ def fedavg(models, output_paths, norm_weights):
         os.makedirs(os.path.dirname(out_path), exist_ok=True)
         torch.save(ckpt, out_path)
         print(f"Saved merged model with optimizer state to {out_path}")
-
 
 def fedbn(models, output_paths, norm_weights, model_instance):
     """
@@ -233,7 +228,6 @@ def fedper(models, output_paths, norm_weights):
         os.makedirs(os.path.dirname(out_path), exist_ok=True)
         torch.save(ckpt, out_path)
         print(f"Saved merged model to {out_path}")
-
 
 def fedmedian(models, output_paths):
     """
@@ -388,6 +382,7 @@ def main():
         from mmcv.utils import import_modules_from_strings
         import_modules_from_strings(['projects.mmdet3d_plugin.models.detectors.cmt'])
         
+        from mmcv import Config
         cfg = Config.fromfile(args.config)
         if cfg.get('custom_imports', None):
             import_modules_from_strings(**cfg['custom_imports'])
@@ -418,7 +413,7 @@ def main():
                     
         plg_lib_base = importlib.import_module('mmdetection3d.mmdet3d')
 
-
+        from mmdet3d.models import build_model
         model_instance = build_model(
             cfg.model,
             train_cfg=cfg.get('train_cfg'),
