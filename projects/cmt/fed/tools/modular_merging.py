@@ -94,12 +94,15 @@ def fedbn(models, output_paths, norm_weights, model_instance):
     
     # Identify all base names of BatchNorm layers using the actual PyTorch classes
     bn_prefixes = set()
+    total_layers = 0
     for name, module in model_instance.named_modules():
+        total_layers += 1
         # This catches nn.BatchNorm1d, nn.BatchNorm2d, nn.BatchNorm3d, and SyncBatchNorm
         if isinstance(module, torch.nn.modules.batchnorm._BatchNorm):
             clean_name = name.replace('module.', '')
             bn_prefixes.add(clean_name)
             
+    print(f"Total layers in model: {total_layers}")
     print(f"Identified {len(bn_prefixes)} BatchNorm layers to keep local.")
 
     # 1. Setup accumulators using the first model's structure
