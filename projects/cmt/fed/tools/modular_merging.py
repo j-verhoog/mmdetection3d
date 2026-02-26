@@ -294,7 +294,7 @@ def fedmedian(models, output_paths):
         torch.save(ckpt, out_path)
         print(f"Saved merged model to {out_path}")
 
-def feddyn(models, output_paths, norm_weights, alpha=0.01, work_dir="workdirs/feddyn_states"):
+def feddyn(models, output_paths, norm_weights, alpha=0.01, work_dir="work_dirs/feddyn_states"):
     print("Running FedDyn Aggregation...")
     
     # 1. Standard FedAvg of the incoming client weights
@@ -431,7 +431,7 @@ def main():
         fedmedian(model_paths, output_paths)
         
     elif args.method == 'feddyn':
-        feddyn(model_paths, output_paths, norm_weights, alpha=0.01, work_dir="workdirs/feddyn_states")
+        feddyn(model_paths, output_paths, norm_weights, alpha=0.01, work_dir="work_dirs/feddyn_states")
 
 
 if __name__ == '__main__':
