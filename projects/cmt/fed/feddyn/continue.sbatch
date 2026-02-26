@@ -161,7 +161,7 @@ run_merge () {
     echo "=== Merging Models ==="
     apptainer exec --nv --cleanenv \
       --bind "$HOME/mmdet:/workspace/mmdet" \
-      --bind "$WORK:/workspace/work_dirs" \
+      --bind "$WORK:/workspace/mmdet/mmdetection3d/work_dirs" \
       --bind "/tudelft.net/staff-umbrella/MscThesisjverhoog:/tudelft.net/staff-umbrella/MscThesisjverhoog" \
       "$APPTAINER_IMAGE" \
       bash -lc "
