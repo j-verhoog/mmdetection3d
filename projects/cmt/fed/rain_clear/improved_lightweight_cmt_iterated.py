@@ -162,6 +162,7 @@ data = dict(
             ann_file=data_root + '/nuscenes_infos_train.pkl',
             load_interval=2,  # Improved: use 50% of data (vs 25% in LW)
             pipeline=train_pipeline,
+            persistent_workers=False, # Important for stability when we modify the sampler on-the-fly
             classes=class_names,
             modality=input_modality,
             test_mode=False,
@@ -383,12 +384,12 @@ log_config = dict(
 
 # 1. Tell MMDet3D to import your CMT project
 custom_imports = dict(
-    imports=['projects.cmt.hooks.disable_gt_sampling', 'projects.cmt.hooks.force_stop'], 
+    imports=['projects.cmt.hooks.CBGS_GT_disable', 'projects.cmt.hooks.force_stop'], 
     allow_failed_imports=False)
 
 custom_hooks = [
     dict(
-        type='DisableGTImportanceHook',
+        type='DisableGTCBGSAndAlignScheduleHook',
         disable_after_epoch=15  # Turns off at the start of Epoch 16
     ),
     # Add this new hook:
