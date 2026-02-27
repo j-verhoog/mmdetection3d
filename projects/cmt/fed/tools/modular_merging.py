@@ -11,7 +11,7 @@ def parse_args():
     
     # Optional method flag. Defaults to fedavg to preserve original behavior.
     parser.add_argument('--method', type=str, default='fedavg', 
-                    choices=['fedavg', 'fedbn', 'fedper', 'fedmedian', 'feddyn'],
+                    choices=['fedavg', 'fedbn', 'fedper', 'fed_bn_and_per', 'fedmedian', 'feddyn'],
                     help='Aggregation method. Default is fedavg.')
     parser.add_argument('--config', type=str, default=None, 
                         help='Path to the MMDet3D config file (e.g., improved_lightweight_cmt_iterated.py). Required for FedBN.')
@@ -232,6 +232,94 @@ def fedper(models, output_paths, norm_weights):
         torch.save(ckpt, out_path)
         print(f"Saved merged model to {out_path}")
 
+def fed_bn_and_per(models, output_paths, norm_weights, model_instance):
+    """
+    Combined FedBN + FedPer. Excludes both BatchNorm layers and task head
+    subsets from averaging, keeping them local and personalized.
+    """
+    print("Running FedBN+FedPer. Keeping BatchNorm layers and task heads local...")
+    
+    # --- FedBN: Identify BatchNorm layer prefixes ---
+    bn_prefixes = set()
+    total_layers = 0
+    for name, module in model_instance.named_modules():
+        total_layers += 1
+        if isinstance(module, torch.nn.modules.batchnorm._BatchNorm):
+            clean_name = name.replace('module.', '')
+            bn_prefixes.add(clean_name)
+            
+    print(f"Total layers in model: {total_layers}")
+    print(f"Identified {len(bn_prefixes)} BatchNorm layers to keep local.")
+    
+    # --- FedPer: Define task head prefixes to keep local ---
+    local_prefixes = (
+        'pts_bbox_head.common_heads',
+        'pts_bbox_head.separate_head',
+        'pts_bbox_head.tasks'
+    )
+    
+    # 1. Setup accumulators, excluding both BN and task head keys
+    temp_ckpt = torch.load(models[0], map_location='cpu')
+
+    running_sum = {}
+    presence_weights = {}
+    
+    for k, v in temp_ckpt['state_dict'].items():
+        if not v.is_floating_point() or 'num_batches_tracked' in k:
+             continue
+        
+        clean_k = k.replace('module.', '')
+             
+        # Skip BatchNorm keys
+        if any(clean_k.startswith(prefix + '.') for prefix in bn_prefixes):
+            continue
+            
+        # Skip task head keys
+        if any(k.startswith(prefix) for prefix in local_prefixes):
+            continue
+             
+        running_sum[k] = torch.zeros_like(v)
+        presence_weights[k] = 0.0
+        
+    del temp_ckpt
+    
+    # 2. Iterate sequentially through models
+    print("Averaging non-BN, non-head weights...")
+    for i in range(len(models)):
+        m_path = models[i]
+        w_i = norm_weights[i]
+        
+        ckpt_i = torch.load(m_path, map_location='cpu')
+        state_dict_i = ckpt_i['state_dict']
+        
+        for k in running_sum.keys():
+            if k in state_dict_i:
+                running_sum[k] += state_dict_i[k] * w_i
+                presence_weights[k] += w_i
+                
+        del ckpt_i 
+        
+    averaged_weights = {k: running_sum[k] / presence_weights[k] for k in running_sum.keys()}
+
+    # 3. Inject Averaged Weights into EACH Model and Save
+    for in_path, out_path in zip(models, output_paths):
+        print(f"Updating and saving individual state for: {out_path}")
+        ckpt = torch.load(in_path, map_location='cpu')
+        
+        # BN and head keys aren't in averaged_weights, so their local state remains untouched
+        for k in averaged_weights.keys():
+            ckpt['state_dict'][k] = averaged_weights[k]
+            
+        if 'optimizer' in ckpt and 'state' in ckpt['optimizer']:
+            for param_id in ckpt['optimizer']['state']:
+                for key in ckpt['optimizer']['state'][param_id]:
+                    if torch.is_tensor(ckpt['optimizer']['state'][param_id][key]):
+                        ckpt['optimizer']['state'][param_id][key].zero_()
+                        
+        os.makedirs(os.path.dirname(out_path), exist_ok=True)
+        torch.save(ckpt, out_path)
+        print(f"Saved merged model to {out_path}")
+
 def fedmedian(models, output_paths):
     """
     FedMedian implementation. Calculates the coordinate-wise median across all models.
@@ -435,6 +523,51 @@ def main():
     elif args.method == 'fedper':
         fedper(model_paths, output_paths, norm_weights)
         
+    elif args.method == 'fed_bn_and_per':
+        if args.config is None:
+            raise ValueError("You must provide a --config file to use FedBN+FedPer so the model architecture can be built.")
+            
+        print(f"Building model from config: {args.config}")
+        from mmcv.utils import import_modules_from_strings
+        import_modules_from_strings(['projects.mmdet3d_plugin.models.detectors.cmt'])
+        
+        from mmcv import Config
+        cfg = Config.fromfile(args.config)
+        if cfg.get('custom_imports', None):
+            import_modules_from_strings(**cfg['custom_imports'])
+
+        import importlib
+        if hasattr(cfg, 'plugin'):
+            if cfg.plugin:
+                if hasattr(cfg, 'plugin_dir'):
+                    plugin_dir = cfg.plugin_dir
+                    _module_dir = os.path.dirname(plugin_dir)
+                    _module_dir = _module_dir.split('/')
+                    _module_path = _module_dir[0]
+
+                    for m in _module_dir[1:]:
+                        _module_path = _module_path + '.' + m
+                    print(_module_path)
+                    plg_lib = importlib.import_module(_module_path)
+                else:
+                    _module_dir = os.path.dirname(args.config)
+                    _module_dir = _module_dir.split('/')
+                    _module_path = _module_dir[0]
+                    for m in _module_dir[1:]:
+                        _module_path = _module_path + '.' + m
+                    print(_module_path)
+                    plg_lib = importlib.import_module(_module_path)
+                    
+        plg_lib_base = importlib.import_module('mmdetection3d.mmdet3d')
+
+        from mmdet3d.models import build_model
+        model_instance = build_model(
+            cfg.model,
+            train_cfg=cfg.get('train_cfg'),
+            test_cfg=cfg.get('test_cfg'))
+
+        fed_bn_and_per(model_paths, output_paths, norm_weights, model_instance)
+
     elif args.method == 'fedmedian':
         # FedMedian ignores scalar norm_weights
         fedmedian(model_paths, output_paths)
