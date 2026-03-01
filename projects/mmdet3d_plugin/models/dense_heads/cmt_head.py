@@ -789,35 +789,66 @@ class CmtHead(BaseModule):
         task_mask = known_labels_raw != pred_logits.shape[-1]
         task_mask_sum = task_mask.sum()
         
-        if task_mask_sum > 0:
-            # pred_logits = pred_logits[task_mask]
-            # known_labels = known_labels[task_mask]
-            pred_bboxes = pred_bboxes[task_mask]
-            known_bboxs = known_bboxs[task_mask]
+        # if task_mask_sum > 0:
+        #     # pred_logits = pred_logits[task_mask]
+        #     # known_labels = known_labels[task_mask]
+        #     pred_bboxes = pred_bboxes[task_mask]
+        #     known_bboxs = known_bboxs[task_mask]
+
+        # FIX 1: Always filter the boxes, even if the mask is empty. 
+        # PyTorch handles slicing with 0-sized masks perfectly fine.
+        pred_bboxes = pred_bboxes[task_mask]
+        known_bboxs = known_bboxs[task_mask]
 
         # classification loss
         # construct weighted avg_factor to match with the official DETR repo
         cls_avg_factor = num_tgt * 3.14159 / 6 * self.split * self.split  * self.split
-        
-        label_weights = torch.ones_like(known_labels)
         cls_avg_factor = max(cls_avg_factor, 1)
-        loss_cls = self.loss_cls(
-            pred_logits, known_labels.long(), label_weights, avg_factor=cls_avg_factor)
+
+        # FIX 2: Safely compute classification loss or return dummy loss
+        if num_tgt > 0:
+            label_weights = torch.ones_like(known_labels)
+            loss_cls = self.loss_cls(
+                pred_logits, known_labels.long(), label_weights, avg_factor=cls_avg_factor)
+        else:
+            # Dummy loss attached to the graph to prevent DDP graph errors
+            loss_cls = pred_logits.sum() * 0.0
+
+        # label_weights = torch.ones_like(known_labels)
+        # loss_cls = self.loss_cls(
+        #     pred_logits, known_labels.long(), label_weights, avg_factor=cls_avg_factor)
 
         # Compute the average number of gt boxes accross all gpus, for
         # normalization purposes
         num_tgt = loss_cls.new_tensor([num_tgt])
         num_tgt = torch.clamp(reduce_mean(num_tgt), min=1).item()
 
+        # # regression L1 loss
+        # normalized_bbox_targets = normalize_bbox(known_bboxs, self.pc_range)
+        # isnotnan = torch.isfinite(normalized_bbox_targets).all(dim=-1)
+        # bbox_weights = torch.ones_like(pred_bboxes)
+        # bbox_weights = bbox_weights * bbox_weights.new_tensor(self.train_cfg.code_weights)[None, :]
+        # # bbox_weights[:, 6:8] = 0
+        # loss_bbox = self.loss_bbox(
+        #         pred_bboxes[isnotnan, :10], normalized_bbox_targets[isnotnan, :10], bbox_weights[isnotnan, :10], avg_factor=num_tgt)
+
         # regression L1 loss
-        normalized_bbox_targets = normalize_bbox(known_bboxs, self.pc_range)
-        isnotnan = torch.isfinite(normalized_bbox_targets).all(dim=-1)
-        bbox_weights = torch.ones_like(pred_bboxes)
-        bbox_weights = bbox_weights * bbox_weights.new_tensor(self.train_cfg.code_weights)[None, :]
-        # bbox_weights[:, 6:8] = 0
-        loss_bbox = self.loss_bbox(
-                pred_bboxes[isnotnan, :10], normalized_bbox_targets[isnotnan, :10], bbox_weights[isnotnan, :10], avg_factor=num_tgt)
- 
+        # FIX 3: Safely bypass normalize_bbox and loss_bbox if there are no valid task targets
+        if task_mask_sum > 0:
+            normalized_bbox_targets = normalize_bbox(known_bboxs, self.pc_range)
+            isnotnan = torch.isfinite(normalized_bbox_targets).all(dim=-1)
+            bbox_weights = torch.ones_like(pred_bboxes)
+            bbox_weights = bbox_weights * bbox_weights.new_tensor(self.train_cfg.code_weights)[None, :]
+            
+            loss_bbox = self.loss_bbox(
+                    pred_bboxes[isnotnan, :10], 
+                    normalized_bbox_targets[isnotnan, :10], 
+                    bbox_weights[isnotnan, :10], 
+                    avg_factor=num_tgt)
+        else:
+            # Dummy loss to keep the graph connected if there are no targets
+            loss_bbox = pred_bboxes.sum() * 0.0
+
         loss_cls = torch.nan_to_num(loss_cls)
         loss_bbox = torch.nan_to_num(loss_bbox)
 
