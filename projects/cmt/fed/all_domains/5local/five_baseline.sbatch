@@ -199,7 +199,7 @@ else
 fi
 
 # CALCULATE GLOBAL TOTAL ONCE
-# This ensures the LR scheduler sees the full picture (e.g., 20 epochs) from Round 1
+# This ensures the LR scheduler sees the full picture 
 GLOBAL_MAX_EPOCHS=$((NUM_ROUNDS * EPOCHS_PER_ROUND))
 
 for ((i=START_ROUND; i<=NUM_ROUNDS; i++)); do
