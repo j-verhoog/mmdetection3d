@@ -44,8 +44,26 @@ class FedDynHook(Hook):
                 self.handles.append(handle)
 
     def _get_hook(self, param_name, local_param):
+        # 1. Define the task head prefixes to keep strictly local (FedPer)
+        local_prefixes = (
+            'pts_bbox_head.common_heads',
+            'pts_bbox_head.separate_head',
+            'pts_bbox_head.tasks'
+        )
+        
+        # 2. Check if this parameter belongs to an excluded layer
+        is_local_head = any(param_name.startswith(prefix) for prefix in local_prefixes)
+        
+        # Basic string matching for BatchNorm (adjust if your model uses different BN names)
+        is_bn = '.bn' in param_name or '.norm' in param_name or 'bn.' in param_name
+
         def hook_fn(grad):
             if grad is None: return grad
+
+            # If it's a BN layer or a personalized head, skip the FedDyn penalty entirely
+            if is_local_head or is_bn:
+                return grad
+            
             # Move frozen global weights and h_state to the current GPU layer-by-layer to save VRAM
             global_w = self.global_weights[param_name].to(grad.device)
             h_state = self.h_states[param_name].to(grad.device)

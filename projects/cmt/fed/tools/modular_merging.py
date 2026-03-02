@@ -447,6 +447,116 @@ def feddyn(models, output_paths, norm_weights, alpha=0.01, work_dir="work_dirs/f
         os.makedirs(os.path.dirname(out_path), exist_ok=True)
         torch.save(ckpt, out_path)
 
+def fed_dyn_bn_and_per(models, output_paths, norm_weights, model_instance, client_ids, alpha=0.01, work_dir="work_dirs/feddyn_states"):
+    """
+    Combined FedDyn + FedBN + FedPer. 
+    Excludes both BatchNorm layers and task head subsets from averaging and FedDyn updates, 
+    keeping them completely local. Applies layer-wise FedDyn math to the shared layers.
+    """
+    print("Running FedDyn + FedBN + FedPer Aggregation...")
+    
+    # --- FedBN: Identify BatchNorm layer prefixes ---
+    bn_prefixes = set()
+    for name, module in model_instance.named_modules():
+        if isinstance(module, torch.nn.modules.batchnorm._BatchNorm):
+            clean_name = name.replace('module.', '')
+            bn_prefixes.add(clean_name)
+            
+    # --- FedPer: Define task head prefixes to keep local ---
+    local_prefixes = (
+        'pts_bbox_head.common_heads',
+        'pts_bbox_head.separate_head',
+        'pts_bbox_head.tasks'
+    )
+    
+    # 1. Setup accumulators for FedDyn, excluding BN and local heads
+    temp_ckpt = torch.load(models[0], map_location='cpu')
+    running_sum = {}
+    
+    for k, v in temp_ckpt['state_dict'].items():
+        if not v.is_floating_point() or 'num_batches_tracked' in k:
+             continue
+        
+        clean_k = k.replace('module.', '')
+        
+        # Skip BatchNorm and Task Head keys
+        if any(clean_k.startswith(prefix + '.') for prefix in bn_prefixes):
+            continue
+        if any(k.startswith(prefix) for prefix in local_prefixes):
+            continue
+             
+        running_sum[k] = torch.zeros_like(v)
+        
+    del temp_ckpt
+    
+    # 2. Standard FedAvg of the incoming client weights (only for shared keys)
+    for i, m_path in enumerate(models):
+        ckpt_i = torch.load(m_path, map_location='cpu')
+        for k in running_sum.keys():
+            if k in ckpt_i['state_dict']:
+                running_sum[k] += ckpt_i['state_dict'][k] * norm_weights[i]
+        del ckpt_i
+        
+    averaged_weights = {k: running_sum[k] for k in running_sum.keys()}
+
+    # 3. Update Global Server State (h_global)
+    h_global_path = os.path.join(work_dir, "server_h_state.pth")
+    if os.path.exists(h_global_path):
+        h_global = torch.load(h_global_path)
+    else:
+        h_global = {k: torch.zeros_like(v) for k, v in averaged_weights.items()}
+
+    skipped = 0
+    updated = 0
+    for i, cid in enumerate(client_ids):
+        client_h_path = os.path.join(work_dir, f"{cid}_h_state.pth")
+        if os.path.exists(client_h_path):
+            client_h = torch.load(client_h_path)
+            for k in h_global.keys():
+                if k in client_h:
+                    # Match layer-wise alpha logic from your FedDyn hook
+                    layer_alpha = alpha
+                    if 'img_backbone' in k:
+                        layer_alpha = alpha * 0.01
+                    elif 'img_neck' in k:
+                        layer_alpha = alpha * 0.1
+                        
+                    h_global[k] -= (layer_alpha * norm_weights[i]) * (averaged_weights[k] - client_h[k])
+                    updated += 1
+                else:
+                    skipped += 1
+
+    print(f"FedDyn+BN+Per: Updated {updated} shared keys globally. Skipped {skipped} keys.")
+    torch.save(h_global, h_global_path)
+
+    # 4. Apply Global State to Averaged Weights
+    for k in averaged_weights.keys():
+        layer_alpha = alpha
+        if 'img_backbone' in k:
+            layer_alpha = alpha * 0.01
+        elif 'img_neck' in k:
+            layer_alpha = alpha * 0.1
+            
+        averaged_weights[k] += (1.0 / layer_alpha) * h_global[k]
+
+    # 5. Inject Averaged Weights into EACH Model and Save
+    for in_path, out_path in zip(models, output_paths):
+        ckpt = torch.load(in_path, map_location='cpu')
+        
+        # BN and head keys aren't in averaged_weights, so their local state remains untouched
+        for k in averaged_weights.keys():
+            ckpt['state_dict'][k] = averaged_weights[k]
+            
+        if 'optimizer' in ckpt and 'state' in ckpt['optimizer']:
+            for param_id in ckpt['optimizer']['state']:
+                for key in ckpt['optimizer']['state'][param_id]:
+                    if torch.is_tensor(ckpt['optimizer']['state'][param_id][key]):
+                        ckpt['optimizer']['state'][param_id][key].zero_()
+                        
+        os.makedirs(os.path.dirname(out_path), exist_ok=True)
+        torch.save(ckpt, out_path)
+        print(f"Saved merged model to {out_path}")
+
 def main():
     args = parse_args()
     
@@ -575,6 +685,65 @@ def main():
     elif args.method == 'feddyn':
         feddyn(model_paths, output_paths, norm_weights, alpha=0.01, work_dir="work_dirs/feddyn_states")
 
+    elif args.method == 'fed_dyn_bn_and_per':
+        if args.config is None:
+            raise ValueError("You must provide a --config file to use FedBN so the model architecture can be built.")
+            
+
+        print(f"Building model from config: {args.config}")
+        from mmcv.utils import import_modules_from_strings
+        import_modules_from_strings(['projects.mmdet3d_plugin.models.detectors.cmt'])
+        
+        from mmcv import Config
+        cfg = Config.fromfile(args.config)
+        if cfg.get('custom_imports', None):
+            import_modules_from_strings(**cfg['custom_imports'])
+
+        import importlib
+        # import modules from plguin/xx, registry will be updated
+        if hasattr(cfg, 'plugin'):
+            if cfg.plugin:
+                if hasattr(cfg, 'plugin_dir'):
+                    plugin_dir = cfg.plugin_dir
+                    _module_dir = os.path.dirname(plugin_dir)
+                    _module_dir = _module_dir.split('/')
+                    _module_path = _module_dir[0]
+
+                    for m in _module_dir[1:]:
+                        _module_path = _module_path + '.' + m
+                    print(_module_path)
+                    plg_lib = importlib.import_module(_module_path)
+                else:
+                    # import dir is the dirpath for the config file
+                    _module_dir = os.path.dirname(args.config)
+                    _module_dir = _module_dir.split('/')
+                    _module_path = _module_dir[0]
+                    for m in _module_dir[1:]:
+                        _module_path = _module_path + '.' + m
+                    print(_module_path)
+                    plg_lib = importlib.import_module(_module_path)
+                    
+        plg_lib_base = importlib.import_module('mmdetection3d.mmdet3d')
+
+        from mmdet3d.models import build_model
+        model_instance = build_model(
+            cfg.model,
+            train_cfg=cfg.get('train_cfg'),
+            test_cfg=cfg.get('test_cfg'))
+
+        # Define the exact client IDs that correspond to the models being merged
+        # You may want to pass these as argparse arguments, but hardcoding for now based on your feddyn script
+        client_ids = ["ModelA", "ModelB", "ModelC", "ModelD", "ModelE"][:len(model_paths)]
+        
+        fed_dyn_bn_and_per(
+            models=model_paths, 
+            output_paths=output_paths, 
+            norm_weights=norm_weights, 
+            model_instance=model_instance,
+            client_ids=client_ids,
+            alpha=0.01,
+            work_dir="work_dirs/feddyn_states"
+        )
 
 if __name__ == '__main__':
     main()
