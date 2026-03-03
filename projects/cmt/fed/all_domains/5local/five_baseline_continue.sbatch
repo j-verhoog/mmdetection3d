@@ -12,6 +12,8 @@
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=40G
 
+echo "=== Starting Job ID: $SLURM_JOB_ID ==="
+
 set -e # stop if something fails
 
 # --- FEDERATED SETTINGS ---
