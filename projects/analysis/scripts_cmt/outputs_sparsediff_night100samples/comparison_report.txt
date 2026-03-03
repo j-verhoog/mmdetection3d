@@ -1,0 +1,47 @@
+================================================================================
+MODEL COMPARISON REPORT
+================================================================================
+
+Samples processed: 100
+Comparisons: 1
+Metrics: CKA, W2 BN Stats, Effective Scale/Bias, Bhattacharyya Coeff
+
+
+--- Comparison: ModelA_vs_ModelB ---
+  Model A: ModelA
+  Model B: ModelB
+
+  CKA:
+    Layers: 236
+    Valid:  236
+    Mean: 0.3567
+    Std:  0.2648
+    Min:  0.0000
+    Max:  0.9997
+
+  W2 BN Stats:
+    Layers: 89
+    Valid:  89
+    Mean: 0.1865
+    Std:  0.2309
+    Min:  0.0000
+    Max:  0.5818
+
+  Effective Scale/Bias:
+    Layers: 89
+    Valid:  89
+    Mean: 0.1396
+    Std:  0.1699
+    Min:  0.0022
+    Max:  0.4610
+
+  Bhattacharyya Coeff:
+    Layers: 89
+    Valid:  89
+    Mean: 0.0653
+    Std:  0.0905
+    Min:  0.0000
+    Max:  0.3178
+
+
+================================================================================
