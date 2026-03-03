@@ -11,7 +11,7 @@ def parse_args():
     
     # Optional method flag. Defaults to fedavg to preserve original behavior.
     parser.add_argument('--method', type=str, default='fedavg', 
-                    choices=['fedavg', 'fedbn', 'fedper', 'fed_bn_and_per', 'fedmedian', 'feddyn', 'fed_dyn_bn_and_per'],
+                    choices=['fedavg', 'fedbn', 'fednorm', 'fedper', 'fed_bn_and_per', 'fedmedian', 'feddyn', 'fed_dyn_bn_and_per'],
                     help='Aggregation method. Default is fedavg.')
     parser.add_argument('--config', type=str, default=None, 
                         help='Path to the MMDet3D config file (e.g., improved_lightweight_cmt_iterated.py). Required for FedBN.')
@@ -557,6 +557,95 @@ def fed_dyn_bn_and_per(models, output_paths, norm_weights, model_instance, clien
         torch.save(ckpt, out_path)
         print(f"Saved merged model to {out_path}")
 
+def fednorm(models, output_paths, norm_weights, model_instance):
+    """
+    FedNorm implementation. Uses the provided PyTorch model instance to map out
+    all Normalization layers (BatchNorm, LayerNorm, InstanceNorm, GroupNorm) 
+    and excludes their weights, biases, and running stats from averaging.
+    """
+    print("Running FedNorm. Extracting all Normalization topology from model class...")
+    
+    # Identify all base names of Normalization layers
+    norm_prefixes = set()
+    total_layers = 0
+    
+    # Define all standard normalization base classes in PyTorch
+    norm_classes = (
+        torch.nn.modules.batchnorm._BatchNorm,
+        torch.nn.LayerNorm,
+        torch.nn.modules.instancenorm._InstanceNorm,
+        torch.nn.GroupNorm
+    )
+    
+    for name, module in model_instance.named_modules():
+        total_layers += 1
+        # Check for any of the normalization classes
+        if isinstance(module, norm_classes):
+            clean_name = name.replace('module.', '')
+            norm_prefixes.add(clean_name)
+            
+    print(f"Total layers in model: {total_layers}")
+    print(f"Identified {len(norm_prefixes)} Normalization layers to keep local.")
+
+    # 1. Setup accumulators using the first model's structure
+    temp_ckpt = torch.load(models[0], map_location='cpu')
+
+    running_sum = {}
+    presence_weights = {}
+    
+    for k, v in temp_ckpt['state_dict'].items():
+        if not v.is_floating_point() or 'num_batches_tracked' in k:
+             continue
+        
+        clean_k = k.replace('module.', '')
+             
+        # Skip this key if it belongs to any identified Normalization layer
+        if any(clean_k.startswith(prefix + '.') for prefix in norm_prefixes):
+            continue
+             
+        running_sum[k] = torch.zeros_like(v)
+        presence_weights[k] = 0.0
+        
+    del temp_ckpt
+    
+    # 2. Iterate sequentially through models
+    print("Averaging non-Normalization weights...")
+    for i in range(len(models)):
+        m_path = models[i]
+        w_i = norm_weights[i]
+        
+        ckpt_i = torch.load(m_path, map_location='cpu')
+        state_dict_i = ckpt_i['state_dict']
+        
+        for k in running_sum.keys():
+            if k in state_dict_i:
+                running_sum[k] += state_dict_i[k] * w_i
+                presence_weights[k] += w_i
+                
+        del ckpt_i 
+        
+    averaged_weights = {k: running_sum[k] / presence_weights[k] for k in running_sum.keys()}
+
+    # 3. Inject Averaged Weights into EACH Model and Save
+    for in_path, out_path in zip(models, output_paths):
+        print(f"Updating and saving individual state for: {out_path}")
+        ckpt = torch.load(in_path, map_location='cpu')
+        
+        # Norm keys aren't in averaged_weights, so their local state remains untouched
+        for k in averaged_weights.keys():
+            ckpt['state_dict'][k] = averaged_weights[k]
+            
+        if 'optimizer' in ckpt and 'state' in ckpt['optimizer']:
+            for param_id in ckpt['optimizer']['state']:
+                for key in ckpt['optimizer']['state'][param_id]:
+                    if torch.is_tensor(ckpt['optimizer']['state'][param_id][key]):
+                        ckpt['optimizer']['state'][param_id][key].zero_()
+                        
+        os.makedirs(os.path.dirname(out_path), exist_ok=True)
+        torch.save(ckpt, out_path)
+        print(f"Saved merged model with optimizer state to {out_path}")
+
+
 def main():
     args = parse_args()
     
@@ -744,6 +833,48 @@ def main():
             alpha=0.01,
             work_dir="work_dirs/feddyn_states"
         )
+    elif args.method == 'fednorm':
+        if args.config is None:
+            raise ValueError("You must provide a --config file to use fednorm so the model architecture can be built.")
+            
+        print(f"Building model from config: {args.config}")
+        from mmcv.utils import import_modules_from_strings
+        import_modules_from_strings(['projects.mmdet3d_plugin.models.detectors.cmt'])
+        
+        from mmcv import Config
+        cfg = Config.fromfile(args.config)
+        if cfg.get('custom_imports', None):
+            import_modules_from_strings(**cfg['custom_imports'])
+
+        import importlib
+        if hasattr(cfg, 'plugin'):
+            if cfg.plugin:
+                if hasattr(cfg, 'plugin_dir'):
+                    plugin_dir = cfg.plugin_dir
+                    _module_dir = os.path.dirname(plugin_dir)
+                    _module_dir = _module_dir.split('/')
+                    _module_path = _module_dir[0]
+
+                    for m in _module_dir[1:]:
+                        _module_path = _module_path + '.' + m
+                    plg_lib = importlib.import_module(_module_path)
+                else:
+                    _module_dir = os.path.dirname(args.config)
+                    _module_dir = _module_dir.split('/')
+                    _module_path = _module_dir[0]
+                    for m in _module_dir[1:]:
+                        _module_path = _module_path + '.' + m
+                    plg_lib = importlib.import_module(_module_path)
+                    
+        plg_lib_base = importlib.import_module('mmdetection3d.mmdet3d')
+
+        from mmdet3d.models import build_model
+        model_instance = build_model(
+            cfg.model,
+            train_cfg=cfg.get('train_cfg'),
+            test_cfg=cfg.get('test_cfg'))
+
+        fednorm(model_paths, output_paths, norm_weights, model_instance)
 
 if __name__ == '__main__':
     main()
