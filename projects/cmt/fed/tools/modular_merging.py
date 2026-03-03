@@ -11,7 +11,7 @@ def parse_args():
     
     # Optional method flag. Defaults to fedavg to preserve original behavior.
     parser.add_argument('--method', type=str, default='fedavg', 
-                    choices=['fedavg', 'fedbn', 'fedper', 'fed_bn_and_per', 'fedmedian', 'feddyn'],
+                    choices=['fedavg', 'fedbn', 'fedper', 'fed_bn_and_per', 'fedmedian', 'feddyn', 'fed_dyn_bn_and_per'],
                     help='Aggregation method. Default is fedavg.')
     parser.add_argument('--config', type=str, default=None, 
                         help='Path to the MMDet3D config file (e.g., improved_lightweight_cmt_iterated.py). Required for FedBN.')
