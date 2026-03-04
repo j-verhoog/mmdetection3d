@@ -79,7 +79,7 @@ srun --ntasks=2 --gpus-per-task=1 bash -lc "
     cd /workspace/mmdet/mmdetection3d && \
     export PYTHONPATH=/workspace/mmdet/mmdetection3d:/workspace/mmdet:\$PYTHONPATH && \
     python -u tools/train.py \
-      projects/fcos3d/bn_unfrozen/fcos3d_r101_caffe_fpn_gn-head_dcn_2x8_1x_nus-mono3d_bn_unfrozen.py\
+      /home/jolle/mmdet/mmdetection3d/configs/fcos3d/fcos3d_r101_caffe_fpn_gn-head_dcn_2x8_1x_nus-mono3d_bn_4mar.py \
       --launcher slurm \
       --work-dir /workspace/work_dirs \
       --cfg-options load_from=checkpoints/fcos3d_baseline.pth \
