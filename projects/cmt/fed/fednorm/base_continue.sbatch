@@ -1,10 +1,10 @@
 #!/bin/bash
 #SBATCH --partition=general
 #SBATCH --qos=medium
-#SBATCH --job-name=DynRepBN
-#SBATCH --output=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/cmt/DynRepBN2_job%j_rank%t.out
-#SBATCH --error=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/cmt/DynRepBN2_job%j_rank%t.err
-#SBATCH --time=24:00:00
+#SBATCH --job-name=fedNorm
+#SBATCH --output=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/cmt/fedNorm2_job%j_rank%t.out
+#SBATCH --error=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/cmt/fedNorm2_job%j_rank%t.err
+#SBATCH --time=36:00:00
 #SBATCH --nodes=1
 #SBATCH --ntasks=2
 #SBATCH --ntasks-per-node=2
@@ -25,8 +25,7 @@ SIZE_C=226
 SIZE_D=71
 SIZE_E=13
 
-START_ROUND=15  # <--- NEW: Set to 1 for new run, or X to start loop at round X, round 16 mains load from global 15.pth
-RESUME_CHECKPOINT="/tudelft.net/staff-umbrella/MscThesisjverhoog/projects/cmt_fedavg/12215490/round_15/global_model.pth"
+START_ROUND=3
 
 # Paths
 DAY_CLEAR_DATAROOT="/tudelft.net/staff-umbrella/MscThesisjverhoog/datasets/cmt_subsets/Default_NoFair_SingleClient/boston_day_clear"
@@ -47,8 +46,7 @@ PRETRAINED_BACKBONE="ckpts/nuim_r50.pth"
 # --- STANDARD SETUP ---
 export SRUN_CPUS_PER_TASK=${SLURM_CPUS_PER_TASK:-1}
 export WANDB_PROJECT="cmt_fedavg_all"
-export RUN_NAME="run_$(date +%Y%m%d_%H%M%S)"
-export RUN_NAME="run_20260302_132331"
+export RUN_NAME="FedNorm"
 
 # Gets API key robustly
 export WANDB_API_KEY=$(awk '$1=="machine" && $2=="api.wandb.ai" {found=1}found && $1=="password" {print $2; exit}' "$HOME/.netrc")
@@ -113,7 +111,7 @@ run_training () {
       --env WANDB_DIR=\"/workspace/tmp/wandb/\$SLURM_PROCID\" \
       --env TMPDIR=\"/workspace/tmp/tmp/\$SLURM_PROCID\" \
       --env WANDB_PROJECT=\"$WANDB_PROJECT\" \
-      --env WANDB_NAME=\"FedDynRepBN_${MODEL_NAME}\" \
+      --env WANDB_NAME=\"FedNorm_${MODEL_NAME}\" \
       --env WANDB_API_KEY=\"$WANDB_API_KEY\" \
       --env WANDB_HTTP_TIMEOUT=120 \
       --env WANDB_INIT_TIMEOUT=120 \
@@ -134,16 +132,14 @@ run_training () {
         cd /workspace/mmdet/mmdetection3d && \
         export PYTHONPATH=/workspace/mmdet/mmdetection3d:/workspace/mmdet:\$PYTHONPATH && \
         python -u tools/train.py \
-        projects/cmt/fed/feddyn/improved_lightweight_cmt_iterated.py \
+        projects/cmt/fed/all_domains/improved_lightweight_cmt_iterated.py \
           --launcher slurm \
           --work-dir $WORK_DIR \
           $RESUME_ARG \
           --cfg-options ${CFG_LOAD_ARG} dist_params.port=$MASTER_PORT \
             data.samples_per_gpu=$SAMPLES_PER_GPU \
             total_epochs=$GLOBAL_EPOCHS \
-            custom_hooks.1.stop_epoch=$STOP_EPOCH \
-            custom_hooks.2.client_id=\"${MODEL_NAME}\" \
-            custom_hooks.2.work_dir=\"$WORK/feddyn_states\"
+            custom_hooks.1.stop_epoch=$STOP_EPOCH 
       '
     "
 }
@@ -176,7 +172,7 @@ run_merge () {
             --outputs $OUT_A $OUT_B $OUT_C $OUT_D $OUT_E \
             --weight-a $SIZE_A --weight-b $SIZE_B --weight-c $SIZE_C --weight-d $SIZE_D --weight-e $SIZE_E \
             --method $METHOD \
-            --config projects/cmt/fed/feddyn/improved_lightweight_cmt_iterated.py 
+            --config projects/cmt/fed/all_domains/improved_lightweight_cmt_iterated.py 
       "
 }
 
@@ -184,14 +180,12 @@ run_merge () {
 # MAIN LOOP
 # ==========================================
 
-OLD_SLURM_JOB_ID=12238922
-
 # Create persistent WandB Run IDs so each model logs to the same run across rounds
-export WANDB_ID_A="feddyn_A_${OLD_SLURM_JOB_ID}"
-export WANDB_ID_B="feddyn_B_${OLD_SLURM_JOB_ID}"
-export WANDB_ID_C="feddyn_C_${OLD_SLURM_JOB_ID}"
-export WANDB_ID_D="feddyn_D_${OLD_SLURM_JOB_ID}"
-export WANDB_ID_E="feddyn_E_${OLD_SLURM_JOB_ID}"
+export WANDB_ID_A="fednorm_A_1"
+export WANDB_ID_B="fednorm_B_1"
+export WANDB_ID_C="fednorm_C_1"
+export WANDB_ID_D="fednorm_D_1"
+export WANDB_ID_E="fednorm_E_1"
 
 if [ "$START_ROUND" -eq 1 ]; then
     echo "Starting fresh run from Round 1"
@@ -217,15 +211,8 @@ GLOBAL_MAX_EPOCHS=$((NUM_ROUNDS * EPOCHS_PER_ROUND))
 for ((i=START_ROUND; i<=NUM_ROUNDS; i++)); do
     # This is where we want to STOP in this specific round
     CURRENT_STOP_EPOCH=$((i * EPOCHS_PER_ROUND))
-    
-    # --- NEW: Determine the Merge Method ---
-    # If we are in rounds 1 through 4, use standard FedAvg warm-up.
-    # From round 5 onwards, switch to FedDyn.
-    if [ "$i" -lt 5 ]; then
-        MERGE_METHOD="fed_bn_and_per"
-    else
-        MERGE_METHOD="fed_dyn_bn_and_per"
-    fi
+
+    MERGE_METHOD="fednorm" # Override for testing FedNorm only. Comment out to enable dynamic switching.
 
     echo "-------------------------------------"
     echo "       STARTING ROUND $i ($MERGE_METHOD)     "
@@ -239,74 +226,41 @@ for ((i=START_ROUND; i<=NUM_ROUNDS; i++)); do
         IS_RESUME="true"
     fi
 
-    if [ "$i" -eq 15 ]; then
-        echo "=== fixing broken round ==="
-        CKPT_A="$WORK/round_15/ModelA/epoch_15.pth"
-        CKPT_B="$WORK/round_15/ModelB/epoch_15.pth"
-        CKPT_C="$WORK/round_15/ModelC/epoch_15.pth"
-        
-        run_training "ModelD" "$CONFIG_D" "$MODEL_D" "$i" "$GLOBAL_MAX_EPOCHS" "$CURRENT_STOP_EPOCH" "$IS_RESUME" "$WANDB_ID_D"
-        CKPT_D="$WORK/round_15/ModelD/epoch_15.pth"
-        
-        run_training "ModelE" "$CONFIG_E" "$MODEL_E" "$i" "$GLOBAL_MAX_EPOCHS" "$CURRENT_STOP_EPOCH" "$IS_RESUME" "$WANDB_ID_E"
-        CKPT_E="$WORK/round_15/ModelE/epoch_15.pth"
-        
-        MERGED_A="$WORK/round_15/merged_A.pth"
-        MERGED_B="$WORK/round_15/merged_B.pth"
-        MERGED_C="$WORK/round_15/merged_C.pth"
-        MERGED_D="$WORK/round_15/merged_D.pth"
-        MERGED_E="$WORK/round_15/merged_E.pth"
-        MERGE_METHOD="fed_dyn_bn_and_per"
-        run_merge "$CKPT_A" "$CKPT_B" "$CKPT_C" "$CKPT_D" "$CKPT_E" \
-            "$MERGED_A" "$MERGED_B" "$MERGED_C" "$MERGED_D" "$MERGED_E" \
-            "$MERGE_METHOD"
+    # UPDATE: Pass both GLOBAL total and LOCAL stop to the training function
+    # Note: I am updating the function call arguments below
+    run_training "ModelA" "$CONFIG_A" "$MODEL_A" "$i" "$GLOBAL_MAX_EPOCHS" "$CURRENT_STOP_EPOCH" "$IS_RESUME" "$WANDB_ID_A"
+    CKPT_A="$WORK/round_${i}/ModelA/epoch_${CURRENT_STOP_EPOCH}.pth" # Use specific epoch
 
-        # Setup for next round
-        MODEL_A="$MERGED_A"
-        MODEL_B="$MERGED_B"
-        MODEL_C="$MERGED_C"
-        MODEL_D="$MERGED_D"
-        MODEL_E="$MERGED_E"
-    else
-        echo "=== normal round ==="
+    run_training "ModelB" "$CONFIG_B" "$MODEL_B" "$i" "$GLOBAL_MAX_EPOCHS" "$CURRENT_STOP_EPOCH" "$IS_RESUME" "$WANDB_ID_B"
+    CKPT_B="$WORK/round_${i}/ModelB/epoch_${CURRENT_STOP_EPOCH}.pth" # Use specific epoch
 
+    run_training "ModelC" "$CONFIG_C" "$MODEL_C" "$i" "$GLOBAL_MAX_EPOCHS" "$CURRENT_STOP_EPOCH" "$IS_RESUME" "$WANDB_ID_C"
+    CKPT_C="$WORK/round_${i}/ModelC/epoch_${CURRENT_STOP_EPOCH}.pth" # Use specific epoch
 
-        # UPDATE: Pass both GLOBAL total and LOCAL stop to the training function
-        # Note: I am updating the function call arguments below
-        run_training "ModelA" "$CONFIG_A" "$MODEL_A" "$i" "$GLOBAL_MAX_EPOCHS" "$CURRENT_STOP_EPOCH" "$IS_RESUME" "$WANDB_ID_A"
-        CKPT_A="$WORK/round_${i}/ModelA/epoch_${CURRENT_STOP_EPOCH}.pth" # Use specific epoch
+    run_training "ModelD" "$CONFIG_D" "$MODEL_D" "$i" "$GLOBAL_MAX_EPOCHS" "$CURRENT_STOP_EPOCH" "$IS_RESUME" "$WANDB_ID_D"
+    CKPT_D="$WORK/round_${i}/ModelD/epoch_${CURRENT_STOP_EPOCH}.pth" # Use specific epoch
 
-        run_training "ModelB" "$CONFIG_B" "$MODEL_B" "$i" "$GLOBAL_MAX_EPOCHS" "$CURRENT_STOP_EPOCH" "$IS_RESUME" "$WANDB_ID_B"
-        CKPT_B="$WORK/round_${i}/ModelB/epoch_${CURRENT_STOP_EPOCH}.pth" # Use specific epoch
+    run_training "ModelE" "$CONFIG_E" "$MODEL_E" "$i" "$GLOBAL_MAX_EPOCHS" "$CURRENT_STOP_EPOCH" "$IS_RESUME" "$WANDB_ID_E"
+    CKPT_E="$WORK/round_${i}/ModelE/epoch_${CURRENT_STOP_EPOCH}.pth" # Use specific epoch
 
-        run_training "ModelC" "$CONFIG_C" "$MODEL_C" "$i" "$GLOBAL_MAX_EPOCHS" "$CURRENT_STOP_EPOCH" "$IS_RESUME" "$WANDB_ID_C"
-        CKPT_C="$WORK/round_${i}/ModelC/epoch_${CURRENT_STOP_EPOCH}.pth" # Use specific epoch
-
-        run_training "ModelD" "$CONFIG_D" "$MODEL_D" "$i" "$GLOBAL_MAX_EPOCHS" "$CURRENT_STOP_EPOCH" "$IS_RESUME" "$WANDB_ID_D"
-        CKPT_D="$WORK/round_${i}/ModelD/epoch_${CURRENT_STOP_EPOCH}.pth" # Use specific epoch
-
-        run_training "ModelE" "$CONFIG_E" "$MODEL_E" "$i" "$GLOBAL_MAX_EPOCHS" "$CURRENT_STOP_EPOCH" "$IS_RESUME" "$WANDB_ID_E"
-        CKPT_E="$WORK/round_${i}/ModelE/epoch_${CURRENT_STOP_EPOCH}.pth" # Use specific epoch
-
-        # 3. Aggregate and Save 5 Distinct Models
-        MERGED_A="$WORK/round_${i}/merged_A.pth"
-        MERGED_B="$WORK/round_${i}/merged_B.pth"
-        MERGED_C="$WORK/round_${i}/merged_C.pth"
-        MERGED_D="$WORK/round_${i}/merged_D.pth"
-        MERGED_E="$WORK/round_${i}/merged_E.pth"
-        
-        run_merge "$CKPT_A" "$CKPT_B" "$CKPT_C" "$CKPT_D" "$CKPT_E" \
-                "$MERGED_A" "$MERGED_B" "$MERGED_C" "$MERGED_D" "$MERGED_E" \
-                "$MERGE_METHOD"
-        
-        # Setup for next round
-        MODEL_A="$MERGED_A"
-        MODEL_B="$MERGED_B"
-        MODEL_C="$MERGED_C"
-        MODEL_D="$MERGED_D"
-        MODEL_E="$MERGED_E"
+    # 3. Aggregate and Save 5 Distinct Models
+    MERGED_A="$WORK/round_${i}/merged_A.pth"
+    MERGED_B="$WORK/round_${i}/merged_B.pth"
+    MERGED_C="$WORK/round_${i}/merged_C.pth"
+    MERGED_D="$WORK/round_${i}/merged_D.pth"
+    MERGED_E="$WORK/round_${i}/merged_E.pth"
     
-    fi 
+    run_merge "$CKPT_A" "$CKPT_B" "$CKPT_C" "$CKPT_D" "$CKPT_E" \
+              "$MERGED_A" "$MERGED_B" "$MERGED_C" "$MERGED_D" "$MERGED_E" \
+              "$MERGE_METHOD"
+    
+    # Setup for next round
+    MODEL_A="$MERGED_A"
+    MODEL_B="$MERGED_B"
+    MODEL_C="$MERGED_C"
+    MODEL_D="$MERGED_D"
+    MODEL_E="$MERGED_E"
+    
     echo "Round $i complete. 5 distinct merged models saved."
 done
 

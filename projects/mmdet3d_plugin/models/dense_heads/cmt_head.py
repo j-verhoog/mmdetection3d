@@ -387,9 +387,19 @@ class CmtHead(BaseModule):
             padding_bbox = torch.zeros(pad_size, 3).to(reference_points.device)
             padded_reference_points = torch.cat([padding_bbox, reference_points], dim=0).unsqueeze(0).repeat(batch_size, 1, 1)
 
+            #                                                                                                                       TRY TO AVOID DDP CRASHES FOR EMPTY GT
+            # if len(known_num):
+            #     map_known_indice = torch.cat([torch.tensor(range(num)) for num in known_num])  # [1,2, 1,2,3]
+            #     map_known_indice = torch.cat([map_known_indice + single_pad * i for i in range(groups)]).long()
+            
             if len(known_num):
                 map_known_indice = torch.cat([torch.tensor(range(num)) for num in known_num])  # [1,2, 1,2,3]
-                map_known_indice = torch.cat([map_known_indice + single_pad * i for i in range(groups)]).long()
+                if groups > 0:
+                    map_known_indice = torch.cat([map_known_indice + single_pad * i for i in range(groups)]).long()
+                else:
+                    # If groups == 0, keep it as an empty tensor on the correct device
+                    map_known_indice = map_known_indice.long().to(reference_points.device)
+
             if len(known_bid):
                 padded_reference_points[(known_bid.long(), map_known_indice)] = known_bbox_center.to(reference_points.device)
 
