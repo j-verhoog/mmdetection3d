@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --partition=general,cor,me-cor # request partition, can submit to cor, me-cor but also maybe nto needed.
+#SBATCH --partition=general 
 #SBATCH --qos=long # Quality of service, short default
 #SBATCH --job-name=fcos3d_baseline
 #SBATCH --output=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/fcos3d/freebn_%j.out

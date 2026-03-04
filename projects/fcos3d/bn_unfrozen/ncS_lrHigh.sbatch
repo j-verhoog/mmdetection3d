@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --partition=general,cor,me-cor 
+#SBATCH --partition=general
 #SBATCH --qos=short
 #SBATCH --job-name=ncS_bn_unfr_2
 #SBATCH --output=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/fcos3d/ncS_bnboth_%j.out
