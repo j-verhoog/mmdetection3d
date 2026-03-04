@@ -2,8 +2,8 @@
 #SBATCH --partition=general
 #SBATCH --qos=long
 #SBATCH --job-name=fedper_full
-#SBATCH --output=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/cmt/fedper_full.out
-#SBATCH --error=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/cmt/fedper_full.err
+#SBATCH --output=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/cmt/fedper2_job%j_rank%t.out
+#SBATCH --error=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/cmt/fedper2_job%j_rank%t.err
 #SBATCH --time=40:00:00
 #SBATCH --nodes=1
 #SBATCH --ntasks=2
@@ -13,6 +13,7 @@
 #SBATCH --mem=40G
 
 set -e # stop if something fails
+echo "=== Starting Job ID: $SLURM_JOB_ID ==="
 
 # --- FEDERATED SETTINGS ---
 NUM_ROUNDS=20 # approx 2hour per round of 1 Epoch
@@ -24,8 +25,7 @@ SIZE_C=226
 SIZE_D=71
 SIZE_E=13
 
-START_ROUND=1  # <--- NEW: Set to 1 for new run, or X to start loop at round X, round 16 mains load from global 15.pth
-RESUME_CHECKPOINT="/tudelft.net/staff-umbrella/MscThesisjverhoog/projects/cmt_fedavg/12215490/round_15/global_model.pth"
+START_ROUND=1 
 
 # Paths
 DAY_CLEAR_DATAROOT="/tudelft.net/staff-umbrella/MscThesisjverhoog/datasets/cmt_subsets/Default_NoFair_SingleClient/boston_day_clear"
@@ -46,7 +46,7 @@ PRETRAINED_BACKBONE="ckpts/nuim_r50.pth"
 # --- STANDARD SETUP ---
 export SRUN_CPUS_PER_TASK=${SLURM_CPUS_PER_TASK:-1}
 export WANDB_PROJECT="cmt_fedavg_all"
-export RUN_NAME="run_$(date +%Y%m%d_%H%M%S)"
+export RUN_NAME="FedRep_Full_Run_${SLURM_JOB_ID}"
 
 # Gets API key robustly
 export WANDB_API_KEY=$(awk '$1=="machine" && $2=="api.wandb.ai" {found=1}found && $1=="password" {print $2; exit}' "$HOME/.netrc")

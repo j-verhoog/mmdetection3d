@@ -176,11 +176,14 @@ def fedper(models, output_paths, norm_weights):
     running_sum = {}
     presence_weights = {}
     
+    personalized_layers = 0
+    global_layers = 0
     # Define specifically which sub-components of the head to keep local
     local_prefixes = (
         'pts_bbox_head.common_heads',
         'pts_bbox_head.separate_head',
-        'pts_bbox_head.tasks'
+        'pts_bbox_head.tasks',
+        'pts_bbox_head.task_heads'       # <--- FIXED PREFIX
     )
     
     for k, v in temp_ckpt['state_dict'].items():
@@ -189,12 +192,17 @@ def fedper(models, output_paths, norm_weights):
              
         # Only skip the specific task-prediction heads, not the whole transformer
         if any(k.startswith(prefix) for prefix in local_prefixes):
+            personalized_layers += 1
             continue
              
         running_sum[k] = torch.zeros_like(v)
         presence_weights[k] = 0.0
+        global_layers += 1
         
     del temp_ckpt
+    
+    print(f"Identified {personalized_layers} personalized head layers to keep local.")
+    print(f"Identified {global_layers} global layers to average across models.")
     
     # 2. Iterate sequentially through models
     print("Averaging backbone and neck weights...")
@@ -466,9 +474,13 @@ def fed_dyn_bn_and_per(models, output_paths, norm_weights, model_instance, clien
     local_prefixes = (
         'pts_bbox_head.common_heads',
         'pts_bbox_head.separate_head',
-        'pts_bbox_head.tasks'
+        'pts_bbox_head.tasks',
+        'pts_bbox_head.task_heads'       # <--- FIXED PREFIX
     )
     
+    global_layers = 0
+    personalized_layers = 0
+    bn_layers = 0
     # 1. Setup accumulators for FedDyn, excluding BN and local heads
     temp_ckpt = torch.load(models[0], map_location='cpu')
     running_sum = {}
@@ -481,13 +493,20 @@ def fed_dyn_bn_and_per(models, output_paths, norm_weights, model_instance, clien
         
         # Skip BatchNorm and Task Head keys
         if any(clean_k.startswith(prefix + '.') for prefix in bn_prefixes):
+            bn_layers += 1
             continue
         if any(k.startswith(prefix) for prefix in local_prefixes):
+            personalized_layers += 1
             continue
              
         running_sum[k] = torch.zeros_like(v)
+        global_layers += 1
         
     del temp_ckpt
+    
+    print(f"Identified {bn_layers} BatchNorm layers to keep local.")
+    print(f"Identified {personalized_layers} personalized head layers to keep local.")
+    print(f"Identified {global_layers} global layers to average across models.")
     
     # 2. Standard FedAvg of the incoming client weights (only for shared keys)
     for i, m_path in enumerate(models):
