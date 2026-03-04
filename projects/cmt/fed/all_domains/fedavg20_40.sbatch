@@ -45,7 +45,7 @@ PRETRAINED_BACKBONE="ckpts/nuim_r50.pth"
 # --- STANDARD SETUP ---
 export SRUN_CPUS_PER_TASK=${SLURM_CPUS_PER_TASK:-1}
 export WANDB_PROJECT="cmt_fedavg_all"
-export RUN_NAME="FedAvg_epoch20_to40"
+export RUN_NAME="FedAvg_20to40"
 
 # Gets API key robustly
 export WANDB_API_KEY=$(awk '$1=="machine" && $2=="api.wandb.ai" {found=1}found && $1=="password" {print $2; exit}' "$HOME/.netrc")
@@ -174,11 +174,11 @@ run_merge () {
 # ==========================================
 
 # Create persistent WandB Run IDs so each model logs to the same run across rounds
-export WANDB_ID_A="fedavg_A_${SLURM_JOB_ID}"
-export WANDB_ID_B="fedavg_B_${SLURM_JOB_ID}"
-export WANDB_ID_C="fedavg_C_${SLURM_JOB_ID}"
-export WANDB_ID_D="fedavg_D_${SLURM_JOB_ID}"
-export WANDB_ID_E="fedavg_E_${SLURM_JOB_ID}"
+export WANDB_ID_A="fedavg_A_12234065"
+export WANDB_ID_B="fedavg_B_12234065"
+export WANDB_ID_C="fedavg_C_12234065"
+export WANDB_ID_D="fedavg_D_12234065"
+export WANDB_ID_E="fedavg_E_12234065"
 
 if [ "$START_ROUND" -eq 1 ]; then
     echo "Starting from pretrained checkpoints"
