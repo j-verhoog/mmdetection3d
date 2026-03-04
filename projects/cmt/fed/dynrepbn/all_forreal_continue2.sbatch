@@ -2,8 +2,8 @@
 #SBATCH --partition=general
 #SBATCH --qos=medium
 #SBATCH --job-name=DynRepBN
-#SBATCH --output=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/cmt/DynRepBN2job%j_rank%t.out
-#SBATCH --error=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/cmt/DynRepBN2job%j_rank%t.err
+#SBATCH --output=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/cmt/DynRepBN2_job%j_rank%t.out
+#SBATCH --error=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/cmt/DynRepBN2_job%j_rank%t.err
 #SBATCH --time=24:00:00
 #SBATCH --nodes=1
 #SBATCH --ntasks=2
