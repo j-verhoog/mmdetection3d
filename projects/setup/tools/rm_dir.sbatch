@@ -9,28 +9,8 @@
 #SBATCH --cpus-per-task=2
 #SBATCH --mem=16G
 
-DEST="/tudelft.net/staff-umbrella/MscThesisjverhoog/homedir"
-
-TO_REMOVE="/tudelft.net/staff-umbrella/MscThesisjverhoog/homedir"
+TO_REMOVE="/tudelft.net/staff-umbrella/MscThesisjverhoog/mmdet"
 
 echo "Starting removal of $TO_REMOVE at $(date)"
 rm -rf "$TO_REMOVE"
 echo "Removal completed at $(date)"
-
-mkdir -p "$DEST"
-
-echo "Starting rsync at $(date)"
-rsync -ahv \
-    --exclude='.ssh' \
-    --exclude='.conda' \
-    --exclude='.cache' \
-    --exclude='.local' \
-    --exclude='.apptainer' \
-    --exclude='.vscode-server' \
-    --exclude='.nv' \
-    --exclude='.bash_history' \
-    --exclude='mmdet/MscThesisjverhoog' \
-    --exclude='mmdet/mmdetection3d' \
-    ~/ "$DEST"
-
-echo "Rsync completed at $(date)"
