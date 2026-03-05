@@ -9,14 +9,18 @@
 #SBATCH --cpus-per-task=2
 #SBATCH --mem=16G
 
-DEST="/tudelft.net/staff-umbrella/MscThesisjverhoog/"
+DEST="/tudelft.net/staff-umbrella/MscThesisjverhoog/homedir"
 
 echo "Starting rsync at $(date)"
-
-# --exclude='MscThesisjverhoog' tells rsync to skip that specific entry inside ~/mmdet
-# -a ensures other symlinks (like datasets) stay as links and aren't expanded
 rsync -ahv \
-    --exclude='MscThesisjverhoog' \
-    ~/mmdet "$DEST"
+    --exclude='.ssh' \
+    --exclude='.conda' \
+    --exclude='.cache' \
+    --exclude='.local' \
+    --exclude='.apptainer' \
+    --exclude='.vscode-server' \
+    --exclude='.nv' \
+    --exclude='.bash_history' \
+    ~/ "$DEST"
 
 echo "Rsync completed at $(date)"
