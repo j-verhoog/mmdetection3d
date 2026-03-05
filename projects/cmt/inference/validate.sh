@@ -87,7 +87,7 @@ tail -n +2 "$CONFIG_CSV" | while IFS=, read -r NAME DESC BASE_DIR ROUND EPOCH OA
                     cd /workspace/mmdet/mmdetection3d
                     python tools/test.py $BASE_CONFIG $MODEL_PATH \
                         --eval bbox \
-                        --cfg-options total_epochs=20 device='cpu' data.test.data_root='/workspace/mmdet/mmdetection3d/data/nuscenes/'
+                        --cfg-options total_epochs=20 data.test.data_root='/workspace/mmdet/mmdetection3d/data/nuscenes/'
                 "> "$LOG_FILE" 2>&1 < /dev/null
 
             # Extract result and store
