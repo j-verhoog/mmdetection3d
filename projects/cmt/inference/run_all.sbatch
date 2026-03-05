@@ -18,6 +18,6 @@ mkdir -p "$FULL_LOG_DIR"
 
 # --- Run Orchestrator ---
 # Make sure the .sh file is executable: chmod +x validate.sh
-bash validate.sh
+bash /home/nfs/jtverhoog/mmdet/mmdetection3d/projects/cmt/inference/validate.sh
 
 echo "Full job completed. Logs saved to: $FULL_LOG_DIR"
