@@ -1,0 +1,3 @@
+Name,Description,BaseDir,Round,Epoch,OverrideA,OverrideB,OverrideC,OverrideD,OverrideE
+FedAvg_Baseline,Aggregate every epoch,/home/nfs/jtverhoog/mmdet/MscThesisjverhoog/projects/cmt_fedavg_all/run_20260225_144902,20,20,,,,
+FedAvg_2,Different luck,/home/nfs/jtverhoog/mmdet/MscThesisjverhoog/projects/cmt_fedavg_all/run_20260226_114653,20,20,,,,,
