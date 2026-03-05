@@ -110,7 +110,7 @@ run_training () {
       --env WANDB_DIR=\"/workspace/tmp/wandb/\$SLURM_PROCID\" \
       --env TMPDIR=\"/workspace/tmp/tmp/\$SLURM_PROCID\" \
       --env WANDB_PROJECT=\"$WANDB_PROJECT\" \
-      --env WANDB_NAME=\"Baseline_${MODEL_NAME}\" \
+      --env WANDB_NAME=\"FedAvg_20to40_${MODEL_NAME}\" \
       --env WANDB_API_KEY=\"$WANDB_API_KEY\" \
       --env OMP_NUM_THREADS=1 \
       --env MKL_NUM_THREADS=1 \
@@ -174,11 +174,11 @@ run_merge () {
 # ==========================================
 
 # Create persistent WandB Run IDs so each model logs to the same run across rounds
-export WANDB_ID_A="fedavg_A_12234065"
-export WANDB_ID_B="fedavg_B_12234065"
-export WANDB_ID_C="fedavg_C_12234065"
-export WANDB_ID_D="fedavg_D_12234065"
-export WANDB_ID_E="fedavg_E_12234065"
+export WANDB_ID_A="fedavg_A_20to40"
+export WANDB_ID_B="fedavg_B_20to40"
+export WANDB_ID_C="fedavg_C_20to40"
+export WANDB_ID_D="fedavg_D_20to40"
+export WANDB_ID_E="fedavg_E_20to40"
 
 if [ "$START_ROUND" -eq 1 ]; then
     echo "Starting from pretrained checkpoints"
