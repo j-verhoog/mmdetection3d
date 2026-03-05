@@ -17,13 +17,9 @@
 set -e # Good practice to fail fast
 echo "=== Starting Job ID: $SLURM_JOB_ID ==="
 
-# cmt baseline downtuned Ali test
-export SRUN_CPUS_PER_TASK=${SLURM_CPUS_PER_TASK:-1}
-
-# --- CONFIGURATION MATCHING FEDAVG ---
-PRETRAINED_BACKBONE="ckpts/nuim_r50.pth"
+PRETRAINED_BACKBONE="ckpts/fcos3d_vovnet_imgbackbone-remapped.pth"
 TARGET_EPOCHS=20
-SAMPLES_PER_GPU=2       # 4 leads OOM on A40
+SAMPLES_PER_GPU=1       # 4 leads OOM on A40, 2==31GB and takes 11 days on two gpu's
 
 # FOR NAMING STICK TO: A–Z  a–z  0–9  .  _  -
 export WANDB_PROJECT="cmt"
@@ -55,7 +51,7 @@ module load cuda
 
 # Get the hostname of the first node in the list
 export MASTER_ADDR=$(scontrol show hostnames "$SLURM_JOB_NODELIST" | head -n 1)
-export MASTER_PORT=$(( ((RANDOM<<15)|RANDOM) % 49152 + 10000 ))
+export MASTER_PORT=$(apptainer exec --cleanenv "$APPTAINER_IMAGE" python3 -c 'import socket; s=socket.socket(); s.bind(("", 0)); print(s.getsockname()[1]); s.close()')
 
 echo "Master node is: $MASTER_ADDR"
 echo "MASTER_ADDR=$MASTER_ADDR MASTER_PORT=$MASTER_PORT"
