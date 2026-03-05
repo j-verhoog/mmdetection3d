@@ -263,7 +263,8 @@ def fed_bn_and_per(models, output_paths, norm_weights, model_instance):
     local_prefixes = (
         'pts_bbox_head.common_heads',
         'pts_bbox_head.separate_head',
-        'pts_bbox_head.tasks'
+        'pts_bbox_head.tasks',
+        'pts_bbox_head.task_heads'       # <--- FIXED PREFIX
     )
     
     # 1. Setup accumulators, excluding both BN and task head keys
@@ -271,7 +272,9 @@ def fed_bn_and_per(models, output_paths, norm_weights, model_instance):
 
     running_sum = {}
     presence_weights = {}
-    
+    shared_layers = 0
+    personal_layers =0
+    private_bn_layers = 0
     for k, v in temp_ckpt['state_dict'].items():
         if not v.is_floating_point() or 'num_batches_tracked' in k:
              continue
@@ -280,16 +283,23 @@ def fed_bn_and_per(models, output_paths, norm_weights, model_instance):
              
         # Skip BatchNorm keys
         if any(clean_k.startswith(prefix + '.') for prefix in bn_prefixes):
+            private_bn_layers += 1
             continue
             
         # Skip task head keys
         if any(k.startswith(prefix) for prefix in local_prefixes):
+            personal_layers += 1
             continue
              
         running_sum[k] = torch.zeros_like(v)
         presence_weights[k] = 0.0
+        shared_layers += 1
         
     del temp_ckpt
+    
+    print(f"Identified {private_bn_layers} private BatchNorm layers to keep local.")
+    print(f"Identified {personal_layers} personalized head layers to keep local.")
+    print(f"Identified {shared_layers} shared layers to average across models.")
     
     # 2. Iterate sequentially through models
     print("Averaging non-BN, non-head weights...")

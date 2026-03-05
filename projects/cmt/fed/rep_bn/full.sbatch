@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --partition=general
 #SBATCH --qos=long
-#SBATCH --job-name=fedrepbn_full
+#SBATCH --job-name=RepBN_Full
 #SBATCH --output=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/cmt/fedrepbn_full.out
 #SBATCH --error=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/cmt/fedrepbn_full.err
 #SBATCH --time=40:00:00
@@ -13,6 +13,7 @@
 #SBATCH --mem=40G
 
 set -e # stop if something fails
+echo "=== Starting Job ID: $SLURM_JOB_ID ==="
 
 # --- FEDERATED SETTINGS ---
 NUM_ROUNDS=20 # approx 2hour per round of 1 Epoch
@@ -46,7 +47,7 @@ PRETRAINED_BACKBONE="ckpts/nuim_r50.pth"
 # --- STANDARD SETUP ---
 export SRUN_CPUS_PER_TASK=${SLURM_CPUS_PER_TASK:-1}
 export WANDB_PROJECT="cmt_fedavg_all"
-export RUN_NAME="run_$(date +%Y%m%d_%H%M%S)"
+export RUN_NAME="FedRepBN_Full_Run_${SLURM_JOB_ID}"
 
 # Gets API key robustly
 export WANDB_API_KEY=$(awk '$1=="machine" && $2=="api.wandb.ai" {found=1}found && $1=="password" {print $2; exit}' "$HOME/.netrc")
