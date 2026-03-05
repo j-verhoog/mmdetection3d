@@ -16,6 +16,11 @@ export BASE_CONFIG=/workspace/mmdet/mmdetection3d/projects/cmt/fed/all_domains/i
 export FULL_LOG_DIR="/tudelft.net/staff-umbrella/MscThesisjverhoog/projects/cmt_fedavg_all_val/logs/run1"
 mkdir -p "$FULL_LOG_DIR"
 
+# --- Force Overwrite Flag ---
+# Set to "true" to delete previous results and start from scratch.
+# Set to "false" to resume where it left off.
+export FORCE_OVERWRITE="true"
+
 # --- Run Orchestrator ---
 # Make sure the .sh file is executable: chmod +x validate.sh
 bash /home/nfs/jtverhoog/mmdet/mmdetection3d/projects/cmt/inference/validate.sh

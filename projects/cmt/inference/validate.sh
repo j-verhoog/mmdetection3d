@@ -5,11 +5,18 @@
 : "${APPTAINER_IMAGE:?Need to set APPTAINER_IMAGE}"
 : "${BASE_CONFIG:?Need to set BASE_CONFIG}"
 : "${FULL_LOG_DIR:?Need to set FULL_LOG_DIR}"
+: "${FORCE_OVERWRITE:=false}"
 
 CONFIG_CSV="/home/nfs/jtverhoog/mmdet/mmdetection3d/projects/cmt/inference/runs.csv"
 RESULTS_CSV="/home/nfs/jtverhoog/mmdet/mmdetection3d/projects/cmt/inference/validation_results.csv"
 MODELS=("A" "B" "C" "D" "E")
 SUBSETS=("full" "boston_day_clear" "boston_day_rain" "sing_night_clear" "sing_day_clear" "sing_night_rain")
+
+# --- Handle Force Overwrite ---
+if [ "$FORCE_OVERWRITE" == "true" ]; then
+    echo ">> FORCE_OVERWRITE is true. Deleting previous $RESULTS_CSV..."
+    rm -f "$RESULTS_CSV"
+fi
 
 # 1. Initialize Results CSV Header
 if [ ! -f "$RESULTS_CSV" ]; then
@@ -80,8 +87,7 @@ tail -n +2 "$CONFIG_CSV" | while IFS=, read -r NAME DESC BASE_DIR ROUND EPOCH OA
                     cd /workspace/mmdet/mmdetection3d
                     python tools/test.py $BASE_CONFIG $MODEL_PATH \
                         --eval bbox \
-                        --cfg-options \
-                        data.test.data_root='/workspace/mmdet/mmdetection3d/data/nuscenes/'
+                        --cfg-options total_epochs=20 device='cpu' data.test.data_root='/workspace/mmdet/mmdetection3d/data/nuscenes/'
                 "> "$LOG_FILE" 2>&1 < /dev/null
 
             # Extract result and store
