@@ -91,7 +91,7 @@ srun --ntasks=2 --gpus-per-task=1 bash -lc "
     cd /workspace/mmdet/mmdetection3d && \
     export PYTHONPATH=/workspace/mmdet/mmdetection3d:/workspace/mmdet:\$PYTHONPATH && \
     python -u tools/train.py \
-      projects/cmt/configs/fusion/cmt_voxel0075_vov_1600x640_cbgs.py \
+      projects/cmt/configs/fusion/cmt_voxel0075_vov_1600x640_cbgs_syncbn.py \
       --launcher slurm \
       --work-dir /workspace/work_dirs \
       --cfg-options \
