@@ -82,7 +82,7 @@ tail -n +2 "$CONFIG_CSV" | while IFS=, read -r NAME DESC BASE_DIR ROUND EPOCH OA
                         --eval bbox \
                         --cfg-options \
                         data.test.data_root='/workspace/mmdet/mmdetection3d/data/nuscenes/'
-                " > "$LOG_FILE" 2>&1
+                "> "$LOG_FILE" 2>&1 < /dev/null
 
             # Extract result and store
             SCORE=$(extract_metric "$LOG_FILE")
