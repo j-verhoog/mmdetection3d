@@ -6,8 +6,8 @@
 : "${BASE_CONFIG:?Need to set BASE_CONFIG}"
 : "${FULL_LOG_DIR:?Need to set FULL_LOG_DIR}"
 
-CONFIG_CSV="runs.csv"
-RESULTS_CSV="validation_results.csv"
+CONFIG_CSV="/home/nfs/jtverhoog/mmdet/mmdetection3d/projects/cmt/inference/runs.csv"
+RESULTS_CSV="/home/nfs/jtverhoog/mmdet/mmdetection3d/projects/cmt/inference/validation_results.csv"
 MODELS=("A" "B" "C" "D" "E")
 SUBSETS=("full" "boston_day_clear" "boston_day_rain" "sing_night_clear" "sing_day_clear" "sing_night_rain")
 
