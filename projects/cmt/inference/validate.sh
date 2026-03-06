@@ -25,9 +25,8 @@ fi
 
 # 2. Metric Extraction Function (Looks for NDS in the log file)
 extract_metric() {
-    # Searches for the NuScenes Detection Score in the log file
-    # Adjust the pattern if your MMDetection3D version outputs different keys
-    local val=$(grep -oP '"pts_bbox_NuScenes/NDS": \K[0-9.]+' "$1" | tail -1)
+    # This matches "NDS: 0.3432" which is clearly visible in your log output
+    local val=$(grep -oP 'NDS: \K[0-9.]+' "$1" | head -1)
     echo "${val:-0.0}"
 }
 

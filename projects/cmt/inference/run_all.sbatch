@@ -20,7 +20,7 @@ mkdir -p "$FULL_LOG_DIR"
 # --- Force Overwrite Flag ---
 # Set to "true" to delete previous results and start from scratch.
 # Set to "false" to resume where it left off.
-export FORCE_OVERWRITE="true"
+export FORCE_OVERWRITE="false"
 
 # --- Run Orchestrator ---
 # Make sure the .sh file is executable: chmod +x validate.sh
