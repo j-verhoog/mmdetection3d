@@ -30,15 +30,16 @@ from comparison_engine import ModelComparator
 from comparison_utils import default_hook_filter
 from visualization import ComparisonVisualizer, create_comparison_report
 
+"""
 # HOW TO RUN IT:
-# singularity shell --nv --cleanenv --bind /home/jolle/mmdet:/workspace/mmdet --bind /home/jolle/Desktop:/home/jolle/Desktop /home/jolle/mmdet/image/mmdet3d_v1rc5.sif
+singularity shell --nv --cleanenv --bind /home/jolle/mmdet:/workspace/mmdet --bind /home/jolle/Desktop:/home/jolle/Desktop /home/jolle/mmdet/image/mmdet3d_v1rc5.sif
 # Run in container:
-# export PATH=/opt/conda/envs/mmdet3d_v100rc5/bin:/opt/conda/bin:$PATH
-# export PYTHONPATH=/workspace/mmdet/mmdetection3d:$PYTHONPATH
-# export PYTHONPATH=/workspace/mmdet/mmdetection3d:/workspace/mmdet:\$PYTHONPATH
-# cd /workspace/mmdet/mmdetection3d/
-# python projects/analysis/scripts_cmt/main.py --config /home/jolle/mmdet/mmdetection3d/projects/cmt/fed/all_domains/improved_lightweight_cmt_iterated.py --data_dir /home/jolle/mmdet/datasets/v1.0-mini --pt /home/jolle/Desktop/cmt_nocomm_modelA.pth /home/jolle/Desktop/cmt_nocomm_modelB.pth --modality lidar_camera
-
+export PATH=/opt/conda/envs/mmdet3d_v100rc5/bin:/opt/conda/bin:$PATH
+export PYTHONPATH=/workspace/mmdet/mmdetection3d:$PYTHONPATH
+export PYTHONPATH=/workspace/mmdet/mmdetection3d:/workspace/mmdet:\$PYTHONPATH
+cd /workspace/mmdet/mmdetection3d/
+python projects/analysis/scripts_cmt/main.py --config /home/jolle/mmdet/mmdetection3d/projects/cmt/fed/all_domains/improved_lightweight_cmt_iterated.py --data_dir /home/jolle/mmdet/datasets/v1.0-mini --pt /home/jolle/Desktop/cmt_nocomm_modelA.pth /home/jolle/Desktop/cmt_nocomm_modelB.pth --modality lidar_camera
+"""
 
 def collect_multimodal_samples(data_dir: str, max_samples: int) -> List[Tuple[str, str]]:
     """
