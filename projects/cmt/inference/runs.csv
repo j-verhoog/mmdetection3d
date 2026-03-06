@@ -1,7 +1,7 @@
 Name,Description,BaseDir,Round,Epoch,OverrideA,OverrideB,OverrideC,OverrideD,OverrideE
 FedAvg_Baseline,Aggregate every epoch,/home/nfs/jtverhoog/mmdet/MscThesisjverhoog/projects/cmt_fedavg_all/run_20260225_144902,20,20,,,,
 FedAvg_2,Different luck,/home/nfs/jtverhoog/mmdet/MscThesisjverhoog/projects/cmt_fedavg_all/run_20260226_114653,20,20,,,,,
-FedNorm,BN and LN localized, /home/nfs/jtverhoog/mmdet/MscThesisjverhoog/projects/cmt_fedavg_all/FedNorm,20,20,,,,,
-FedDynBN, Dyn and BN, /home/nfs/jtverhoog/mmdet/MscThesisjverhoog/projects/cmt_fedavg_all/run_20260302_132331,20,20,,,,,
-FedBN, BN only, /home/nfs/jtverhoog/mmdet/MscThesisjverhoog/projects/cmt_fedavg_all/run_20260226_173100,20,20,,,,,
-
+FedNorm,BN and LN localized,/home/nfs/jtverhoog/mmdet/MscThesisjverhoog/projects/cmt_fedavg_all/FedNorm,20,20,,,,,
+FedDynBN, Dyn and BN,/home/nfs/jtverhoog/mmdet/MscThesisjverhoog/projects/cmt_fedavg_all/run_20260302_132331,20,20,,,,,
+FedBN, BN only,/home/nfs/jtverhoog/mmdet/MscThesisjverhoog/projects/cmt_fedavg_all/run_20260226_173100,20,20,,,,,
+FedDyn, Dynamic regul loss,/home/nfs/jtverhoog/mmdet/MscThesisjverhoog/projects/cmt_fedavg_all/run_20260227_032741,20,20,,,,,
