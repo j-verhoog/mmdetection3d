@@ -38,7 +38,7 @@ PRETRAINED_BACKBONE="ckpts/nuim_r50.pth"
 # --- STANDARD SETUP ---
 export SRUN_CPUS_PER_TASK=${SLURM_CPUS_PER_TASK:-1}
 export WANDB_PROJECT="cmt_fedavg_all"
-export RUN_NAME="NoComm_baseline_sep_20to40"
+export RUN_NAME="NoComm_20to40"
 
 # Gets API key robustly
 export WANDB_API_KEY=$(awk '$1=="machine" && $2=="api.wandb.ai" {found=1}found && $1=="password" {print $2; exit}' "$HOME/.netrc")
@@ -87,7 +87,7 @@ run_training () {
       --env WANDB_DIR=\"/workspace/tmp/wandb/\$SLURM_PROCID\" \
       --env TMPDIR=\"/workspace/tmp/tmp/\$SLURM_PROCID\" \
       --env WANDB_PROJECT=\"$WANDB_PROJECT\" \
-      --env WANDB_NAME=\"NoComm_baseline_${MODEL_NAME}\" \
+      --env WANDB_NAME=\"NoComm_20to40_${MODEL_NAME}\" \
       --env WANDB_API_KEY=\"$WANDB_API_KEY\" \
       --env OMP_NUM_THREADS=1 \
       --env MKL_NUM_THREADS=1 \
@@ -119,11 +119,11 @@ run_training () {
 # MAIN: Train each model independently
 # ==========================================
 
-export WANDB_ID_A="baseline_A_12236408"
-export WANDB_ID_B="baseline_B_12236408"
-export WANDB_ID_C="baseline_C_12236408"
-export WANDB_ID_D="baseline_D_12236408"
-export WANDB_ID_E="baseline_E_12236408"
+export WANDB_ID_A="NoComm_20to40_A"
+export WANDB_ID_B="NoComm_20to40_B"
+export WANDB_ID_C="NoComm_20to40_C"
+export WANDB_ID_D="NoComm_20to40_D"
+export WANDB_ID_E="NoComm_20to40_E"
 
 PRETRAINED_BACKBONE_A="/tudelft.net/staff-umbrella/MscThesisjverhoog/projects/cmt_fedavg_all/run_20260227_185206/ModelA/epoch_20.pth"
 PRETRAINED_BACKBONE_B="/tudelft.net/staff-umbrella/MscThesisjverhoog/projects/cmt_fedavg_all/run_20260227_185206/ModelB/epoch_20.pth"
