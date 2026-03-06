@@ -19,7 +19,7 @@ echo "=== Starting Job ID: $SLURM_JOB_ID ==="
 
 PRETRAINED_BACKBONE="ckpts/fcos3d_vovnet_imgbackbone-remapped.pth"
 TARGET_EPOCHS=20
-SAMPLES_PER_GPU=1       # 4 leads OOM on A40, 2==31GB and takes 11 days on two gpu's
+SAMPLES_PER_GPU=1       # 4 leads OOM on A40, 2==31GB and takes 11 days on two gpu's, 1=16GB memory and takes 25 days on two gpu's
 
 # FOR NAMING STICK TO: A–Z  a–z  0–9  .  _  -
 export WANDB_PROJECT="cmt"
