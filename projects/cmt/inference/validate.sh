@@ -10,7 +10,7 @@
 CONFIG_CSV="/home/nfs/jtverhoog/mmdet/mmdetection3d/projects/cmt/inference/runs.csv"
 RESULTS_CSV="/home/nfs/jtverhoog/mmdet/mmdetection3d/projects/cmt/inference/validation_results.csv"
 MODELS=("A" "B" "C" "D" "E")
-SUBSETS=("full" "boston_day_clear" "boston_day_rain" "sing_night_clear" "sing_day_clear" "sing_night_rain")
+SUBSETS=("full" "boston_day_clear" "boston_day_rain" "singapore_night_clear" "singapore_day_clear" "singapore_night_rain")
 
 # --- Handle Force Overwrite ---
 if [ "$FORCE_OVERWRITE" == "true" ]; then
@@ -20,7 +20,7 @@ fi
 
 # 1. Initialize Results CSV Header
 if [ ! -f "$RESULTS_CSV" ]; then
-    echo "Run_Name,Description,Model_ID,Status,full,boston_day_clear,boston_day_rain,sing_night_clear,sing_day_clear,sing_night_rain" > "$RESULTS_CSV"
+    echo "Run_Name,Description,Model_ID,Status,full,boston_day_clear,boston_day_rain,singapore_night_clear,singapore_day_clear,singapore_night_rain" > "$RESULTS_CSV"
 fi
 
 # 2. Metric Extraction Function (Looks for NDS in the log file)
@@ -68,10 +68,19 @@ tail -n +2 "$CONFIG_CSV" | while IFS=, read -r NAME DESC BASE_DIR ROUND EPOCH OA
 
         for SUBSET in "${SUBSETS[@]}"; do
             # Define Data Root for this subset
-            SUBSET_ROOT="/tudelft.net/staff-umbrella/MscThesisjverhoog/nuscenes_subsets_full/$SUBSET"
-            [ "$SUBSET" == "full" ] && SUBSET_ROOT="/tudelft.net/staff-umbrella/MscThesisjverhoog/nuscenes_shadow_root"
+            SUBSET_ROOT="/tudelft.net/staff-umbrella/MscThesisjverhoog/datasets/cmt_subsets/Default_NoFair_SingleClient/$SUBSET"
+            [ "$SUBSET" == "full" ] && SUBSET_ROOT="/tudelft.net/staff-umbrella/MscThesisjverhoog/datasets/nuscenes_cmt_full"
 
             LOG_FILE="${CUR_LOG_ROOT}/${SUBSET}_output.log"
+
+            # --- Check if subset run is already completed successfully ---
+            if [ -f "$LOG_FILE" ] && grep -q -P 'NDS: [0-9.]+' "$LOG_FILE"; then
+                echo "   Skipping $SUBSET (already completed)..."
+                SCORE=$(extract_metric "$LOG_FILE")
+                MODEL_SCORES+=("$SCORE")
+                continue
+            fi
+
             echo "   Evaluating $SUBSET..."
 
             # Execute Validation inside Apptainer
