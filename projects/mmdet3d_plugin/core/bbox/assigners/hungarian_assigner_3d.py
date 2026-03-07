@@ -140,6 +140,12 @@ class HungarianAssigner3D(BaseAssigner):
         if linear_sum_assignment is None:
             raise ImportError('Please run "pip install scipy" '
                               'to install scipy first.')
+        
+        # --- FIX: Sanitize the cost matrix to prevent SciPy crashes ---
+        if torch.isnan(cost).any() or torch.isinf(cost).any():
+            cost = torch.nan_to_num(cost, nan=100.0, posinf=100.0, neginf=-100.0)
+        # --------------------------------------------------------------
+
         matched_row_inds, matched_col_inds = linear_sum_assignment(cost)
         matched_row_inds = torch.from_numpy(matched_row_inds).to(
             bbox_pred.device)
