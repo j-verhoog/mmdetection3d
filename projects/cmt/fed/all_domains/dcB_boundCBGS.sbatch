@@ -2,8 +2,8 @@
 #SBATCH --partition=general
 #SBATCH --qos=medium
 #SBATCH --job-name=bCBGS
-#SBATCH --output=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/cmt/baseline_sep_boundCBGS_A_%j.out
-#SBATCH --error=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/cmt/baseline_sep_boundCBGS_A_%j.err
+#SBATCH --output=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/cmt/nocomm_bCBGS_A_%j.out
+#SBATCH --error=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/cmt/nocomm_bCBGS_A_%j.err
 #SBATCH --time=16:00:00
 #SBATCH --nodes=1
 #SBATCH --ntasks=2
