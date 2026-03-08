@@ -7,5 +7,3 @@ FedBN,BN only,/home/nfs/jtverhoog/mmdet/MscThesisjverhoog/projects/cmt_fedavg_al
 FedDyn,Dynamic regul loss,/home/nfs/jtverhoog/mmdet/MscThesisjverhoog/projects/cmt_fedavg_all/run_20260227_032741,20,20,,,,,
 NoComm,Training only on own domain,/home/nfs/jtverhoog/mmdet/MscThesisjverhoog/projects/cmt_fedavg_all/run_20260227_185206,20,20,/home/nfs/jtverhoog/mmdet/MscThesisjverhoog/projects/cmt_fedavg_all/run_20260227_185206/ModelA/epoch_20.pth,/home/nfs/jtverhoog/mmdet/MscThesisjverhoog/projects/cmt_fedavg_all/run_20260227_185206/ModelB/epoch_20.pth,/home/nfs/jtverhoog/mmdet/MscThesisjverhoog/projects/cmt_fedavg_all/run_20260301_142404/ModelC/epoch_20.pth,/home/nfs/jtverhoog/mmdet/MscThesisjverhoog/projects/cmt_fedavg_all/run_20260302_130200/ModelD/epoch_20.pth,/home/nfs/jtverhoog/mmdet/MscThesisjverhoog/projects/cmt_fedavg_all/run_20260302_130200/ModelE/epoch_20.pth
 FedAvg_5local,Fedavg with 5 local epochs,/home/nfs/jtverhoog/mmdet/MscThesisjverhoog/projects/cmt_fedavg_all/run_20260302_124708,8,40,,,,,
-
-
