@@ -149,7 +149,7 @@ run_training () {
 # --- MERGE FUNCTION ---
 run_merge () {
     local CKPT_A=$1
-    local CKPT_B=$2um
+    local CKPT_B=$2
     local CKPT_C=$3
     local CKPT_D=$4
     local CKPT_E=$5
