@@ -1,10 +1,10 @@
 #!/bin/bash
 #SBATCH --partition=general
-#SBATCH --qos=short
+#SBATCH --qos=long
 #SBATCH --job-name=cmt
-#SBATCH --output=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/cmt/paper_config_job%j_rank%t.out
-#SBATCH --error=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/cmt/paper_config_job%j_rank%t.err
-#SBATCH --time=01:00:00
+#SBATCH --output=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/cmt/paper_config_FULLjob%j_rank%t.out
+#SBATCH --error=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/cmt/paper_config_FULLjob%j_rank%t.err
+#SBATCH --time=5-12:00:00
 #SBATCH --nodes=4              # Amount of machines
 #SBATCH --ntasks=8             # Total tasks (2 per node)
 #SBATCH --ntasks-per-node=2    # Spread them evenly
@@ -23,7 +23,7 @@ SAMPLES_PER_GPU=2       # 4 leads OOM on A40, 2==31GB and takes 11 days on two g
 
 # FOR NAMING STICK TO: A–Z  a–z  0–9  .  _  -
 export WANDB_PROJECT="cmt"
-export WANDB_NAME="paper_config"
+export WANDB_NAME="paper_config_full_2x8"
 export WANDB_API_KEY=$(awk '$1=="machine" && $2=="api.wandb.ai" {found=1}found && $1=="password" {print $2; exit}' "$HOME/.netrc")
 
 /usr/bin/scontrol show job -d "$SLURM_JOB_ID" # check sbatch working
