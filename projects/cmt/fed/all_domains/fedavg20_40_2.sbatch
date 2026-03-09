@@ -61,7 +61,6 @@ srun --nodes=$SLURM_NNODES --ntasks-per-node=1 mkdir -p "$TMP_BASE"/{wandb,torch
 module use /opt/insy/modulefiles
 module load cuda
 export MASTER_ADDR=$(scontrol show hostnames "$SLURM_JOB_NODELIST" | head -n 1)
-export MASTER_PORT=$(( ((RANDOM<<15)|RANDOM) % 49152 + 10000 ))
 
 # Measure GPU usage of your job (initialization)
 previous=$(/usr/bin/nvidia-smi --query-accounted-apps='gpu_instance_id,gpu_utilization,mem_utilization,max_memory_usage,time' --format='csv' 2>/dev/null || true)
@@ -91,6 +90,10 @@ run_training () {
         CFG_LOAD_ARG="load_from='${CHECKPOINT}'"
     fi
 
+    # Grab a fresh, guaranteed-free port for THIS specific training run
+    local CURRENT_MASTER_PORT=$(apptainer exec --cleanenv "$APPTAINER_IMAGE" python3 -c 'import socket; s=socket.socket(); s.bind(("", 0)); print(s.getsockname()[1]); s.close()')
+    echo "Using Master Port: $CURRENT_MASTER_PORT"
+
     echo "=== ROUND $ROUND | Training $MODEL_NAME | Stop Epoch: $STOP_EPOCH (Global: $GLOBAL_EPOCHS) ==="
     
     srun --ntasks=2 --gpus-per-task=1 bash -lc "
@@ -119,7 +122,7 @@ run_training () {
       --env NCCL_BLOCKING_WAIT=1 \
       --env TORCH_DISTRIBUTED_DEBUG=DETAIL \
       --env MASTER_ADDR=\"$MASTER_ADDR\" \
-      --env MASTER_PORT=\"$MASTER_PORT\" \
+      --env MASTER_PORT=\"$CURRENT_MASTER_PORT\" \
       --env NCCL_SOCKET_IFNAME=\"campus\" \
       --env WANDB_RUN_ID=\"$WANDB_RUN_ID\" \
       --env WANDB_RESUME=\"allow\" \
@@ -132,7 +135,7 @@ run_training () {
           --launcher slurm \
           --work-dir $WORK_DIR \
           $RESUME_ARG \
-          --cfg-options ${CFG_LOAD_ARG} dist_params.port=$MASTER_PORT \
+          --cfg-options ${CFG_LOAD_ARG} dist_params.port=$CURRENT_MASTER_PORT \
             data.samples_per_gpu=$SAMPLES_PER_GPU \
             total_epochs=$GLOBAL_EPOCHS \
             custom_hooks.1.stop_epoch=$STOP_EPOCH

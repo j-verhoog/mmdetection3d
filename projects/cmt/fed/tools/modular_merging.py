@@ -11,7 +11,7 @@ def parse_args():
     
     # Optional method flag. Defaults to fedavg to preserve original behavior.
     parser.add_argument('--method', type=str, default='fedavg', 
-                    choices=['fedavg', 'fedbn', 'fednorm', 'fedper', 'fed_bn_and_per', 'fedmedian', 'feddyn', 'fed_dyn_bn_and_per'],
+                    choices=['fedavg', 'fedbn', 'fednorm', 'fedper', 'fed_bn_and_per', 'fedmedian', 'feddyn', 'fed_dyn_bn_and_per', 'fedselect'],
                     help='Aggregation method. Default is fedavg.')
     parser.add_argument('--config', type=str, default=None, 
                         help='Path to the MMDet3D config file (e.g., improved_lightweight_cmt_iterated.py). Required for FedBN.')
@@ -674,6 +674,165 @@ def fednorm(models, output_paths, norm_weights, model_instance):
         torch.save(ckpt, out_path)
         print(f"Saved merged model with optimizer state to {out_path}")
 
+def fedselect(models, output_paths, norm_weights, client_ids, prev_global_path="/workspace/work_dirs/fedselect_states/global_model.pth", mask_dir="/workspace/work_dirs/fedselect_masks", select_ratio=0.1, max_sparsity=0.5):
+    """
+    FedSelect implementation (CVPR 2024). 
+    Automatically discovers and freezes personalized subnetworks for each client 
+    based on the magnitude of weight changes, then aggregates only the shared parameters.
+    
+    Args:
+        models (list): Paths to the current trained client models.
+        output_paths (list): Paths to save the combined (Personalized + Global) models.
+        norm_weights (list): Aggregation weights for each client.
+        client_ids (list): Unique string identifiers for each client (e.g., ["ModelA", "ModelB"]).
+        prev_global_path (str): Path to the global model from the *previous* round. 
+                                Used to calculate w_post - w_pre.
+        mask_dir (str): Directory to persistently store the binary masks across rounds.
+        select_ratio (float): Percentage of total model parameters to personalize per round (0.0 to 1.0).
+        max_sparsity (float): Maximum total percentage of parameters a client is allowed to personalize.
+    """
+    print(f"Running FedSelect Aggregation (select_ratio={select_ratio}, max_sparsity={max_sparsity})...")
+    os.makedirs(mask_dir, exist_ok=True)
+    os.makedirs(os.path.dirname(prev_global_path), exist_ok=True)
+
+    # 1. Load Pre-Training Global Weights
+    # If this is the very first round, the previous global model won't exist. 
+    # We initialize it using the first client's structure before it trained.
+    if not os.path.exists(prev_global_path):
+        print(f"No previous global model found at {prev_global_path}. Exiting FedSelect since we need a baseline for difference calculation. Please run one round of standard FedAvg first to initialize the global model.")
+        exit(1)
+        
+            
+    prev_global_ckpt = torch.load(prev_global_path, map_location='cpu')
+    prev_state = prev_global_ckpt['state_dict']
+    
+    # Identify valid floating-point keys
+    valid_keys = [k for k, v in prev_state.items() if v.is_floating_point() and 'num_batches_tracked' not in k]
+    total_params = sum(prev_state[k].numel() for k in valid_keys)
+    print(f"Total valid parameters for FedSelect: {total_params:,}")
+
+    # ---------------------------------------------------------
+    # Phase 1: Client Subnetwork Discovery (Mask Updating)
+    # ---------------------------------------------------------
+    print("Phase 1: Expanding personalized client subnetworks...")
+    for m_path, cid in zip(models, client_ids):
+        mask_path = os.path.join(mask_dir, f"{cid}_mask.pth")
+        
+        # Load or initialize client mask (0 = Global, 1 = Personalized)
+        if os.path.exists(mask_path):
+            client_mask = torch.load(mask_path)
+        else:
+            client_mask = {k: torch.zeros_like(prev_state[k], dtype=torch.bool) for k in valid_keys}
+
+        ckpt_i = torch.load(m_path, map_location='cpu')
+        state_i = ckpt_i['state_dict']
+        
+        # Calculate parameter changes and collect valid ones for thresholding
+        all_diffs = []
+        current_personalized = 0
+        
+        for k in valid_keys:
+            if k in state_i:
+                diff = torch.abs(state_i[k] - prev_state[k])
+                # Only evaluate parameters that are currently shared (mask == 0)
+                global_mask = ~client_mask[k]
+                all_diffs.append(diff[global_mask].flatten())
+                current_personalized += client_mask[k].sum().item()
+                
+        # Determine how many new parameters to select this round
+        cat_diffs = torch.cat(all_diffs)
+        k_to_select = int(total_params * select_ratio)
+        max_allowed = int(total_params * max_sparsity)
+        k_to_select = min(k_to_select, max_allowed - current_personalized)
+        
+        if k_to_select > 0 and len(cat_diffs) > 0:
+            # We must handle the case where k_to_select exceeds remaining diffs
+            k_to_select = min(k_to_select, len(cat_diffs))
+            threshold = torch.topk(cat_diffs, k_to_select).values[-1]
+            
+            # Update the mask permanently
+            new_personalized = 0
+            for k in valid_keys:
+                if k in state_i:
+                    diff = torch.abs(state_i[k] - prev_state[k])
+                    # Flip 0 to 1 if it exceeds threshold and is currently 0
+                    new_ones = (~client_mask[k]) & (diff >= threshold)
+                    client_mask[k][new_ones] = True
+                    new_personalized += new_ones.sum().item()
+                    
+            print(f"  {cid}: Personalized {new_personalized:,} new params. Total sparsity: {(current_personalized + new_personalized) / total_params * 100:.2f}%")
+        else:
+            print(f"  {cid}: Reached max sparsity or no params to select. Total sparsity: {current_personalized / total_params * 100:.2f}%")
+            
+        torch.save(client_mask, mask_path)
+        del ckpt_i
+        
+    # ---------------------------------------------------------
+    # Phase 2: Masked Server Aggregation
+    # ---------------------------------------------------------
+    print("Phase 2: Aggregating shared parameters on server...")
+    running_sum = {k: torch.zeros_like(v) for k, v in prev_state.items() if k in valid_keys}
+    presence_weights = {k: torch.zeros_like(v) for k, v in prev_state.items() if k in valid_keys}
+    
+    for m_path, cid, w_i in zip(models, client_ids, norm_weights):
+        mask_path = os.path.join(mask_dir, f"{cid}_mask.pth")
+        client_mask = torch.load(mask_path)
+        
+        ckpt_i = torch.load(m_path, map_location='cpu')
+        state_i = ckpt_i['state_dict']
+        
+        for k in valid_keys:
+            if k in state_i:
+                # Calculate aggregation weight per parameter: w_i * (1 - mask)
+                active_mask = (~client_mask[k]).float()
+                running_sum[k] += state_i[k] * active_mask * w_i
+                presence_weights[k] += active_mask * w_i
+                
+        del ckpt_i
+        
+    # Finalize averaged weights (handling division by zero for fully personalized params)
+    averaged_weights = {}
+    for k in valid_keys:
+        valid_mask = presence_weights[k] > 0
+        averaged_weights[k] = torch.where(
+            valid_mask,
+            running_sum[k] / presence_weights[k].clamp(min=1e-9),
+            prev_state[k] # Fallback to previous global weight if all clients personalized it
+        )
+        
+    # Save the new global model for the *next* round's difference calculation
+    for k in valid_keys:
+        prev_global_ckpt['state_dict'][k] = averaged_weights[k]
+    torch.save(prev_global_ckpt, prev_global_path)
+    del prev_global_ckpt
+
+    # ---------------------------------------------------------
+    # Phase 3: Client Subnetwork Injection & Saving
+    # ---------------------------------------------------------
+    print("Phase 3: Injecting shared weights into client models...")
+    for in_path, out_path, cid in zip(models, output_paths, client_ids):
+        ckpt = torch.load(in_path, map_location='cpu')
+        state = ckpt['state_dict']
+        
+        mask_path = os.path.join(mask_dir, f"{cid}_mask.pth")
+        client_mask = torch.load(mask_path)
+        
+        for k in valid_keys:
+            if k in state:
+                # Final weight = Mask * Local + (1 - Mask) * Global
+                m = client_mask[k].float()
+                state[k] = (m * state[k]) + ((1.0 - m) * averaged_weights[k])
+                
+        # Clean optimizer momentum states
+        if 'optimizer' in ckpt and 'state' in ckpt['optimizer']:
+            for param_id in ckpt['optimizer']['state']:
+                for key in ckpt['optimizer']['state'][param_id]:
+                    if torch.is_tensor(ckpt['optimizer']['state'][param_id][key]):
+                        ckpt['optimizer']['state'][param_id][key].zero_()
+                        
+        os.makedirs(os.path.dirname(out_path), exist_ok=True)
+        torch.save(ckpt, out_path)
+        print(f"Saved personalized FedSelect model to {out_path}")
 
 def main():
     args = parse_args()
@@ -904,6 +1063,19 @@ def main():
             test_cfg=cfg.get('test_cfg'))
 
         fednorm(model_paths, output_paths, norm_weights, model_instance)
+
+    elif args.method == 'fedselect':
+        client_ids = [f"Model{string.ascii_uppercase[i]}" for i in range(len(model_paths))]
+        fedselect(
+            models=model_paths, 
+            output_paths=output_paths, 
+            norm_weights=norm_weights, 
+            client_ids=client_ids,
+            prev_global_path="/workspace/work_dirs/fedselect_states/global_model.pth", 
+            mask_dir="/workspace/work_dirs/fedselect_masks",
+            select_ratio=0.05,    # Customize via argparse if needed
+            max_sparsity=0.4     # Customize via argparse if needed
+        )
 
 if __name__ == '__main__':
     main()
