@@ -2,8 +2,8 @@
 #SBATCH --partition=general # request partition
 #SBATCH --qos=medium # Quality of service, short default
 #SBATCH --job-name=cmt-splits-otr
-#SBATCH --output=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/cmt_data_prep/other_splits.out
-#SBATCH --error=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/cmt_data_prep/other_splits.err
+#SBATCH --output=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/cmt_data_prep/other_splits_%j.out
+#SBATCH --error=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/cmt_data_prep/other_splits_%j.err
 #SBATCH --time=05:00:00 # 0:01:00 is one minute, max 4hrs for short QoS, 36hrs for medium. One takes 1:04hrs
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=16
