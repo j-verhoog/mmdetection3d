@@ -61,9 +61,8 @@ module load cuda
 # master port queries for free ports and uses that per training run, ensuring all processes can communicate properly
 export MASTER_ADDR=$(scontrol show hostnames "$SLURM_JOB_NODELIST" | head -n 1)
 
-# --- ONE General training function for all rounds ---
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "$SCRIPT_DIR/runner.sh"
+# --- ONE General training function for all rounds: CHECK PATH ---
+source /home/nfs/jtverhoog/mmdet/mmdetection3d/projects/cmt/fed/fedSelect/runner.sh
 
 # Cleanup
 srun --nodes=$SLURM_NNODES --ntasks-per-node=1 rm -rf "$TMP_BASE"
