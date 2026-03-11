@@ -4,7 +4,7 @@
 #SBATCH --job-name=cmt_create_data
 #SBATCH --output=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/cmt_data_prep/otr_create_data_%j.out
 #SBATCH --error=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/cmt_data_prep/otr_create_data_%j.err
-#SBATCH --time=06:00:00 # 0:01:00 is one minute, max 4hrs for short QoS, 36hrs for medium. 18hrs==default+exp1+exp2+exp3
+#SBATCH --time=12:00:00 # 0:01:00 is one minute, max 4hrs for short QoS, 36hrs for medium. 18hrs==default+exp1+exp2+exp3
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=8G
@@ -16,10 +16,10 @@ APPTAINER_IMAGE="/tudelft.net/staff-umbrella/MscThesisjverhoog/image/mmdet3d_v1r
 # --- MANUAL OVERRIDE ---
 # If this list is NOT empty, the script will skip discovery and ONLY process these paths.
 MANUAL_OVERRIDE=(
-    "$BASE_DATASETS_FOLDER/Exp5_NoFair_DualClient/boston_day_clear/1"
-    "$BASE_DATASETS_FOLDER/Exp5_NoFair_DualClient/boston_day_clear/2"
-    "$BASE_DATASETS_FOLDER/Exp5_NoFair_DualClient/boston_day_rain/1"
-    "$BASE_DATASETS_FOLDER/Exp5_NoFair_DualClient/boston_day_rain/2"
+    # "$BASE_DATASETS_FOLDER/Exp5_NoFair_DualClient/boston_day_clear/1"
+    # "$BASE_DATASETS_FOLDER/Exp5_NoFair_DualClient/boston_day_clear/2"
+    # "$BASE_DATASETS_FOLDER/Exp5_NoFair_DualClient/boston_day_rain/1"
+    # "$BASE_DATASETS_FOLDER/Exp5_NoFair_DualClient/boston_day_rain/2"
     "$BASE_DATASETS_FOLDER/Exp5_NoFair_DualClient/singapore_day_clear/1"
     "$BASE_DATASETS_FOLDER/Exp5_NoFair_DualClient/singapore_day_clear/2"
     "$BASE_DATASETS_FOLDER/Exp5_NoFair_DualClient/singapore_night_clear/1"
