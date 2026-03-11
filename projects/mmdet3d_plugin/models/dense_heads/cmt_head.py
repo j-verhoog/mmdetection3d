@@ -340,7 +340,8 @@ class CmtHead(BaseModule):
         if self.training:
             targets = [torch.cat((img_meta['gt_bboxes_3d']._data.gravity_center, img_meta['gt_bboxes_3d']._data.tensor[:, 3:]),dim=1) for img_meta in img_metas ]
             labels = [img_meta['gt_labels_3d']._data for img_meta in img_metas ]
-            known = [(torch.ones_like(t)).cuda() for t in labels]
+            # known = [(torch.ones_like(t)).cuda() for t in labels] ##################################################### EDIT TO NOT MOVE ALL TO GPU 0 IN DDP
+            known = [(torch.ones_like(t)).to(reference_points.device) for t in labels]
             know_idx = known
             unmask_bbox = unmask_label = torch.cat(known)
             known_num = [t.size(0) for t in targets]
@@ -534,7 +535,8 @@ class CmtHead(BaseModule):
             
             if mask_dict is not None:
             #if mask_dict and mask_dict['pad_size'] > 0:
-                task_mask_dict = copy.deepcopy(mask_dict)
+                # task_mask_dict = copy.deepcopy(mask_dict)                                               ############### Make it normal copy for it is overwritten
+                task_mask_dict = mask_dict.copy()
                 class_name = self.class_names[task_id]
 
                 # Only do the label remapping if there are actual objects
@@ -1021,7 +1023,8 @@ class CmtImageHead(CmtHead):
             
             if mask_dict is not None:
             #if mask_dict and mask_dict['pad_size'] > 0:
-                task_mask_dict = copy.deepcopy(mask_dict)
+                # task_mask_dict = copy.deepcopy(mask_dict)                                               ############### Make it normal copy for it is overwritten
+                task_mask_dict = mask_dict.copy()
                 class_name = self.class_names[task_id]
 
                 # Only do the label remapping if there are actual objects
@@ -1112,7 +1115,8 @@ class CmtLidarHead(CmtHead):
             
             if mask_dict is not None:
             #if mask_dict and mask_dict['pad_size'] > 0:
-                task_mask_dict = copy.deepcopy(mask_dict)
+                # task_mask_dict = copy.deepcopy(mask_dict)                                               ############### Make it normal copy for it is overwritten
+                task_mask_dict = mask_dict.copy()
                 class_name = self.class_names[task_id]
 
                 # Only do the label remapping if there are actual objects
