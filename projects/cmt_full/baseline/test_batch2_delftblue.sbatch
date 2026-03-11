@@ -1,4 +1,5 @@
 #!/bin/bash
+#SBATCH --account=education-me-msc-cor
 #SBATCH --partition=gpu-a100
 #SBATCH --job-name=centr_base
 #SBATCH --output=/scratch/%u/logs/paper_config_job%j_rank%t.out
@@ -9,7 +10,7 @@
 #SBATCH --ntasks=2             # Total tasks (2 per node)
 #SBATCH --ntasks-per-node=2    # Spread them evenly
 #SBATCH --cpus-per-task=8
-#SBATCH --mem=40G             
+#SBATCH --mem=64G             
 
 
 
@@ -37,13 +38,18 @@ export WORK=/scratch/$USER/MscThesisjverhoog/projects/$WANDB_PROJECT/$WANDB_NAME
 mkdir -p "$WORK"
 
 # --- LOCAL DATA SETUP ---
-NETWORK_DATA_ROOT="/scratch/$USER/MscThesisjverhoog/datasets/nuscenes_cmt_full"
+NETWORK_DATA_ROOT="/scratch/$USER/data/nuscenes"
 TMP_BASE="/tmp/jtverhoog_${SLURM_JOB_ID}"
 
-# FIX: Use srun to create directories on ALL nodes, not just the master
-echo "Creating tmp directories on all nodes..."
-srun --nodes=$SLURM_NNODES --ntasks-per-node=1 \
-    mkdir -p "$TMP_BASE"/{wandb,torch,xdg,tmp,home}
+# Create tmp directories and register cleanup trap (runs even on timeout/cancel)
+echo "Creating tmp directories..."
+/usr/bin/mkdir --parents "$TMP_BASE"/{wandb,torch,xdg,tmp,home} && echo "$TMP_BASE created successfully."
+
+function clean_up {
+  /usr/bin/rm --recursive --force "$TMP_BASE" && echo "Clean up of $TMP_BASE completed successfully."
+  exit
+}
+trap 'clean_up' EXIT
 
 # Measure GPU usage of your job (initialization)
 previous=$(/usr/bin/nvidia-smi --query-accounted-apps='gpu_utilization,mem_utilization,max_memory_usage,time' --format='csv' 2>/dev/null || true)
@@ -59,15 +65,17 @@ export MASTER_PORT=$(apptainer exec --cleanenv "$APPTAINER_IMAGE" python3 -c 'im
 echo "Master node is: $MASTER_ADDR"
 echo "MASTER_ADDR=$MASTER_ADDR MASTER_PORT=$MASTER_PORT"
 
+echo "Extracting GT database to local tmp..."
+# Extracted directly into TMP_BASE so the trap cleans it up automatically
+time tar -xf /scratch/$USER/nuscenes_gt_database.tar.gz -C "$TMP_BASE/nuscenes_db"
 
 echo "=== ENTERING CONTAINER =="
 srun --ntasks=2 --gpus-per-task=1 bash -lc "
   apptainer exec --nv --cleanenv \
   --bind \"$HOME/mmdet:/workspace/mmdet\" \
+  --bind \"$TMP_BASE/nuscenes_db:/workspace/mmdet/mmdetection3d/data/nuscenes/nuscenes_gt_database\" \
   --bind \"$TMP_BASE:/workspace/tmp\" \
   --bind \"$WORK:/workspace/work_dirs\" \
-  --bind \"/scratch/$USER/MscThesisjverhoog:/tudelft.net/staff-umbrella/MscThesisjverhoog\" \
-  --bind \"/scratch/$USER/data/nuscenes:/tudelft.net/staff-umbrella/IntelligentVehiclesPublicDatasets\" \
   --bind \"$NETWORK_DATA_ROOT:/workspace/mmdet/mmdetection3d/data/nuscenes\" \
   --env SLURM_PROCID=\"\$SLURM_PROCID\" \
   --env SLURM_NTASKS=\"\$SLURM_NTASKS\" \
@@ -108,11 +116,6 @@ srun --ntasks=2 --gpus-per-task=1 bash -lc "
 
 
 
-# Clean up local disk on ALL nodes
-echo "Cleaning up tmp directories on all nodes..."
-srun --nodes=$SLURM_NNODES --ntasks-per-node=1 \
-    rm -rf "$TMP_BASE"
-    
 # Measure GPU usage of your job (result)
 /usr/bin/nvidia-smi --query-accounted-apps='gpu_utilization,mem_utilization,max_memory_usage,time' --format='csv' 2>/dev/null || true
 
