@@ -98,7 +98,7 @@ srun --ntasks=2 --gpus-per-task=1 bash -lc "
       --work-dir /workspace/work_dirs \
       --cfg-options \
         evaluation.interval=1 \
-        load_from='"$PRETRAINED_BACKBONE"' \
+        load_from=/tudelft.net/staff-umbrella/MscThesisjverhoog/projects/cmt_fedavg_all/centralized_baseline/epoch_19.pth  \
         total_epochs=$TARGET_EPOCHS \
         data.samples_per_gpu=8 \
         dist_params.port='"$MASTER_PORT"'
