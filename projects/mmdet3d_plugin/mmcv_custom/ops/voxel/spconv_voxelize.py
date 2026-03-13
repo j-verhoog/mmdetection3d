@@ -22,21 +22,20 @@ class SPConvVoxelization(nn.Module):
             self.max_voxels = max_voxels
         else:
             self.max_voxels = _pair(max_voxels)
-        
-        # commented out to remove memory leak of spconv, see other comments in this file for details
-        # self.voxel_generator = PointToVoxel(
-        #     vsize_xyz=voxel_size,
-        #     coors_range_xyz=point_cloud_range,
-        #     max_num_points_per_voxel=max_num_points,
-        #     max_num_voxels=self.max_voxels[0],
-        #     num_point_features=num_point_features,
-        #     device=device,
-        # )
+        self.voxel_generator = PointToVoxel(
+            vsize_xyz=voxel_size,
+            coors_range_xyz=point_cloud_range,
+            max_num_points_per_voxel=max_num_points,
+            max_num_voxels=self.max_voxels[0],
+            num_point_features=num_point_features,
+            device=device,
+        )
         grid_size = (self.point_cloud_range[3:6] - self.point_cloud_range[0:3]) / np.array(voxel_size)
         self.grid_size = np.round(grid_size).astype(np.int64)
 
-        ### remove memory leak of spconv
-        self.train_voxel_generator = PointToVoxel(
+    def train(self, mode: bool = True):
+        if mode:
+            self.voxel_generator = PointToVoxel(
                 vsize_xyz=self.voxel_size.tolist(),
                 coors_range_xyz=self.point_cloud_range.tolist(),
                 max_num_points_per_voxel=self.max_num_points,
@@ -44,7 +43,8 @@ class SPConvVoxelization(nn.Module):
                 num_point_features=self.num_point_features,
                 device=self.device,
             )
-        self.eval_voxel_generator = PointToVoxel(
+        else:
+            self.voxel_generator = PointToVoxel(
                 vsize_xyz=self.voxel_size.tolist(),
                 coors_range_xyz=self.point_cloud_range.tolist(),
                 max_num_points_per_voxel=self.max_num_points,
@@ -52,30 +52,6 @@ class SPConvVoxelization(nn.Module):
                 num_point_features=self.num_point_features,
                 device=self.device,
             )
-        self.voxel_generator = self.train_voxel_generator
-
-    def train(self, mode: bool = True):
-        if mode:
-            # Swap the pointer instead of re-instantiating the C++ object to avoid memory leak of spconv
-            # self.voxel_generator = PointToVoxel(
-            #     vsize_xyz=self.voxel_size.tolist(),
-            #     coors_range_xyz=self.point_cloud_range.tolist(),
-            #     max_num_points_per_voxel=self.max_num_points,
-            #     max_num_voxels=self.max_voxels[0],
-            #     num_point_features=self.num_point_features,
-            #     device=self.device,
-            # )
-            self.voxel_generator = self.train_voxel_generator
-        else:
-            # self.voxel_generator = PointToVoxel(
-            #     vsize_xyz=self.voxel_size.tolist(),
-            #     coors_range_xyz=self.point_cloud_range.tolist(),
-            #     max_num_points_per_voxel=self.max_num_points,
-            #     max_num_voxels=self.max_voxels[1],
-            #     num_point_features=self.num_point_features,
-            #     device=self.device,
-            # )
-            self.voxel_generator = self.eval_voxel_generator
 
         return super().train(mode)
 

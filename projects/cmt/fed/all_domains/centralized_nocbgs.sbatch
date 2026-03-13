@@ -1,86 +1,73 @@
 #!/bin/bash
-#SBATCH --account=education-me-msc-ro
-#SBATCH --partition=gpu-a100
+#SBATCH --partition=general # request partition
+#SBATCH --qos=medium # Quality of service, short default
 #SBATCH --job-name=centr_base
-#SBATCH --output=/scratch/%u/logs/paper_config_job%j.out
-#SBATCH --error=/scratch/%u/logs/paper_config_job%j.err
-#SBATCH --time=01:00:00
-#SBATCH --gres=gpu:2
+#SBATCH --output=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/cmt/centr_base_%j.out
+#SBATCH --error=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/cmt/centr_base_%j.err
+#SBATCH --time=32:00:00         # 0:01:00 is one minute, max 4hrs for short QoS, 36hrs for medium
 #SBATCH --nodes=1              # Amount of machines
 #SBATCH --ntasks=2             # Total tasks (2 per node)
 #SBATCH --ntasks-per-node=2    # Spread them evenly
+#SBATCH --gres=gpu:a40:2       # Request 2 GPUs per node (Total 2)
 #SBATCH --cpus-per-task=8
-#SBATCH --mem=64G             
-#SBATCH --tmp=500G
-
+#SBATCH --mem=48G             
 
 set -e # Good practice to fail fast
 echo "=== Starting Job ID: $SLURM_JOB_ID ==="
 
-echo "Printing ip link stuff"
-ip link show
+# cmt baseline downtuned Ali test
+export SRUN_CPUS_PER_TASK=${SLURM_CPUS_PER_TASK:-1}
 
-
-PRETRAINED_BACKBONE="ckpts/fcos3d_vovnet_imgbackbone-remapped.pth"
-TARGET_EPOCHS=20
-SAMPLES_PER_GPU=4       # 4 leads OOM on A40, 2==31GB and takes 11 days on two gpu's
+# --- CONFIGURATION MATCHING FEDAVG ---
+PRETRAINED_BACKBONE="ckpts/nuim_r50.pth"
+TARGET_EPOCHS=20  # Matches FedAvg (20 Rounds * 1 Epoch)
 
 # FOR NAMING STICK TO: A–Z  a–z  0–9  .  _  -
-export WANDB_PROJECT="cmt"
-export WANDB_NAME="paper_config_delftblue"
+export WANDB_PROJECT="cmt_fedavg_all"
+export WANDB_NAME="centralized_baseline_nocbgs"
 export WANDB_API_KEY=$(awk '$1=="machine" && $2=="api.wandb.ai" {found=1}found && $1=="password" {print $2; exit}' "$HOME/.netrc")
 
 /usr/bin/scontrol show job -d "$SLURM_JOB_ID" # check sbatch working
 
 # define image and work dirs
-export APPTAINER_IMAGE=/scratch/$USER/MscThesisjverhoog/image/mmdet3d_v1rc5.sif
-export WORK=/scratch/$USER/MscThesisjverhoog/projects/$WANDB_PROJECT/$WANDB_NAME
+export APPTAINER_IMAGE=/tudelft.net/staff-umbrella/MscThesisjverhoog/image/mmdet3d_v1rc5.sif
+export WORK=/tudelft.net/staff-umbrella/MscThesisjverhoog/projects/$WANDB_PROJECT/$WANDB_NAME
 mkdir -p "$WORK"
 
 # --- LOCAL DATA SETUP ---
-NETWORK_DATA_ROOT="/scratch/$USER/data/nuscenes"
+NETWORK_DATA_ROOT="/tudelft.net/staff-umbrella/MscThesisjverhoog/datasets/nuscenes_cmt_full"
 TMP_BASE="/tmp/jtverhoog_${SLURM_JOB_ID}"
 
-# Create tmp directories and register cleanup trap (runs even on timeout/cancel)
-echo "Creating tmp directories..."
-/usr/bin/mkdir --parents "$TMP_BASE"/{wandb,torch,xdg,tmp,home,nuscenes} && echo "$TMP_BASE created successfully."
-
-function clean_up {
-  /usr/bin/rm --recursive --force "$TMP_BASE" && echo "Clean up of $TMP_BASE completed successfully."
-  exit
-}
-trap 'clean_up' EXIT
+# FIX: Use srun to create directories on ALL nodes, not just the master
+echo "Creating tmp directories on all nodes..."
+srun --nodes=$SLURM_NNODES --ntasks-per-node=1 \
+    mkdir -p "$TMP_BASE"/{wandb,torch,xdg,tmp,home}
 
 # Measure GPU usage of your job (initialization)
 previous=$(/usr/bin/nvidia-smi --query-accounted-apps='gpu_utilization,mem_utilization,max_memory_usage,time' --format='csv' 2>/dev/null || true)
 
 echo "=== LOADING CUDA ==="
-module load 2024r1
+module use /opt/insy/modulefiles
 module load cuda
 
 # Get the hostname of the first node in the list
 export MASTER_ADDR=$(scontrol show hostnames "$SLURM_JOB_NODELIST" | head -n 1)
 export MASTER_PORT=$(apptainer exec --cleanenv "$APPTAINER_IMAGE" python3 -c 'import socket; s=socket.socket(); s.bind(("", 0)); print(s.getsockname()[1]); s.close()')
+echo "Using Master Port: $MASTER_PORT"
 
 echo "Master node is: $MASTER_ADDR"
 echo "MASTER_ADDR=$MASTER_ADDR MASTER_PORT=$MASTER_PORT"
 
-# Copy everything EXCEPT the .tar / .tar.gz files from scratch to tmp
-echo "Copying base files to local tmp..."
-time rsync -a --exclude='*.tar' "$NETWORK_DATA_ROOT/" "$TMP_BASE/nuscenes/"
 
-# Extract the tarballs directly into that same tmp folder
-echo "Extracting GT database and heavy data to local tmp..."
-time tar -xf /scratch/$USER/data/nuscenes/nuscenes_gt_database.tar -C "$TMP_BASE/nuscenes"
-time tar -xf /scratch/$USER/data/nuscenes/nuscenes_samples_sweeps.tar -C "$TMP_BASE/nuscenes"
-
-echo "=== ENTERING CONTAINER ==="
+echo "=== ENTERING CONTAINER =="
 srun --ntasks=2 --gpus-per-task=1 bash -lc "
   apptainer exec --nv --cleanenv \
   --bind \"$HOME/mmdet:/workspace/mmdet\" \
-  --bind \"$TMP_BASE/nuscenes:/workspace/mmdet/mmdetection3d/data/nuscenes\" \
   --bind \"$TMP_BASE:/workspace/tmp\" \
   --bind \"$WORK:/workspace/work_dirs\" \
+  --bind \"/tudelft.net/staff-umbrella/MscThesisjverhoog:/tudelft.net/staff-umbrella/MscThesisjverhoog\" \
+  --bind \"/tudelft.net/staff-umbrella/IntelligentVehiclesPublicDatasets:/tudelft.net/staff-umbrella/IntelligentVehiclesPublicDatasets\" \
+  --bind \"$NETWORK_DATA_ROOT:/workspace/mmdet/mmdetection3d/data/nuscenes\" \
   --env SLURM_PROCID=\"\$SLURM_PROCID\" \
   --env SLURM_NTASKS=\"\$SLURM_NTASKS\" \
   --env SLURM_NODELIST=\"\$SLURM_NODELIST\" \
@@ -100,26 +87,31 @@ srun --ntasks=2 --gpus-per-task=1 bash -lc "
   --env TORCH_DISTRIBUTED_DEBUG=DETAIL \
   --env MASTER_ADDR=\"$MASTER_ADDR\" \
   --env MASTER_PORT=\"$MASTER_PORT\" \
-  --env NCCL_SOCKET_IFNAME=\"ib0\" \
+  --env NCCL_SOCKET_IFNAME=\"campus\" \
   \"$APPTAINER_IMAGE\" \
   bash -lc '
     cd /workspace/mmdet/mmdetection3d && \
     export PYTHONPATH=/workspace/mmdet/mmdetection3d:/workspace/mmdet:\$PYTHONPATH && \
     python -u tools/train.py \
-      projects/cmt/configs/fusion/cmt_voxel0075_vov_1600x640_cbgs.py \
+      projects/cmt/fed/all_domains/improved_lightweight_cmt_iterated_nocbgs.py \
       --launcher slurm \
       --work-dir /workspace/work_dirs \
       --cfg-options \
         evaluation.interval=1 \
         load_from='"$PRETRAINED_BACKBONE"' \
         total_epochs=$TARGET_EPOCHS \
-        data.samples_per_gpu=$SAMPLES_PER_GPU \
+        data.samples_per_gpu=8 \
         dist_params.port='"$MASTER_PORT"'
   '
 "
 
 
 
+# Clean up local disk on ALL nodes
+echo "Cleaning up tmp directories on all nodes..."
+srun --nodes=$SLURM_NNODES --ntasks-per-node=1 \
+    rm -rf "$TMP_BASE"
+    
 # Measure GPU usage of your job (result)
 /usr/bin/nvidia-smi --query-accounted-apps='gpu_utilization,mem_utilization,max_memory_usage,time' --format='csv' 2>/dev/null || true
 
