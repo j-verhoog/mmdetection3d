@@ -674,35 +674,21 @@ def fednorm(models, output_paths, norm_weights, model_instance):
         torch.save(ckpt, out_path)
         print(f"Saved merged model with optimizer state to {out_path}")
 
-def fedselect(models, output_paths, norm_weights, client_ids, prev_global_path="/workspace/work_dirs/fedselect_states/global_model.pth", mask_dir="/workspace/work_dirs/fedselect_masks", select_ratio=0.1, max_sparsity=0.5):
+def fedselect(models, output_paths, norm_weights, client_ids, prev_global_path="/workspace/work_dirs/fedselect_states/global_model.pth", mask_dir="/workspace/work_dirs/fedselect_masks", select_ratio=0.05, max_sparsity=0.5):
     """
     FedSelect implementation (CVPR 2024). 
     Automatically discovers and freezes personalized subnetworks for each client 
     based on the magnitude of weight changes, then aggregates only the shared parameters.
-    
-    Args:
-        models (list): Paths to the current trained client models.
-        output_paths (list): Paths to save the combined (Personalized + Global) models.
-        norm_weights (list): Aggregation weights for each client.
-        client_ids (list): Unique string identifiers for each client (e.g., ["ModelA", "ModelB"]).
-        prev_global_path (str): Path to the global model from the *previous* round. 
-                                Used to calculate w_post - w_pre.
-        mask_dir (str): Directory to persistently store the binary masks across rounds.
-        select_ratio (float): Percentage of total model parameters to personalize per round (0.0 to 1.0).
-        max_sparsity (float): Maximum total percentage of parameters a client is allowed to personalize.
     """
     print(f"Running FedSelect Aggregation (select_ratio={select_ratio}, max_sparsity={max_sparsity})...")
     os.makedirs(mask_dir, exist_ok=True)
     os.makedirs(os.path.dirname(prev_global_path), exist_ok=True)
 
     # 1. Load Pre-Training Global Weights
-    # If this is the very first round, the previous global model won't exist. 
-    # We initialize it using the first client's structure before it trained.
     if not os.path.exists(prev_global_path):
         print(f"No previous global model found at {prev_global_path}. Exiting FedSelect since we need a baseline for difference calculation. Please run one round of standard FedAvg first to initialize the global model.")
         exit(1)
         
-            
     prev_global_ckpt = torch.load(prev_global_path, map_location='cpu')
     prev_state = prev_global_ckpt['state_dict']
     
@@ -746,9 +732,16 @@ def fedselect(models, output_paths, norm_weights, client_ids, prev_global_path="
         k_to_select = min(k_to_select, max_allowed - current_personalized)
         
         if k_to_select > 0 and len(cat_diffs) > 0:
-            # We must handle the case where k_to_select exceeds remaining diffs
             k_to_select = min(k_to_select, len(cat_diffs))
-            threshold = torch.topk(cat_diffs, k_to_select).values[-1]
+            
+            # --- NEW LOGIC: Calculate averages ---
+            avg_overall_diff = cat_diffs.mean().item()
+            top_values = torch.topk(cat_diffs, k_to_select).values
+            threshold = top_values[-1]
+            avg_selected_diff = top_values.mean().item()
+            
+            print(f"  {cid}: Avg diff of all shared weights: {avg_overall_diff:.6f} | Avg diff of selected {select_ratio*100}%: {avg_selected_diff:.6f}")
+            # -------------------------------------
             
             # Update the mask permanently
             new_personalized = 0
@@ -823,12 +816,7 @@ def fedselect(models, output_paths, norm_weights, client_ids, prev_global_path="
                 m = client_mask[k].float()
                 state[k] = (m * state[k]) + ((1.0 - m) * averaged_weights[k])
                 
-        # Clean optimizer momentum states
-        if 'optimizer' in ckpt and 'state' in ckpt['optimizer']:
-            for param_id in ckpt['optimizer']['state']:
-                for key in ckpt['optimizer']['state'][param_id]:
-                    if torch.is_tensor(ckpt['optimizer']['state'][param_id][key]):
-                        ckpt['optimizer']['state'][param_id][key].zero_()
+        # --- OPTIMIZER PURGING REMOVED FROM HERE ---
                         
         os.makedirs(os.path.dirname(out_path), exist_ok=True)
         torch.save(ckpt, out_path)
