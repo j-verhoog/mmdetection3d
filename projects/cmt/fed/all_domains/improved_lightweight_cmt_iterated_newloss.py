@@ -383,7 +383,7 @@ log_config = dict(
 
 # 1. Tell MMDet3D to import your CMT project
 custom_imports = dict(
-    imports=['projects.cmt.hooks.disable_gt_sampling', 'projects.cmt.hooks.force_stop'], 
+    imports=['projects.cmt.hooks.disable_gt_sampling', 'projects.cmt.hooks.force_stop','projects.mmdet3d_plugin.models.losses.FocalLossCustom'], 
     allow_failed_imports=False)
 
 custom_hooks = [
