@@ -11,7 +11,7 @@ def parse_args():
     
     # Optional method flag. Defaults to fedavg to preserve original behavior.
     parser.add_argument('--method', type=str, default='fedavg', 
-                    choices=['fedavg', 'fedbn', 'fednorm', 'fedper', 'fed_bn_and_per', 'fedmedian', 'feddyn', 'fed_dyn_bn_and_per', 'fedselect'],
+                    choices=['fedavg', 'fedbn', 'fednorm', 'fedper', 'fed_bn_and_per', 'fedmedian', 'feddyn', 'fed_dyn_bn_and_per', 'fedselect', 'fedselect_elastic'],
                     help='Aggregation method. Default is fedavg.')
     parser.add_argument('--config', type=str, default=None, 
                         help='Path to the MMDet3D config file (e.g., improved_lightweight_cmt_iterated.py). Required for FedBN.')
@@ -822,6 +822,169 @@ def fedselect(models, output_paths, norm_weights, client_ids, prev_global_path="
         torch.save(ckpt, out_path)
         print(f"Saved personalized FedSelect model to {out_path}")
 
+
+def fedselect_elastic(models, output_paths, norm_weights, client_ids, prev_global_path="/workspace/work_dirs/fedselect_states/global_model.pth", mask_dir="/workspace/work_dirs/fedselect_masks", select_ratio=0.05, max_sparsity=0.5):
+    """
+    FedSelect implementation with Relative Scaling & Mask Reintroduction.
+    """
+    print(f"Running FedSelect Aggregation (select_ratio={select_ratio}, max_sparsity={max_sparsity})...")
+    os.makedirs(mask_dir, exist_ok=True)
+    os.makedirs(os.path.dirname(prev_global_path), exist_ok=True)
+
+    if not os.path.exists(prev_global_path):
+        print(f"No previous global model found at {prev_global_path}. Exiting. Run one round of standard FedAvg first.")
+        exit(1)
+        
+    prev_global_ckpt = torch.load(prev_global_path, map_location='cpu')
+    prev_state = prev_global_ckpt['state_dict']
+    
+    valid_keys = [k for k, v in prev_state.items() if v.is_floating_point() and 'num_batches_tracked' not in k]
+    total_params = sum(prev_state[k].numel() for k in valid_keys)
+    print(f"Total valid parameters for FedSelect: {total_params:,}")
+
+    # ---------------------------------------------------------
+    # Phase 1: Client Subnetwork Discovery & Reintroduction
+    # ---------------------------------------------------------
+    print("Phase 1: Updating personalized client subnetworks...")
+    for m_path, cid in zip(models, client_ids):
+        mask_path = os.path.join(mask_dir, f"{cid}_mask.pth")
+        
+        if os.path.exists(mask_path):
+            client_mask = torch.load(mask_path)
+        else:
+            client_mask = {k: torch.zeros_like(prev_state[k], dtype=torch.bool) for k in valid_keys}
+
+        ckpt_i = torch.load(m_path, map_location='cpu')
+        state_i = ckpt_i['state_dict']
+        
+        all_shared_rel_diffs = []
+        current_personalized = 0
+        
+        for k in valid_keys:
+            if k in state_i:
+                # --- FIX 1: Relative Difference ---
+                # Add 1e-8 to denominator to prevent division by zero
+                rel_diff = torch.abs(state_i[k] - prev_state[k]) / (torch.abs(prev_state[k]) + 1e-8)
+                
+                global_mask = ~client_mask[k]
+                all_shared_rel_diffs.append(rel_diff[global_mask].flatten())
+                current_personalized += client_mask[k].sum().item()
+                
+        cat_diffs = torch.cat(all_shared_rel_diffs)
+        
+        # Calculate standard mathematical slices (unaffected by sparsity caps)
+        base_k = int(total_params * select_ratio)
+        fetch_k = min(2 * base_k, len(cat_diffs)) 
+        
+        if fetch_k > 0:
+            top_values = torch.topk(cat_diffs, fetch_k).values
+            
+            # --- FIX 2: Decouple Thresholds from Sparsity Cap ---
+            
+            # 1. Reintroduction Threshold (Always calculated if possible)
+            next_slice = top_values[base_k:fetch_k]
+            reintro_threshold = next_slice.mean().item() if len(next_slice) > 0 else -1.0
+            
+            # 2. Personalization Threshold (Subject to max_sparsity cap)
+            remaining_budget = max(0, int(total_params * max_sparsity) - current_personalized)
+            actual_k_to_select = min(base_k, remaining_budget)
+            
+            if actual_k_to_select > 0:
+                personalize_threshold = top_values[actual_k_to_select - 1].item()
+            else:
+                personalize_threshold = float('inf') # Cap reached, nothing new can exceed infinity
+                
+            avg_overall_rel_diff = cat_diffs.mean().item()
+            print(f"  {cid}: Shared Rel Diff Avg: {avg_overall_rel_diff:.6f} | Reintro Threshold: {reintro_threshold:.6f}")
+            if actual_k_to_select == 0:
+                print(f"  {cid}: Reached max sparsity. Only evaluating reintroductions.")
+            
+            # Apply changes
+            new_personalized = 0
+            num_reintroduced = 0
+            
+            for k in valid_keys:
+                if k in state_i:
+                    rel_diff = torch.abs(state_i[k] - prev_state[k]) / (torch.abs(prev_state[k]) + 1e-8)
+                    
+                    new_ones = (~client_mask[k]) & (rel_diff >= personalize_threshold)
+                    
+                    if reintro_threshold > 0:
+                        # Notice we evaluate personalized weights (client_mask[k] == True) for reintroduction
+                        reintro_zeros = client_mask[k] & (rel_diff < reintro_threshold)
+                    else:
+                        reintro_zeros = torch.zeros_like(client_mask[k], dtype=torch.bool)
+                        
+                    client_mask[k][new_ones] = True
+                    client_mask[k][reintro_zeros] = False
+                    
+                    new_personalized += new_ones.sum().item()
+                    num_reintroduced += reintro_zeros.sum().item()
+                    
+            new_total = current_personalized + new_personalized - num_reintroduced
+            print(f"  {cid}: Personalized +{new_personalized:,} | Reintroduced -{num_reintroduced:,} | Total sparsity: {new_total / total_params * 100:.2f}%")
+        else:
+            print(f"  {cid}: No shared params left to evaluate. Total sparsity: {current_personalized / total_params * 100:.2f}%")
+            
+        torch.save(client_mask, mask_path)
+        del ckpt_i
+        
+    # ---------------------------------------------------------
+    # Phase 2: Masked Server Aggregation
+    # ---------------------------------------------------------
+    print("Phase 2: Aggregating shared parameters on server...")
+    running_sum = {k: torch.zeros_like(v) for k, v in prev_state.items() if k in valid_keys}
+    presence_weights = {k: torch.zeros_like(v) for k, v in prev_state.items() if k in valid_keys}
+    
+    for m_path, cid, w_i in zip(models, client_ids, norm_weights):
+        mask_path = os.path.join(mask_dir, f"{cid}_mask.pth")
+        client_mask = torch.load(mask_path)
+        
+        ckpt_i = torch.load(m_path, map_location='cpu')
+        state_i = ckpt_i['state_dict']
+        
+        for k in valid_keys:
+            if k in state_i:
+                active_mask = (~client_mask[k]).float()
+                running_sum[k] += state_i[k] * active_mask * w_i
+                presence_weights[k] += active_mask * w_i
+                
+        del ckpt_i
+        
+    averaged_weights = {}
+    for k in valid_keys:
+        valid_mask = presence_weights[k] > 0
+        averaged_weights[k] = torch.where(
+            valid_mask,
+            running_sum[k] / presence_weights[k].clamp(min=1e-9),
+            prev_state[k] 
+        )
+        
+    for k in valid_keys:
+        prev_global_ckpt['state_dict'][k] = averaged_weights[k]
+    torch.save(prev_global_ckpt, prev_global_path)
+    del prev_global_ckpt
+
+    # ---------------------------------------------------------
+    # Phase 3: Client Subnetwork Injection & Saving
+    # ---------------------------------------------------------
+    print("Phase 3: Injecting shared weights into client models...")
+    for in_path, out_path, cid in zip(models, output_paths, client_ids):
+        ckpt = torch.load(in_path, map_location='cpu')
+        state = ckpt['state_dict']
+        
+        mask_path = os.path.join(mask_dir, f"{cid}_mask.pth")
+        client_mask = torch.load(mask_path)
+        
+        for k in valid_keys:
+            if k in state:
+                m = client_mask[k].float()
+                state[k] = (m * state[k]) + ((1.0 - m) * averaged_weights[k])
+                
+        os.makedirs(os.path.dirname(out_path), exist_ok=True)
+        torch.save(ckpt, out_path)
+        print(f"Saved personalized FedSelect model to {out_path}")
+
 def main():
     args = parse_args()
     
@@ -1055,6 +1218,18 @@ def main():
     elif args.method == 'fedselect':
         client_ids = [f"Model{string.ascii_uppercase[i]}" for i in range(len(model_paths))]
         fedselect(
+            models=model_paths, 
+            output_paths=output_paths, 
+            norm_weights=norm_weights, 
+            client_ids=client_ids,
+            prev_global_path="/workspace/work_dirs/fedselect_states/global_model.pth", 
+            mask_dir="/workspace/work_dirs/fedselect_masks",
+            select_ratio=0.05,    # Customize via argparse if needed
+            max_sparsity=0.4     # Customize via argparse if needed
+        )
+    elif args.method == 'fedselect_elastic':
+        client_ids = [f"Model{string.ascii_uppercase[i]}" for i in range(len(model_paths))]
+        fedselect_elastic(
             models=model_paths, 
             output_paths=output_paths, 
             norm_weights=norm_weights, 
