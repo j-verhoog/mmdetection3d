@@ -1,17 +1,101 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from mmdet.registry import MODELS
+from mmcv.ops import sigmoid_focal_loss as _sigmoid_focal_loss
 
-# Import the core calculation functions from standard mmdet so it functions 
-# identically to the original when AutoFed is disabled.
-from mmdet.models.losses.focal_loss import (
-    py_focal_loss_with_prob,
-    py_sigmoid_focal_loss,
-    sigmoid_focal_loss
-)
+from mmdet.models.builder import LOSSES
+from mmdet.models.losses.utils import weight_reduce_loss
 
-@MODELS.register_module()
+### NOW ONLY DOES AUTOFED FOR FALSE POSITIVES AND NOT FOR FALSE NEGATIVES
+def py_sigmoid_focal_loss(pred,
+                          target,
+                          weight=None,
+                          gamma=2.0,
+                          alpha=0.25,
+                          reduction='mean',
+                          avg_factor=None):
+    pred_sigmoid = pred.sigmoid()
+    target = target.type_as(pred)
+    pt = (1 - pred_sigmoid) * target + pred_sigmoid * (1 - target)
+    focal_weight = (alpha * target + (1 - alpha) *
+                    (1 - target)) * pt.pow(gamma)
+    loss = F.binary_cross_entropy_with_logits(
+        pred, target, reduction='none') * focal_weight
+
+    if weight is not None:
+        if weight.shape != loss.shape:
+            if weight.size(0) == loss.size(0):
+                weight = weight.view(-1, 1)
+            else:
+                assert weight.numel() == loss.numel()
+                weight = weight.view(loss.size(0), -1)
+        assert weight.ndim == loss.ndim
+
+    loss = weight_reduce_loss(loss, weight, reduction, avg_factor)
+    return loss
+
+
+def py_focal_loss_with_prob(pred,
+                            target,
+                            weight=None,
+                            gamma=2.0,
+                            alpha=0.25,
+                            reduction='mean',
+                            avg_factor=None):
+    num_classes = pred.size(1)
+    target = F.one_hot(target, num_classes=num_classes + 1)
+    target = target[:, :num_classes]
+
+    target = target.type_as(pred)
+    pt = (1 - pred) * target + pred * (1 - target)
+    focal_weight = (alpha * target + (1 - alpha) *
+                    (1 - target)) * pt.pow(gamma)
+    loss = F.binary_cross_entropy(
+        pred, target, reduction='none') * focal_weight
+
+    if weight is not None:
+        if weight.shape != loss.shape:
+            if weight.size(0) == loss.size(0):
+                weight = weight.view(-1, 1)
+            else:
+                assert weight.numel() == loss.numel()
+                weight = weight.view(loss.size(0), -1)
+        assert weight.ndim == loss.ndim
+
+    loss = weight_reduce_loss(loss, weight, reduction, avg_factor)
+    return loss
+
+
+def sigmoid_focal_loss(pred,
+                       target,
+                       weight=None,
+                       gamma=2.0,
+                       alpha=0.25,
+                       reduction='mean',
+                       avg_factor=None):
+    loss = _sigmoid_focal_loss(
+        pred.contiguous(),
+        target.contiguous(),
+        gamma,
+        alpha,
+        None,
+        'none'
+    )
+
+    if weight is not None:
+        if weight.shape != loss.shape:
+            if weight.size(0) == loss.size(0):
+                weight = weight.view(-1, 1)
+            else:
+                assert weight.numel() == loss.numel()
+                weight = weight.view(loss.size(0), -1)
+        assert weight.ndim == loss.ndim
+
+    loss = weight_reduce_loss(loss, weight, reduction, avg_factor)
+    return loss
+
+
+@LOSSES.register_module()
 class FocalLossCustom(nn.Module):
 
     def __init__(self,
@@ -21,43 +105,58 @@ class FocalLossCustom(nn.Module):
                  reduction='mean',
                  loss_weight=1.0,
                  activated=False,
-                 use_autofed=False,  
-                 p_th=0.9):          
-        """`Focal Loss <https://arxiv.org/abs/1708.02002>`_
-
-        Args:
-            use_sigmoid (bool, optional): Whether to the prediction is
-                used for sigmoid or softmax. Defaults to True.
-            gamma (float, optional): The gamma for calculating the modulating
-                factor. Defaults to 2.0.
-            alpha (float, optional): A balanced form for Focal Loss.
-                Defaults to 0.25.
-            reduction (str, optional): The method used to reduce the loss into
-                a scalar. Defaults to 'mean'. Options are "none", "mean" and
-                "sum".
-            loss_weight (float, optional): Weight of loss. Defaults to 1.0.
-            activated (bool, optional): Whether the input is activated.
-                If True, it means the input has been activated and can be
-                treated as probabilities. Else, it should be treated as logits.
-                Defaults to False.
-            use_autofed (bool, optional): Whether to use AutoFed logic to set 
-                loss to 0 when model confidence is high on background labels. Defaults to False.
-            p_th (float, optional): Confidence threshold for AutoFed. Defaults to 0.9.
-        """
+                 use_autofed=False,
+                 p_th=0.9,
+                 print_frequency=100):
         super(FocalLossCustom, self).__init__()
         assert use_sigmoid is True, 'Only sigmoid focal loss supported now.'
+
         self.use_sigmoid = use_sigmoid
         self.gamma = gamma
         self.alpha = alpha
         self.reduction = reduction
         self.loss_weight = loss_weight
         self.activated = activated
-        
-        # New AutoFed properties
+
         self.use_autofed = use_autofed
         self.p_th = p_th
-        self.print_frequency = 100
+        self.print_frequency = print_frequency
         self._step_counter = 0
+
+    def _expand_weight(self, weight, pred):
+        if weight is None:
+            return None
+
+        if weight.shape == pred.shape:
+            return weight
+
+        if weight.size(0) == pred.size(0):
+            return weight.view(-1, 1).expand_as(pred)
+
+        assert weight.numel() == pred.numel()
+        return weight.view_as(pred)
+
+    def _build_autofed_mask(self, pred, target):
+        if self.activated:
+            prob = pred
+        else:
+            prob = pred.sigmoid()
+
+        if target.shape != pred.shape:
+            num_classes = pred.size(1)
+            target_safe = target.clone().long()
+            target_safe[target_safe < 0] = num_classes
+            target_safe[target_safe > num_classes] = num_classes
+            target_one_hot = F.one_hot(
+                target_safe, num_classes=num_classes + 1
+            )[:, :num_classes]
+            target_one_hot = target_one_hot.type_as(pred)
+        else:
+            target_one_hot = target.type_as(pred)
+
+        is_negative = (target_one_hot == 0)
+        trust_model_mask = (prob > self.p_th) & is_negative
+        return trust_model_mask, is_negative
 
     def forward(self,
                 pred,
@@ -65,68 +164,32 @@ class FocalLossCustom(nn.Module):
                 weight=None,
                 avg_factor=None,
                 reduction_override=None):
-        """Forward function.
-
-        Args:
-            pred (torch.Tensor): The prediction.
-            target (torch.Tensor): The learning label of the prediction.
-            weight (torch.Tensor, optional): The weight of loss for each
-                prediction. Defaults to None.
-            avg_factor (int, optional): Average factor that is used to average
-                the loss. Defaults to None.
-            reduction_override (str, optional): The reduction method used to
-                override the original reduction method of the loss.
-                Options are "none", "mean" and "sum".
-
-        Returns:
-            torch.Tensor: The calculated loss
-        """
         assert reduction_override in (None, 'none', 'mean', 'sum')
         reduction = (
             reduction_override if reduction_override else self.reduction)
-            
-        # =====================================================================
-        # NEW AUTOFED LOGIC
-        # =====================================================================
+
         if self.use_autofed:
-            with torch.no_grad(): # Mask creation shouldn't track gradients
-                # 1. Get the actual probabilities
-                prob = pred if self.activated else torch.sigmoid(pred)
-                
-                # 2. Align target shape to pred (handle class indices vs one-hot)
-                if target.shape != pred.shape:
-                    num_classes = pred.size(-1)
-                    target_safe = target.clone()
-                    target_safe[target_safe < 0] = num_classes # map ignore indices to background
-                    target_one_hot = F.one_hot(target_safe, num_classes=num_classes + 1)[..., :num_classes]
-                else:
-                    target_one_hot = target
-                
-                # 3. Create the mask: Prob > threshold AND ground truth says nothing is there (0)
-                is_negative = (target_one_hot == 0)
-                trust_model_mask = (prob > self.p_th) & is_negative
-                
-                # 4. Throttled Logging (Every 100 steps)
+            with torch.no_grad():
+                trust_model_mask, is_negative = self._build_autofed_mask(pred, target)
+
                 if self._step_counter % self.print_frequency == 0:
                     triggered_count = trust_model_mask.sum().item()
                     bg_count = is_negative.sum().item()
                     if bg_count > 0:
-                        pct = (triggered_count / bg_count) * 100
-                        print(f"\n[AutoFed] Step {self._step_counter} | Ignored {triggered_count}/{bg_count} background anchors ({pct:.4f}%)")
+                        pct = 100.0 * triggered_count / bg_count
+                        print(f'[AutoFed] step={self._step_counter} ignored={triggered_count}/{bg_count} background entries ({pct:.4f}%)')
+                    else:
+                        print(f'[AutoFed] step={self._step_counter} ignored=0/0 background entries (0.0000%)')
+
                 self._step_counter += 1
-                
-            # 5. Apply the mask by zeroing out the weights for these predictions
-            if weight is None:
-                weight = torch.ones_like(pred)
+
+            autofed_weight = (~trust_model_mask).type_as(pred)
+
+            expanded_weight = self._expand_weight(weight, pred)
+            if expanded_weight is None:
+                weight = autofed_weight
             else:
-                # Ensure weight matches pred dimensions so we can apply the boolean mask
-                if weight.dim() == pred.dim() - 1:
-                    weight = weight.unsqueeze(-1)
-                weight = weight.expand_as(pred).clone()
-            
-            # Loss will be exactly 0 where weight is 0
-            weight[trust_model_mask] = 0.0
-        # =====================================================================
+                weight = expanded_weight * autofed_weight
 
         if self.use_sigmoid:
             if self.activated:
@@ -147,9 +210,9 @@ class FocalLossCustom(nn.Module):
                 gamma=self.gamma,
                 alpha=self.alpha,
                 reduction=reduction,
-                avg_factor=avg_factor)
-
+                avg_factor=avg_factor
+            )
         else:
             raise NotImplementedError
-            
+
         return loss_cls
