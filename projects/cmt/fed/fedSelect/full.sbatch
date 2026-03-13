@@ -4,7 +4,7 @@
 #SBATCH --job-name=fedselect_full
 #SBATCH --output=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/cmt/fedselect_full_job%j_rank%t.out
 #SBATCH --error=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/cmt/fedselect_full_job%j_rank%t.err
-#SBATCH --time=42:00:00
+#SBATCH --time=40:00:00
 #SBATCH --nodes=1
 #SBATCH --ntasks=2
 #SBATCH --ntasks-per-node=2
@@ -25,8 +25,8 @@ SIZE_C=226
 SIZE_D=71
 SIZE_E=13
 
-START_ROUND=1 
-START_MODEL="A"         # If set, runs from that model for the start round, then continues normally. 'A' does nothing
+START_ROUND=2 
+START_MODEL="B"         # If set, runs from that model for the start round, then continues normally. 'A' does nothing
 
 # Paths
 DATASET_A="/tudelft.net/staff-umbrella/MscThesisjverhoog/datasets/cmt_subsets/Default_NoFair_SingleClient/boston_day_clear"
