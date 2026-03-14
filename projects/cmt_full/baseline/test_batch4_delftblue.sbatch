@@ -5,9 +5,7 @@
 #SBATCH --output=/scratch/%u/logs/delftblue_paper_config_job%j.out
 #SBATCH --error=/scratch/%u/logs/delftblue_paper_config_job%j.err
 #SBATCH --time=01:00:00
-#SBATCH --nodes=1              # Amount of machines
-#SBATCH --ntasks=4             # Total tasks (4 per node)
-#SBATCH --ntasks-per-node=4    # Spread them evenly
+#SBATCH --ntasks=2             # Total tasks (4 per node)
 #SBATCH --cpus-per-task=8      # 8 cores per task (32 cores total)
 #SBATCH --gpus-per-task=1      # 1 GPU per task (4 GPUs total)
 #SBATCH --mem-per-cpu=8000M       # 8GB per CPU (250GB total)
@@ -26,7 +24,7 @@ SAMPLES_PER_GPU=4       # 4 leads OOM on A40, 2==31GB and takes 11 days on two g
 
 # FOR NAMING STICK TO: A–Z  a–z  0–9  .  _  -
 export WANDB_PROJECT="cmt"
-export WANDB_NAME="paper_config_4x4_hour_test_delftblue"
+export WANDB_NAME="paper_config_4x2_hour_test_delftblue"
 export WANDB_API_KEY=$(awk '$1=="machine" && $2=="api.wandb.ai" {found=1}found && $1=="password" {print $2; exit}' "$HOME/.netrc")
 
 /usr/bin/scontrol show job -d "$SLURM_JOB_ID" # check sbatch working
@@ -74,7 +72,7 @@ time tar -xf /scratch/$USER/data/nuscenes/nuscenes_gt_database.tar -C "$TMP_BASE
 time tar -xf /scratch/$USER/data/nuscenes/nuscenes_samples_sweeps.tar -C "$TMP_BASE/nuscenes"
 
 echo "=== ENTERING CONTAINER ==="
-srun --ntasks=4 --gpus-per-task=1 bash -lc "
+srun --ntasks=2 --gpus-per-task=1 bash -lc "
   apptainer exec --nv --cleanenv \
   --bind \"$HOME/mmdet:/workspace/mmdet\" \
   --bind \"$TMP_BASE/nuscenes:/workspace/mmdet/mmdetection3d/data/nuscenes\" \
