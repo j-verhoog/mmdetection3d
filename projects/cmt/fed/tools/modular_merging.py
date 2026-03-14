@@ -842,7 +842,25 @@ def fedselect_elastic(models, output_paths, norm_weights, client_ids, prev_globa
     total_params = sum(prev_state[k].numel() for k in valid_keys)
     print(f"Total valid parameters for FedSelect: {total_params:,}")
 
-# ---------------------------------------------------------
+    # ---------------------------------------------------------
+    # Layer Mapping for Visualization (Created Once)
+    # ---------------------------------------------------------
+    mapping_file = os.path.join(mask_dir, "layer_mapping.pth")
+    if not os.path.exists(mapping_file):
+        layer_info = {}
+        current_idx = 0
+        for k in valid_keys:
+            numel = prev_state[k].numel()
+            layer_info[k] = {
+                "shape": list(prev_state[k].shape),
+                "numel": numel,
+                "start_idx": current_idx,
+                "end_idx": current_idx + numel
+            }
+            current_idx += numel
+        torch.save(layer_info, mapping_file)
+        print(f"Created layer mapping file at {mapping_file}")
+    # ---------------------------------------------------------
     # Auto-Detect Current Round Directory
     # ---------------------------------------------------------
     # ### NEW: Scan for existing round directories and increment ###
