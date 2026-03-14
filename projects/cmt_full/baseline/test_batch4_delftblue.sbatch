@@ -9,7 +9,6 @@
 #SBATCH --cpus-per-task=8      # 8 cores per task (32 cores total)
 #SBATCH --gpus-per-task=1      # 1 GPU per task (4 GPUs total)
 #SBATCH --mem-per-cpu=8000M       # 8GB per CPU (250GB total)
-#SBATCH --tmp=400G            # 400GB local scratch (adjust as needed)
 
 set -e # Good practice to fail fast
 echo "=== Starting Job ID: $SLURM_JOB_ID ==="
