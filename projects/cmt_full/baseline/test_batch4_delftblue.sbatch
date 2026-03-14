@@ -5,14 +5,13 @@
 #SBATCH --output=/scratch/%u/logs/delftblue_paper_config_job%j.out
 #SBATCH --error=/scratch/%u/logs/delftblue_paper_config_job%j.err
 #SBATCH --time=01:00:00
-#SBATCH --gres=gpu:4
 #SBATCH --nodes=1              # Amount of machines
 #SBATCH --ntasks=4             # Total tasks (4 per node)
 #SBATCH --ntasks-per-node=4    # Spread them evenly
-#SBATCH --cpus-per-task=8
-#SBATCH --mem=128G             
-#SBATCH --tmp=500G
-
+#SBATCH --cpus-per-task=8      # 8 cores per task (32 cores total)
+#SBATCH --gpus-per-task=1      # 1 GPU per task (4 GPUs total)
+#SBATCH --mem-per-cpu=8G       # 8GB per CPU (256GB total)
+#SBATCH --tmp=500G            # 500GB local scratch (adjust as needed)
 
 set -e # Good practice to fail fast
 echo "=== Starting Job ID: $SLURM_JOB_ID ==="
