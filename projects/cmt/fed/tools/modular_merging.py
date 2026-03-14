@@ -842,6 +842,23 @@ def fedselect_elastic(models, output_paths, norm_weights, client_ids, prev_globa
     total_params = sum(prev_state[k].numel() for k in valid_keys)
     print(f"Total valid parameters for FedSelect: {total_params:,}")
 
+# ---------------------------------------------------------
+    # Auto-Detect Current Round Directory
+    # ---------------------------------------------------------
+    # ### NEW: Scan for existing round directories and increment ###
+    existing_rounds = []
+    for d in os.listdir(mask_dir):
+        if d.startswith("round_") and os.path.isdir(os.path.join(mask_dir, d)):
+            try:
+                existing_rounds.append(int(d.split("_")[1]))
+            except ValueError:
+                pass
+    current_round = max(existing_rounds) + 1 if existing_rounds else 0
+    round_mask_dir = os.path.join(mask_dir, f"round_{current_round}")
+    os.makedirs(round_mask_dir, exist_ok=True)
+    print(f"Saving historical masks for round {current_round} to {round_mask_dir}")
+    # ##############################################################
+
     # ---------------------------------------------------------
     # Phase 1: Client Subnetwork Discovery & Reintroduction
     # ---------------------------------------------------------
@@ -927,6 +944,14 @@ def fedselect_elastic(models, output_paths, norm_weights, client_ids, prev_globa
             print(f"  {cid}: No shared params left to evaluate. Total sparsity: {current_personalized / total_params * 100:.2f}%")
             
         torch.save(client_mask, mask_path)
+
+        # ### NEW: Save historical visualization mask (0=Global, 1=Personal) ###
+        vis_mask = {k: v.to(torch.int8) for k, v in client_mask.items()}
+        hist_mask_path = os.path.join(round_mask_dir, f"{cid}_mask.pt")
+        torch.save(vis_mask, hist_mask_path)
+        # ######################################################################
+
+
         del ckpt_i
         
     # ---------------------------------------------------------
