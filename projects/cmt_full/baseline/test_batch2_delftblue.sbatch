@@ -2,15 +2,15 @@
 #SBATCH --account=education-me-msc-ro
 #SBATCH --partition=gpu-a100
 #SBATCH --job-name=centr_base
-#SBATCH --output=/scratch/%u/logs/paper_config_job%j.out
-#SBATCH --error=/scratch/%u/logs/paper_config_job%j.err
+#SBATCH --output=/scratch/%u/logs/delftblue_paper_config_job%j.out
+#SBATCH --error=/scratch/%u/logs/delftblue_paper_config_job%j.err
 #SBATCH --time=01:00:00
-#SBATCH --gres=gpu:2
+#SBATCH --gres=gpu:4
 #SBATCH --nodes=1              # Amount of machines
-#SBATCH --ntasks=2             # Total tasks (2 per node)
-#SBATCH --ntasks-per-node=2    # Spread them evenly
+#SBATCH --ntasks=4             # Total tasks (4 per node)
+#SBATCH --ntasks-per-node=4    # Spread them evenly
 #SBATCH --cpus-per-task=8
-#SBATCH --mem=64G             
+#SBATCH --mem=128G             
 #SBATCH --tmp=500G
 
 
@@ -27,19 +27,19 @@ SAMPLES_PER_GPU=4       # 4 leads OOM on A40, 2==31GB and takes 11 days on two g
 
 # FOR NAMING STICK TO: A–Z  a–z  0–9  .  _  -
 export WANDB_PROJECT="cmt"
-export WANDB_NAME="paper_config_delftblue"
+export WANDB_NAME="paper_config_4x4_hour_test_delftblue"
 export WANDB_API_KEY=$(awk '$1=="machine" && $2=="api.wandb.ai" {found=1}found && $1=="password" {print $2; exit}' "$HOME/.netrc")
 
 /usr/bin/scontrol show job -d "$SLURM_JOB_ID" # check sbatch working
 
 # define image and work dirs
-export APPTAINER_IMAGE=/scratch/$USER/MscThesisjverhoog/image/mmdet3d_v1rc5.sif
-export WORK=/scratch/$USER/MscThesisjverhoog/projects/$WANDB_PROJECT/$WANDB_NAME
+export APPTAINER_IMAGE=/scratch/$USER/image/mmdet3d_v1rc5.sif
+export WORK=/scratch/$USER/projects/$WANDB_PROJECT/$WANDB_NAME
 mkdir -p "$WORK"
 
 # --- LOCAL DATA SETUP ---
 NETWORK_DATA_ROOT="/scratch/$USER/data/nuscenes"
-TMP_BASE="/tmp/jtverhoog_${SLURM_JOB_ID}"
+TMP_BASE="${TMPDIR}/jtverhoog_${SLURM_JOB_ID}"
 
 # Create tmp directories and register cleanup trap (runs even on timeout/cancel)
 echo "Creating tmp directories..."
@@ -75,7 +75,7 @@ time tar -xf /scratch/$USER/data/nuscenes/nuscenes_gt_database.tar -C "$TMP_BASE
 time tar -xf /scratch/$USER/data/nuscenes/nuscenes_samples_sweeps.tar -C "$TMP_BASE/nuscenes"
 
 echo "=== ENTERING CONTAINER ==="
-srun --ntasks=2 --gpus-per-task=1 bash -lc "
+srun --ntasks=4 --gpus-per-task=1 bash -lc "
   apptainer exec --nv --cleanenv \
   --bind \"$HOME/mmdet:/workspace/mmdet\" \
   --bind \"$TMP_BASE/nuscenes:/workspace/mmdet/mmdetection3d/data/nuscenes\" \
@@ -100,7 +100,7 @@ srun --ntasks=2 --gpus-per-task=1 bash -lc "
   --env TORCH_DISTRIBUTED_DEBUG=DETAIL \
   --env MASTER_ADDR=\"$MASTER_ADDR\" \
   --env MASTER_PORT=\"$MASTER_PORT\" \
-  --env NCCL_SOCKET_IFNAME=\"ib0\" \
+  --env NCCL_SOCKET_IFNAME=\"ib\" \
   \"$APPTAINER_IMAGE\" \
   bash -lc '
     cd /workspace/mmdet/mmdetection3d && \
