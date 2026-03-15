@@ -26,7 +26,7 @@ export WANDB_PROJECT="cmt"
 export WANDB_NAME="paper_config_4x2_hour_test_delftblue"
 export WANDB_API_KEY=$(awk '$1=="machine" && $2=="api.wandb.ai" {found=1}found && $1=="password" {print $2; exit}' "$HOME/.netrc")
 
-/usr/bin/scontrol show job -d "$SLURM_JOB_ID" # check sbatch working
+scontrol show job -d "$SLURM_JOB_ID" # check sbatch working
 
 # define image and work dirs
 export APPTAINER_IMAGE=/scratch/$USER/image/mmdet3d_v1rc5.sif
@@ -39,16 +39,16 @@ TMP_BASE="${TMPDIR}/jtverhoog_${SLURM_JOB_ID}"
 
 # Create tmp directories and register cleanup trap (runs even on timeout/cancel)
 echo "Creating tmp directories..."
-/usr/bin/mkdir --parents "$TMP_BASE"/{wandb,torch,xdg,tmp,home,nuscenes} && echo "$TMP_BASE created successfully."
+mkdir --parents "$TMP_BASE"/{wandb,torch,xdg,tmp,home,nuscenes} && echo "$TMP_BASE created successfully."
 
 function clean_up {
-  /usr/bin/rm --recursive --force "$TMP_BASE" && echo "Clean up of $TMP_BASE completed successfully."
+  rm --recursive --force "$TMP_BASE" && echo "Clean up of $TMP_BASE completed successfully."
   exit
 }
 trap 'clean_up' EXIT
 
 # Measure GPU usage of your job (initialization)
-previous=$(/usr/bin/nvidia-smi --query-accounted-apps='gpu_utilization,mem_utilization,max_memory_usage,time' --format='csv' 2>/dev/null || true)
+previous=$(nvidia-smi --query-accounted-apps='gpu_utilization,mem_utilization,max_memory_usage,time' --format='csv' 2>/dev/null || true)
 
 echo "=== LOADING CUDA ==="
 module load 2024r1
@@ -117,7 +117,7 @@ srun --ntasks=2 --gpus-per-task=1 bash -lc "
 
 
 # Measure GPU usage of your job (result)
-/usr/bin/nvidia-smi --query-accounted-apps='gpu_utilization,mem_utilization,max_memory_usage,time' --format='csv' 2>/dev/null || true
+nvidia-smi --query-accounted-apps='gpu_utilization,mem_utilization,max_memory_usage,time' --format='csv' 2>/dev/null || true
 
 
 
