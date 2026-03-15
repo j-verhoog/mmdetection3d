@@ -10,7 +10,7 @@
 #SBATCH --ntasks-per-node=2    # Spread them evenly
 #SBATCH --gres=gpu:a40:2       # Request 2 GPUs per node (Total 2)
 #SBATCH --cpus-per-task=8
-#SBATCH --mem=40G             
+#SBATCH --mem=48G             
 
 set -e # Good practice to fail fast
 echo "=== Starting Job ID: $SLURM_JOB_ID ==="
@@ -19,7 +19,7 @@ echo "=== Starting Job ID: $SLURM_JOB_ID ==="
 export SRUN_CPUS_PER_TASK=${SLURM_CPUS_PER_TASK:-1}
 
 # --- CONFIGURATION MATCHING FEDAVG ---
-PRETRAINED_BACKBONE="/tudelft.net/staff-umbrella/MscThesisjverhoog/projects/cmt_fedavg_all/centralized_baseline_newloss/epoch_2.pth"
+PRETRAINED_BACKBONE="/tudelft.net/staff-umbrella/MscThesisjverhoog/projects/cmt_fedavg_all/centralized_baseline_newloss/epoch_8.pth"
 TARGET_EPOCHS=20  # Matches FedAvg (20 Rounds * 1 Epoch)
 
 # FOR NAMING STICK TO: A–Z  a–z  0–9  .  _  -
