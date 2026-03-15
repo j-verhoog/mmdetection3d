@@ -1,11 +1,13 @@
 #!/bin/bash
 #SBATCH --job-name=mmdet_cmt
 #SBATCH --partition=gpu
-#SBATCH --gres=gpu:1              # Request 1 GPU (change to gpu:2 if you need more)
-#SBATCH --time=04:00:00           # Adjust time limit as needed
-#SBATCH --cpus-per-task=4         # Request CPU cores for data loading
-#SBATCH --mem=32GB                # Request system memory
-#SBATCH --output=slurm-%j.out
+#SBATCH --time=04:00:00
+#SBATCH --ntasks=1                  # Required by DelftBlue: explicitly state 1 task
+#SBATCH --cpus-per-task=4           # Request 4 CPU cores for data loading
+#SBATCH --gpus-per-task=1           # Required by DelftBlue: replaces --gres=gpu:1
+#SBATCH --mem-per-cpu=8GB           # Required by DelftBlue: replaces --mem (8GB * 4 CPUs = 32GB)
+#SBATCH --output=/scratch/$USER/logs/numba_fix-%j.out
+#SBATCH --error=/scratch/$USER/logs/numba_fix-%j.err
 
 # --- 1. DelftBlue Best Practices: Use /scratch, not /tmp ---
 export BASE=/scratch/$USER/cmt
