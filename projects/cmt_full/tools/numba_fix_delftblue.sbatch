@@ -6,8 +6,8 @@
 #SBATCH --cpus-per-task=4           # Request 4 CPU cores for data loading
 #SBATCH --gpus-per-task=1           # Required by DelftBlue: replaces --gres=gpu:1
 #SBATCH --mem-per-cpu=5000M           # Required by DelftBlue: replaces --mem (8GB * 4 CPUs = 32GB)
-#SBATCH --output=/scratch/$USER/logs/numba_fix-%j.out
-#SBATCH --error=/scratch/$USER/logs/numba_fix-%j.err
+#SBATCH --output=/scratch/jtverhoog/logs/numba_fix_%j.out
+#SBATCH --error=/scratch/jtverhoog/logs/numba_fix_%j.err
 
 # --- 1. DelftBlue Best Practices: Use /scratch, not /tmp ---
 export BASE=/scratch/$USER/cmt
@@ -34,7 +34,7 @@ apptainer exec --nv \
   -B $BASE/workdirs:/opt/src/mmdetection3d/work_dirs \
   -B $BASE/datasets:/opt/src/mmdetection3d/data \
   -B $BASE/code:/opt/src/code \
-  $BASE/cmt_mmdet3d.sif bash -lc '
+  /scratch/jtverhoog/image/mmdet3d_v1rc5.sif bash -lc '
 
 echo "=== Reinstall mmdet3d without enforcing old numba pins ==="
 pip install --no-cache-dir --force-reinstall --no-deps mmdet3d==1.0.0rc5
