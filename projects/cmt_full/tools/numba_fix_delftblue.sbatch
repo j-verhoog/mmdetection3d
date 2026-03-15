@@ -5,7 +5,7 @@
 #SBATCH --ntasks=1                  # Required by DelftBlue: explicitly state 1 task
 #SBATCH --cpus-per-task=4           # Request 4 CPU cores for data loading
 #SBATCH --gpus-per-task=1           # Required by DelftBlue: replaces --gres=gpu:1
-#SBATCH --mem-per-cpu=8GB           # Required by DelftBlue: replaces --mem (8GB * 4 CPUs = 32GB)
+#SBATCH --mem-per-cpu=5000M           # Required by DelftBlue: replaces --mem (8GB * 4 CPUs = 32GB)
 #SBATCH --output=/scratch/$USER/logs/numba_fix-%j.out
 #SBATCH --error=/scratch/$USER/logs/numba_fix-%j.err
 
