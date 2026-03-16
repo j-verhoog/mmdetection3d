@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --partition=general
-#SBATCH --qos=medium
+#SBATCH --qos=long
 #SBATCH --job-name=fedSelect_40
 #SBATCH --output=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/cmt/fedselect40_full_ctn_job%j_rank%t.out
 #SBATCH --error=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/cmt/fedselect40_full_ctn_job%j_rank%t.err
