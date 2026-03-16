@@ -44,16 +44,38 @@ TMP_BASE="${TMPDIR}/jtverhoog_${SLURM_JOB_ID}"
 
 echo "Creating tmp directories and extracting data on ALL allocated nodes..."
 
-# srun with --ntasks=$SLURM_NNODES and --ntasks-per-node=1 ensures this runs exactly once per physical machine
+# srun with --ntasks=$SLURM_NNODES and --ntasks-per-node=1 ensures this runs exactly once per physical machine. took 20 minutes first
 srun --ntasks="$SLURM_NNODES" --ntasks-per-node=1 bash -c "
+  REQUIRED_GB=380
+  
+  # Get available space in GB (stripping out the 'G' and any spaces)
+  AVAIL_GB=\$(df -BG --output=avail \"${TMPDIR}\" | tail -n 1 | tr -dc '0-9')
+  
+  echo \"=== Disk space on \$(hostname): \${AVAIL_GB}GB available ===\"
+  
+  if [ \"\$AVAIL_GB\" -lt \"\$REQUIRED_GB\" ]; then
+    echo \"FATAL: Not enough local storage on \$(hostname). Needs \${REQUIRED_GB}GB, has \${AVAIL_GB}GB.\"
+    exit 1
+  fi
+  
   echo \"Setting up data on \$(hostname)...\"
   mkdir -p \"$TMP_BASE\"/{wandb,torch,xdg,tmp,home,nuscenes}
   
-  rsync -a --exclude='*.tar' \"$NETWORK_DATA_ROOT/\" \"$TMP_BASE/nuscenes/\"
-  tar -xf \"/scratch/$USER/data/nuscenes/nuscenes_gt_database.tar\" -C \"$TMP_BASE/nuscenes\"
-  tar -xf \"/scratch/$USER/data/nuscenes/nuscenes_samples_sweeps.tar\" -C \"$TMP_BASE/nuscenes\"
+  echo \"Starting parallel data copy and extraction on \$(hostname)...\"
+
+  # 1. Start rsync in the background
+  rsync -a --info=progress2 --exclude='*.tar' \"$NETWORK_DATA_ROOT/\" \"$TMP_BASE/nuscenes/\" &
   
-  echo \"Finished setting up \$(hostname).\"
+  # 2. Start first tar extraction in the background
+  tar -xf \"/scratch/$USER/data/nuscenes/nuscenes_gt_database.tar\" -C \"$TMP_BASE/nuscenes\" --checkpoint=10000 --checkpoint-action=dot &
+  
+  # 3. Start second tar extraction in the background
+  tar -xf \"/scratch/$USER/data/nuscenes/nuscenes_samples_sweeps.tar\" -C \"$TMP_BASE/nuscenes\" --checkpoint=10000 --checkpoint-action=dot &
+  
+  # Wait for all background tasks to finish before moving on
+  wait
+  
+  echo \"Finished all parallel extractions on \$(hostname).\"
 "
 
 function clean_up {
