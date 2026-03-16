@@ -39,10 +39,27 @@ TMP_BASE="${TMPDIR}/jtverhoog_${SLURM_JOB_ID}"
 
 # Create tmp directories and register cleanup trap (runs even on timeout/cancel)
 echo "Creating tmp directories..."
-mkdir --parents "$TMP_BASE"/{wandb,torch,xdg,tmp,home,nuscenes} && echo "$TMP_BASE created successfully."
+# Define the TMP_BASE as before
+TMP_BASE="${TMPDIR}/jtverhoog_${SLURM_JOB_ID}"
+
+echo "Creating tmp directories and extracting data on ALL allocated nodes..."
+
+# srun with --ntasks=$SLURM_NNODES and --ntasks-per-node=1 ensures this runs exactly once per physical machine
+srun --ntasks="$SLURM_NNODES" --ntasks-per-node=1 bash -c "
+  echo \"Setting up data on \$(hostname)...\"
+  mkdir -p \"$TMP_BASE\"/{wandb,torch,xdg,tmp,home,nuscenes}
+  
+  rsync -a --exclude='*.tar' \"$NETWORK_DATA_ROOT/\" \"$TMP_BASE/nuscenes/\"
+  tar -xf \"/scratch/$USER/data/nuscenes/nuscenes_gt_database.tar\" -C \"$TMP_BASE/nuscenes\"
+  tar -xf \"/scratch/$USER/data/nuscenes/nuscenes_samples_sweeps.tar\" -C \"$TMP_BASE/nuscenes\"
+  
+  echo \"Finished setting up \$(hostname).\"
+"
 
 function clean_up {
-  rm --recursive --force "$TMP_BASE" && echo "Clean up of $TMP_BASE completed successfully."
+  echo "Cleaning up $TMP_BASE on all nodes..."
+  srun --ntasks="$SLURM_NNODES" --ntasks-per-node=1 rm -rf "$TMP_BASE"
+  echo "Clean up completed."
   exit
 }
 trap 'clean_up' EXIT
@@ -60,15 +77,6 @@ export MASTER_PORT=$(apptainer exec --cleanenv "$APPTAINER_IMAGE" python3 -c 'im
 
 echo "Master node is: $MASTER_ADDR"
 echo "MASTER_ADDR=$MASTER_ADDR MASTER_PORT=$MASTER_PORT"
-
-# Copy everything EXCEPT the .tar / .tar.gz files from scratch to tmp
-echo "Copying base files to local tmp..."
-time rsync -a --exclude='*.tar' "$NETWORK_DATA_ROOT/" "$TMP_BASE/nuscenes/"
-
-# Extract the tarballs directly into that same tmp folder
-echo "Extracting GT database and heavy data to local tmp..."
-time tar -xf /scratch/$USER/data/nuscenes/nuscenes_gt_database.tar -C "$TMP_BASE/nuscenes"
-time tar -xf /scratch/$USER/data/nuscenes/nuscenes_samples_sweeps.tar -C "$TMP_BASE/nuscenes"
 
 echo "=== ENTERING CONTAINER ==="
 srun --ntasks=2 --gpus-per-task=1 bash -lc "
