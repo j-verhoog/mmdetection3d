@@ -15,6 +15,16 @@ def parse_args():
                     help='Aggregation method. Default is fedavg.')
     parser.add_argument('--config', type=str, default=None, 
                         help='Path to the MMDet3D config file (e.g., improved_lightweight_cmt_iterated.py). Required for FedBN.')
+    parser.add_argument(
+        '--select-ratio',
+        type=float,
+        default=0.05,
+        help='FedSelect-only: fraction of total params selected per round (default: 0.05).')
+    parser.add_argument(
+        '--max-sparsity',
+        type=float,
+        default=0.4,
+        help='FedSelect-only: max personalized parameter fraction (default: 0.4).')
 
     for i, char in enumerate(string.ascii_lowercase):
         help_text = f'Weight for model {char.upper()}' if i < 5 else argparse.SUPPRESS
@@ -1267,8 +1277,8 @@ def main():
             client_ids=client_ids,
             prev_global_path="/workspace/work_dirs/fedselect_states/global_model.pth", 
             mask_dir="/workspace/work_dirs/fedselect_masks",
-            select_ratio=0.05,    # Customize via argparse if needed
-            max_sparsity=0.4     # Customize via argparse if needed
+            select_ratio=args.select_ratio,
+            max_sparsity=args.max_sparsity
         )
     elif args.method == 'fedselect_elastic':
         client_ids = [f"Model{string.ascii_uppercase[i]}" for i in range(len(model_paths))]
@@ -1279,8 +1289,8 @@ def main():
             client_ids=client_ids,
             prev_global_path="/workspace/work_dirs/fedselect_states/global_model.pth", 
             mask_dir="/workspace/work_dirs/fedselect_masks",
-            select_ratio=0.05,    # Customize via argparse if needed
-            max_sparsity=0.4     # Customize via argparse if needed
+            select_ratio=args.select_ratio,
+            max_sparsity=args.max_sparsity
         )
 
 if __name__ == '__main__':
