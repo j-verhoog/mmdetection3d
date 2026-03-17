@@ -4,7 +4,7 @@
 #SBATCH --job-name=centr_base
 #SBATCH --output=/scratch/%u/logs/delftblue_paper_config_job%j.out
 #SBATCH --error=/scratch/%u/logs/delftblue_paper_config_job%j.err
-#SBATCH --time=01:00:00
+#SBATCH --time=2-00:00:00
 #SBATCH --ntasks=2             # Total tasks (4 per node)
 #SBATCH --cpus-per-task=8      # 8 cores per task (32 cores total)
 #SBATCH --gpus-per-task=1      # 1 GPU per task (4 GPUs total)

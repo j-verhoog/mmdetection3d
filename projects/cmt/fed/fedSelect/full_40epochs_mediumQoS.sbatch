@@ -25,7 +25,7 @@ SIZE_C=226
 SIZE_D=71
 SIZE_E=13
 
-START_ROUND=19 
+START_ROUND=1 
 START_MODEL="A"         # If set, runs from that model for the start round, then continues normally. 'A' does nothing
 
 # Paths
