@@ -25,9 +25,9 @@ SIZE_C=226
 SIZE_D=71
 SIZE_E=13
 
-START_ROUND=10 
+START_ROUND=11 
 START_MODEL="A"         # If set, runs from that model for the start round, then continues normally. 'A' does nothing
-START_MODEL_OVERRIDE="/tudelft.net/staff-umbrella/MscThesisjverhoog/projects/cmt_fedavg_all/FedSelect_elastic/round_10" # if set overrides the model path for the start round. Only used if set.
+START_MODEL_OVERRIDE="/tudelft.net/staff-umbrella/MscThesisjverhoog/projects/cmt_fedavg_all/FedSelect_elastic/round_10" # if set overrides the model path for the start round. Only used if set. should be one less than round.
 
 # Paths
 DATASET_A="/tudelft.net/staff-umbrella/MscThesisjverhoog/datasets/cmt_subsets/Default_NoFair_SingleClient/boston_day_clear"
@@ -51,6 +51,10 @@ export WANDB_API_KEY=$(awk '$1=="machine" && $2=="api.wandb.ai" {found=1}found &
 export APPTAINER_IMAGE=/tudelft.net/staff-umbrella/MscThesisjverhoog/image/mmdet3d_v1rc5.sif
 export WORK=/tudelft.net/staff-umbrella/MscThesisjverhoog/projects/$WANDB_PROJECT/$RUN_NAME
 mkdir -p "$WORK"
+
+# Copy the completed round models from the elastic run
+cp -an "$START_MODEL_OVERRIDE" "$WORK/"
+cp -an "/tudelft.net/staff-umbrella/MscThesisjverhoog/projects/cmt_fedavg_all/FedSelect_elastic/fedselect_states" "$WORK/"
 
 TMP_BASE="/tmp/jtverhoog_${SLURM_JOB_ID}"
 
