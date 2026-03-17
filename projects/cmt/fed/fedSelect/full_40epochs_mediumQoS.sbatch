@@ -25,8 +25,8 @@ SIZE_C=226
 SIZE_D=71
 SIZE_E=13
 
-START_ROUND=1 
-START_MODEL="A"         # If set, runs from that model for the start round, then continues normally. 'A' does nothing
+START_ROUND=2 
+START_MODEL="merge"         # If set, runs from that model for the start round, then continues normally. 'A' does nothing. 'merge' does fedavg of previous round
 
 # Paths
 DATASET_A="/tudelft.net/staff-umbrella/MscThesisjverhoog/datasets/cmt_subsets/Default_NoFair_SingleClient/boston_day_clear"

@@ -104,8 +104,8 @@ run_merge () {
             --weight-a $SIZE_A --weight-b $SIZE_B --weight-c $SIZE_C --weight-d $SIZE_D --weight-e $SIZE_E \
             --method $METHOD \
             --config projects/cmt/fed/fedSelect/improved_lightweight_cmt_iterated_FedSelect.py \
-            --select_ratio 0.02 \
-            --max_sparsity 0.4
+            --select-ratio 0.02 \
+            --max-sparsity 0.4
       "
 }
 
@@ -206,6 +206,42 @@ for ((i=START_ROUND; i<=NUM_ROUNDS; i++)); do
             CKPT_B="$WORK/round_${i}/ModelB/epoch_${CURRENT_STOP_EPOCH}.pth"    
             CKPT_C="$WORK/round_${i}/ModelC/epoch_${CURRENT_STOP_EPOCH}.pth"
             CKPT_D="$WORK/round_${i}/ModelD/epoch_${CURRENT_STOP_EPOCH}.pth"
+            run_training "ModelE" "$DATASET_E" "$MODEL_E" "$i" "$GLOBAL_MAX_EPOCHS" "$CURRENT_STOP_EPOCH" "$IS_RESUME" "$WANDB_ID_E"
+            CKPT_E="$WORK/round_${i}/ModelE/epoch_${CURRENT_STOP_EPOCH}.pth"
+       elif [ "$START_MODEL" = "merge" ]; then
+            # Calculate correct previous round and its stop epoch
+            PREV_RND=$((i - 1))
+            PREV_STOP_EPOCH=$((CURRENT_STOP_EPOCH - EPOCHS_PER_ROUND))
+            
+            CKPT_A="$WORK/round_${PREV_RND}/ModelA/epoch_${PREV_STOP_EPOCH}.pth"
+            CKPT_B="$WORK/round_${PREV_RND}/ModelB/epoch_${PREV_STOP_EPOCH}.pth"
+            CKPT_C="$WORK/round_${PREV_RND}/ModelC/epoch_${PREV_STOP_EPOCH}.pth"
+            CKPT_D="$WORK/round_${PREV_RND}/ModelD/epoch_${PREV_STOP_EPOCH}.pth"
+            CKPT_E="$WORK/round_${PREV_RND}/ModelE/epoch_${PREV_STOP_EPOCH}.pth"
+            
+            # 3. Aggregate and Save 5 Distinct Models for the PREVIOUS round
+            MERGED_A="$WORK/round_${PREV_RND}/merged_A.pth"
+            MERGED_B="$WORK/round_${PREV_RND}/merged_B.pth"
+            MERGED_C="$WORK/round_${PREV_RND}/merged_C.pth"
+            MERGED_D="$WORK/round_${PREV_RND}/merged_D.pth"
+            MERGED_E="$WORK/round_${PREV_RND}/merged_E.pth"
+            
+            run_merge "$CKPT_A" "$CKPT_B" "$CKPT_C" "$CKPT_D" "$CKPT_E" \
+                    "$MERGED_A" "$MERGED_B" "$MERGED_C" "$MERGED_D" "$MERGED_E" "fedavg"
+            
+            # Now run Round 2 training (IS_RESUME="true" will use the newly created MERGED checkpoints)
+            run_training "ModelA" "$DATASET_A" "$MODEL_A" "$i" "$GLOBAL_MAX_EPOCHS" "$CURRENT_STOP_EPOCH" "$IS_RESUME" "$WANDB_ID_A"
+            CKPT_A="$WORK/round_${i}/ModelA/epoch_${CURRENT_STOP_EPOCH}.pth"
+
+            run_training "ModelB" "$DATASET_B" "$MODEL_B" "$i" "$GLOBAL_MAX_EPOCHS" "$CURRENT_STOP_EPOCH" "$IS_RESUME" "$WANDB_ID_B"
+            CKPT_B="$WORK/round_${i}/ModelB/epoch_${CURRENT_STOP_EPOCH}.pth"
+
+            run_training "ModelC" "$DATASET_C" "$MODEL_C" "$i" "$GLOBAL_MAX_EPOCHS" "$CURRENT_STOP_EPOCH" "$IS_RESUME" "$WANDB_ID_C"
+            CKPT_C="$WORK/round_${i}/ModelC/epoch_${CURRENT_STOP_EPOCH}.pth"
+
+            run_training "ModelD" "$DATASET_D" "$MODEL_D" "$i" "$GLOBAL_MAX_EPOCHS" "$CURRENT_STOP_EPOCH" "$IS_RESUME" "$WANDB_ID_D"
+            CKPT_D="$WORK/round_${i}/ModelD/epoch_${CURRENT_STOP_EPOCH}.pth"
+
             run_training "ModelE" "$DATASET_E" "$MODEL_E" "$i" "$GLOBAL_MAX_EPOCHS" "$CURRENT_STOP_EPOCH" "$IS_RESUME" "$WANDB_ID_E"
             CKPT_E="$WORK/round_${i}/ModelE/epoch_${CURRENT_STOP_EPOCH}.pth"
         else
