@@ -35,7 +35,6 @@ mkdir -p "$WORK"
 
 # --- LOCAL DATA SETUP ---
 NETWORK_DATA_ROOT="/scratch/$USER/data/nuscenes"
-TMP_BASE="${TMPDIR}/jtverhoog_${SLURM_JOB_ID}"
 
 # Create tmp directories and register cleanup trap (runs even on timeout/cancel)
 echo "Creating tmp directories..."
