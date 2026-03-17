@@ -106,6 +106,7 @@ srun --ntasks=2 --gpus-per-task=1 bash -lc "
   --bind \"$HOME/mmdet:/workspace/mmdet\" \
   --bind \"$TMP_BASE/nuscenes:/workspace/mmdet/mmdetection3d/data/nuscenes\" \
   --bind \"$TMP_BASE:/workspace/tmp\" \
+  --bind "$TMP_BASE/nuscenes:/tudelft.net/staff-umbrella/MscThesisjverhoog/datasets/nuscenes_cmt_full" \
   --bind \"$WORK:/workspace/work_dirs\" \
   --env SLURM_PROCID=\"\$SLURM_PROCID\" \
   --env SLURM_NTASKS=\"\$SLURM_NTASKS\" \
