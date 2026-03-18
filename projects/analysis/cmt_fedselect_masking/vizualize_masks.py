@@ -6,13 +6,13 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 
-BN_WEIGHT_COLOR = [0.00, 0.45, 0.70]
-BN_BIAS_COLOR = [0.80, 0.47, 0.65]
-BN_RUNNING_MEAN_COLOR = [0.15, 0.55, 0.25]
-BN_RUNNING_VAR_COLOR = [0.90, 0.60, 0.00]
+BN_WEIGHT_COLOR = [0.90, 0.60, 0.00]
+BN_BIAS_COLOR = [0.00, 0.45, 0.70]
+BN_RUNNING_MEAN_COLOR = [0.80, 0.47, 0.65]
+BN_RUNNING_VAR_COLOR = [0.15, 0.55, 0.25] 
 BN_GENERIC_COLOR = [0.60, 0.60, 0.60] 
-LAYER_NORM_BIAS_COLOR =  [0.80, 0.47, 0.65]
-LAYER_NORM_WEIGHT_COLOR = [0.00, 0.45, 0.70]
+LAYER_NORM_BIAS_COLOR = [0.00, 0.45, 0.70]
+LAYER_NORM_WEIGHT_COLOR = [0.90, 0.60, 0.00]
 CONV_COLOR = [0.84, 0.15, 0.16]
 ATTENTION_COLOR = [0.00, 0.62, 0.45]
 LINEAR_MLP_HEAD_COLOR = [0.55, 0.35, 0.64]
@@ -20,13 +20,14 @@ LINEAR_MLP_HEAD_COLOR = [0.55, 0.35, 0.64]
 CATEGORY_ORDER = [
     ('BN Weight', 'BN-w', BN_WEIGHT_COLOR),
     ('BN Bias', 'BN-b', BN_BIAS_COLOR),
-    ('BN Running Mean', 'BN-rm', BN_RUNNING_MEAN_COLOR),
-    ('BN Running Var', 'BN-rv', BN_RUNNING_VAR_COLOR),
+    ('Linear / MLP / Heads', 'Lin', LINEAR_MLP_HEAD_COLOR),
     ('Layer Norm Weight', 'LN-w', LAYER_NORM_WEIGHT_COLOR),
     ('Layer Norm Bias', 'LN-b', LAYER_NORM_BIAS_COLOR),
+    ('BN Running Mean', 'BN-rm', BN_RUNNING_MEAN_COLOR),
+    ('BN Running Var', 'BN-rv', BN_RUNNING_VAR_COLOR),
     ('Convolution', 'Conv', CONV_COLOR),
     ('Attention', 'Attn', ATTENTION_COLOR),
-    ('Linear / MLP / Heads', 'Lin', LINEAR_MLP_HEAD_COLOR),
+
 ]
 
 CATEGORY_TO_COLOR = {label: color for label, _, color in CATEGORY_ORDER}
@@ -247,10 +248,15 @@ def plot_module(fig, bounds, mask_dict, layer_keys, title):
     title_y = y0 + h + 0.035
     stats_y = y0 + h + 0.01
 
+    # 1. First Line: Title & Total Params (Split to prevent GIF jitter)
     # 1. First Line: Title & Total Params
-    title_text = f"{title} ({format_params(total_params)} params)"
+    masked_str = format_params(masked_params)
+    total_str = format_params(total_params)
+    # Pad with figure spaces (\u2007) so the physical width never changes in a GIF
+    padded_masked = masked_str.rjust(6, '\u2007') 
+    title_text = f"{title} ({padded_masked} / {total_str} params)"
     fig.text(center_x, title_y, title_text, ha='center', va='bottom', fontsize=12, fontweight='bold')
-    
+
     # 2. Second Line: Pipe-separated category breakdown
     category_parts = []
     for label, short_label, color in CATEGORY_ORDER:
@@ -367,14 +373,14 @@ def visualize_model_masks(mask_path, output_image_path):
     color_to_name = {
         tuple(BN_WEIGHT_COLOR): "BN Weight",
         tuple(BN_BIAS_COLOR): "BN Bias",
-        tuple(BN_RUNNING_MEAN_COLOR): "BN Running Mean",
-        tuple(BN_RUNNING_VAR_COLOR): "BN Running Var",
-        tuple(BN_GENERIC_COLOR): "BN Generic (Should be empty!)",
+        tuple(LINEAR_MLP_HEAD_COLOR): "Linear / MLP / Heads",
         tuple(LAYER_NORM_WEIGHT_COLOR): "Layer Norm Weight",
         tuple(LAYER_NORM_BIAS_COLOR): "Layer Norm Bias",
+        tuple(BN_RUNNING_MEAN_COLOR): "BN Running Mean",
+        tuple(BN_RUNNING_VAR_COLOR): "BN Running Var",
         tuple(CONV_COLOR): "Convolution",
         tuple(ATTENTION_COLOR): "Attention",
-        tuple(LINEAR_MLP_HEAD_COLOR): "Linear / MLP / Heads"
+
     }
 
     debug_groups = [
@@ -433,14 +439,17 @@ def visualize_model_masks(mask_path, output_image_path):
 
 if __name__ == "__main__":
     base_sample_mask_path = "/home/jolle/mmdet/visualisations/fedselect_masks/fedselect_masks/"
-    base_output_path = "/home/jolle/mmdet/mmdetection3d/projects/analysis/cmt_fedselect_masking/outputs/all_final/"
+    base_output_path = "/home/jolle/mmdet/mmdetection3d/projects/analysis/cmt_fedselect_masking/outputs/all_final_no_elastic/"
+
+    # base_sample_mask_path = "/home/jolle/mmdet/visualisations/fedselect_full_elastic/fedselect_masks/"
+    # base_output_path = "/home/jolle/mmdet/mmdetection3d/projects/analysis/cmt_fedselect_masking/outputs/all_final_full_elastic/"
 
     if not os.path.exists(base_output_path):
         print(f"Output directory does not exist at {base_output_path}. Creating the folder.")
         os.makedirs(base_output_path, exist_ok=True)
 
     for model in ['A', 'B', 'C', 'D', 'E']:
-        for curr_round in range(8):
+        for curr_round in range(11):
             plot_name = f"Model {model} - Round {curr_round}"
             output_path = os.path.join(base_output_path, f"Round_{curr_round}_model_{model}.png")
             sample_mask_path = os.path.join(base_sample_mask_path, f"round_{curr_round}/Model{model}_mask.pt")

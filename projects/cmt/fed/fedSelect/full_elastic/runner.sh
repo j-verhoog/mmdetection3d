@@ -251,7 +251,7 @@ for ((i=START_ROUND; i<=NUM_ROUNDS; i++)); do
     # Fixed FedSelect ratio schedule:
     # r10=0.05, r11=0.10, ..., r16=0.35, r17+=0.40
     case "$i" in
-        11) RATIO="0.5" ;;
+        11) RATIO="0.05" ;;
         12) RATIO="0.10" ;;
         13) RATIO="0.15" ;;
         14) RATIO="0.20" ;;
