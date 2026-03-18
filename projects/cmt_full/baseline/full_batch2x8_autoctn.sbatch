@@ -1,10 +1,10 @@
 #!/bin/bash
 #SBATCH --partition=general
-#SBATCH --qos=long
+#SBATCH --qos=medium
 #SBATCH --job-name=cmt
 #SBATCH --output=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/cmt/paper_config_FULLjob%j_rank%t.out
 #SBATCH --error=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/cmt/paper_config_FULLjob%j_rank%t.err
-#SBATCH --time=5-00:00:00
+#SBATCH --time=36:00:00
 #SBATCH --nodes=4              # Amount of machines
 #SBATCH --ntasks=8             # Total tasks (2 per node)
 #SBATCH --ntasks-per-node=2    # Spread them evenly
@@ -18,7 +18,7 @@ set -e # Good practice to fail fast
 echo "=== Starting Job ID: $SLURM_JOB_ID ==="
 
 PRETRAINED_BACKBONE="ckpts/fcos3d_vovnet_imgbackbone-remapped.pth"
-RESUME_FROM="/workspace/mmdet/MscThesisjverhoog/projects/cmt/paper_config_full_2x8/epoch_1.pth"
+RESUME_FROM="/tudelft.net/staff-umbrella/MscThesisjverhoog/projects/cmt/paper_config_full_2x8/latest.pth"
 TARGET_EPOCHS=20
 SAMPLES_PER_GPU=2       # 4 leads OOM on A40, 2==31GB and takes 11 days on two gpu's
 
