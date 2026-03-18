@@ -105,6 +105,7 @@ srun --ntasks=2 --gpus-per-task=1 bash -lc "
         evaluation.interval=1 \
         resume_from='"$PRETRAINED_BACKBONE"' \
         data.samples_per_gpu='"$SAMPLES_PER_GPU"' \
+        total_epochs=$TARGET_EPOCHS \
         dist_params.port='"$MASTER_PORT"'
   '
 "
