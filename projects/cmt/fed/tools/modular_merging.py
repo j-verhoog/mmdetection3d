@@ -683,7 +683,6 @@ def fednorm(models, output_paths, norm_weights, model_instance):
         os.makedirs(os.path.dirname(out_path), exist_ok=True)
         torch.save(ckpt, out_path)
         print(f"Saved merged model with optimizer state to {out_path}")
-
 def fedselect(models, output_paths, norm_weights, client_ids, prev_global_path="/workspace/work_dirs/fedselect_states/global_model.pth", mask_dir="/workspace/work_dirs/fedselect_masks", select_ratio=0.05, max_sparsity=0.5):
     """
     FedSelect implementation (CVPR 2024). 
@@ -706,6 +705,42 @@ def fedselect(models, output_paths, norm_weights, client_ids, prev_global_path="
     valid_keys = [k for k, v in prev_state.items() if v.is_floating_point() and 'num_batches_tracked' not in k]
     total_params = sum(prev_state[k].numel() for k in valid_keys)
     print(f"Total valid parameters for FedSelect: {total_params:,}")
+
+    # ---------------------------------------------------------
+    # Layer Mapping for Visualization (Created Once)
+    # ---------------------------------------------------------
+    mapping_file = os.path.join(mask_dir, "layer_mapping.pth")
+    if not os.path.exists(mapping_file):
+        layer_info = {}
+        current_idx = 0
+        for k in valid_keys:
+            numel = prev_state[k].numel()
+            layer_info[k] = {
+                "shape": list(prev_state[k].shape),
+                "numel": numel,
+                "start_idx": current_idx,
+                "end_idx": current_idx + numel
+            }
+            current_idx += numel
+        torch.save(layer_info, mapping_file)
+        print(f"Created layer mapping file at {mapping_file}")
+
+    # ---------------------------------------------------------
+    # Auto-Detect Current Round Directory
+    # ---------------------------------------------------------
+    # ### NEW: Scan for existing round directories and increment ###
+    existing_rounds = []
+    for d in os.listdir(mask_dir):
+        if d.startswith("round_") and os.path.isdir(os.path.join(mask_dir, d)):
+            try:
+                existing_rounds.append(int(d.split("_")[1]))
+            except ValueError:
+                pass
+    current_round = max(existing_rounds) + 1 if existing_rounds else 0
+    round_mask_dir = os.path.join(mask_dir, f"round_{current_round}")
+    os.makedirs(round_mask_dir, exist_ok=True)
+    print(f"Saving historical masks for round {current_round} to {round_mask_dir}")
+    # ##############################################################
 
     # ---------------------------------------------------------
     # Phase 1: Client Subnetwork Discovery (Mask Updating)
@@ -768,6 +803,13 @@ def fedselect(models, output_paths, norm_weights, client_ids, prev_global_path="
             print(f"  {cid}: Reached max sparsity or no params to select. Total sparsity: {current_personalized / total_params * 100:.2f}%")
             
         torch.save(client_mask, mask_path)
+
+        # ### NEW: Save historical visualization mask (0=Global, 1=Personal) ###
+        vis_mask = {k: v.to(torch.int8) for k, v in client_mask.items()}
+        hist_mask_path = os.path.join(round_mask_dir, f"{cid}_mask.pt")
+        torch.save(vis_mask, hist_mask_path)
+        # ######################################################################
+
         del ckpt_i
         
     # ---------------------------------------------------------
