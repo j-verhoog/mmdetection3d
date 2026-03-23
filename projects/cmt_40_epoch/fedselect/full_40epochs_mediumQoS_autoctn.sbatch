@@ -1,9 +1,9 @@
 #!/bin/bash
 #SBATCH --partition=general
 #SBATCH --qos=medium
-#SBATCH --job-name=fedSelect_40
-#SBATCH --output=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/cmt/fedselect40_full_ctn_job%j_rank%t.out
-#SBATCH --error=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/cmt/fedselect40_full_ctn_job%j_rank%t.err
+#SBATCH --job-name=fs-cka
+#SBATCH --output=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/cmt/fs_cka_job%j_rank%t.out
+#SBATCH --error=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/cmt/fs_cka_job%j_rank%t.err
 #SBATCH --time=36:00:00
 #SBATCH --nodes=1
 #SBATCH --ntasks=2
@@ -40,8 +40,8 @@ PRETRAINED_BACKBONE="ckpts/nuim_r50.pth"
 
 # --- STANDARD SETUP ---
 export SRUN_CPUS_PER_TASK=${SLURM_CPUS_PER_TASK:-1}
-export WANDB_PROJECT="cmt_fedavg_all"
-export RUN_NAME="FedSelect_40epochs"
+export WANDB_PROJECT="cmt_40_epoch"
+export RUN_NAME="FS_cka_40epochs"
 CONTINUE_WANDB_RUN=true
 
 # Gets API key robustly
@@ -106,7 +106,7 @@ module load cuda
 export MASTER_ADDR=$(scontrol show hostnames "$SLURM_JOB_NODELIST" | head -n 1)
 
 # --- ONE General training function for all rounds: CHECK PATH ---
-source /home/nfs/jtverhoog/mmdet/mmdetection3d/projects/cmt/fed/fedSelect/runner_40epochs.sh
+source /home/nfs/jtverhoog/mmdet/mmdetection3d/projects/cmt_40_epoch/fedselect/runner_40epochs.sh
 
 # Cleanup
 srun --nodes=$SLURM_NNODES --ntasks-per-node=1 rm -rf "$TMP_BASE"

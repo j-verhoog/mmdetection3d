@@ -74,7 +74,6 @@ run_training () {
       '
     "
 }
-
 # --- MERGE FUNCTION ---
 run_merge () {
     local CKPT_A=$1
@@ -90,22 +89,35 @@ run_merge () {
     local METHOD=${11}
     
     echo "=== Merging Models using $METHOD ==="
-    apptainer exec --nv --cleanenv \
-      --bind "$HOME/mmdet:/workspace/mmdet" \
-      --bind "$WORK:/workspace/work_dirs" \
-      --bind "/tudelft.net/staff-umbrella/MscThesisjverhoog:/tudelft.net/staff-umbrella/MscThesisjverhoog" \
-      "$APPTAINER_IMAGE" \
-      bash -lc "
-        cd /workspace/mmdet/mmdetection3d && \
-        export PYTHONPATH=/workspace/mmdet/mmdetection3d:/workspace/mmdet:\$PYTHONPATH && \
-        python projects/cmt/fed/tools/modular_merging.py \
+    
+    # Base command string
+    local MERGE_CMD="python projects/cmt/fed/tools/modular_merging.py \
             --inputs $CKPT_A $CKPT_B $CKPT_C $CKPT_D $CKPT_E \
             --outputs $OUT_A $OUT_B $OUT_C $OUT_D $OUT_E \
             --weight-a $SIZE_A --weight-b $SIZE_B --weight-c $SIZE_C --weight-d $SIZE_D --weight-e $SIZE_E \
             --method $METHOD \
             --config projects/cmt/fed/fedSelect/improved_lightweight_cmt_iterated_FedSelect.py \
             --select-ratio 0.02 \
-            --max-sparsity 0.4
+            --max-sparsity 0.4"
+            
+    # Append CKA specific arguments if the method is fedselect_cka
+    if [ "$METHOD" = "fedselect_cka" ]; then
+        MERGE_CMD="$MERGE_CMD \
+            --runner-path projects/cmt_40_epoch/fedselect/scripts_cmt_copy/runner.py \
+            --data-dir /tudelft.net/staff-umbrella/IntelligentVehiclesPublicDatasets/nuscenes \
+            --modality lidar_camera"
+    fi
+
+    apptainer exec --nv --cleanenv \
+      --bind "$HOME/mmdet:/workspace/mmdet" \
+      --bind "$WORK:/workspace/work_dirs" \
+      --bind "/tudelft.net/staff-umbrella/MscThesisjverhoog:/tudelft.net/staff-umbrella/MscThesisjverhoog" \
+      --bind "/tudelft.net/staff-umbrella/IntelligentVehiclesPublicDatasets:/tudelft.net/staff-umbrella/IntelligentVehiclesPublicDatasets" \
+      "$APPTAINER_IMAGE" \
+      bash -lc "
+        cd /workspace/mmdet/mmdetection3d && \
+        export PYTHONPATH=/workspace/mmdet/mmdetection3d:/workspace/mmdet:\$PYTHONPATH && \
+        $MERGE_CMD
       "
 }
 
@@ -157,7 +169,7 @@ for ((i=START_ROUND; i<=NUM_ROUNDS; i++)); do
     if [ "$i" -le 10 ]; then
         CURRENT_METHOD="fedavg"
     else
-        CURRENT_METHOD="fedselect"
+        CURRENT_METHOD="fedselect_cka"
     fi
     
     echo "-------------------------------------"
@@ -208,10 +220,18 @@ for ((i=START_ROUND; i<=NUM_ROUNDS; i++)); do
             CKPT_D="$WORK/round_${i}/ModelD/epoch_${CURRENT_STOP_EPOCH}.pth"
             run_training "ModelE" "$DATASET_E" "$MODEL_E" "$i" "$GLOBAL_MAX_EPOCHS" "$CURRENT_STOP_EPOCH" "$IS_RESUME" "$WANDB_ID_E"
             CKPT_E="$WORK/round_${i}/ModelE/epoch_${CURRENT_STOP_EPOCH}.pth"
-       elif [ "$START_MODEL" = "merge" ]; then
+        elif [ "$START_MODEL" = "merge" ]; then
             # Calculate correct previous round and its stop epoch
             PREV_RND=$((i - 1))
             PREV_STOP_EPOCH=$((CURRENT_STOP_EPOCH - EPOCHS_PER_ROUND))
+            
+            # --- NEW: Determine the correct method for the previous round ---
+            if [ "$PREV_RND" -le 10 ]; then
+                PREV_METHOD="fedavg"
+            else
+                PREV_METHOD="fedselect_cka"
+            fi
+            # ----------------------------------------------------------------
             
             CKPT_A="$WORK/round_${PREV_RND}/ModelA/epoch_${PREV_STOP_EPOCH}.pth"
             CKPT_B="$WORK/round_${PREV_RND}/ModelB/epoch_${PREV_STOP_EPOCH}.pth"
@@ -226,8 +246,10 @@ for ((i=START_ROUND; i<=NUM_ROUNDS; i++)); do
             MERGED_D="$WORK/round_${PREV_RND}/merged_D.pth"
             MERGED_E="$WORK/round_${PREV_RND}/merged_E.pth"
             
+            # --- UPDATED: Pass $PREV_METHOD instead of "fedavg" ---
             run_merge "$CKPT_A" "$CKPT_B" "$CKPT_C" "$CKPT_D" "$CKPT_E" \
-                    "$MERGED_A" "$MERGED_B" "$MERGED_C" "$MERGED_D" "$MERGED_E" "fedavg"
+                    "$MERGED_A" "$MERGED_B" "$MERGED_C" "$MERGED_D" "$MERGED_E" "$PREV_METHOD"
+            # ------------------------------------------------------
             
             # Now run Round 2 training (IS_RESUME="true" will use the newly created MERGED checkpoints)
             run_training "ModelA" "$DATASET_A" "$MODEL_A" "$i" "$GLOBAL_MAX_EPOCHS" "$CURRENT_STOP_EPOCH" "$IS_RESUME" "$WANDB_ID_A"
