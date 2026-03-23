@@ -46,9 +46,8 @@ PRETRAINED_BACKBONE="ckpts/nuim_r50.pth"
 
 # --- STANDARD SETUP ---
 export SRUN_CPUS_PER_TASK=${SLURM_CPUS_PER_TASK:-1}
-export WANDB_PROJECT="cmt_fedavg_all"
-export RUN_NAME="FedBN_full_40epochs"
-CONTINUE_WANDB_RUN=true
+export WANDB_PROJECT="cmt_40_epoch"
+export RUN_NAME="FedBN_hfLR_40epochs"
 
 # Gets API key robustly
 export WANDB_API_KEY=$(awk '$1=="machine" && $2=="api.wandb.ai" {found=1}found && $1=="password" {print $2; exit}' "$HOME/.netrc")
@@ -183,7 +182,7 @@ run_training () {
           $RESUME_ARG \
           --cfg-options ${CFG_LOAD_ARG} dist_params.port=$MASTER_PORT \
             data.samples_per_gpu=$SAMPLES_PER_GPU \
-            lr_config.target_ratio=(4, 0.0001) \
+            lr_config.target_ratio=\"(4, 0.0001)\" \
             total_epochs=$GLOBAL_EPOCHS \
             custom_hooks.1.stop_epoch=$STOP_EPOCH
       '
