@@ -856,6 +856,7 @@ def fednorm(models, output_paths, norm_weights, model_instance):
         os.makedirs(os.path.dirname(out_path), exist_ok=True)
         torch.save(ckpt, out_path)
         print(f"Saved merged model with optimizer state to {out_path}")
+
 def fedselect(models, output_paths, norm_weights, client_ids, prev_global_path="/workspace/work_dirs/fedselect_states/global_model.pth", mask_dir="/workspace/work_dirs/fedselect_masks", select_ratio=0.05, max_sparsity=0.5):
     """
     FedSelect implementation (CVPR 2024). 
