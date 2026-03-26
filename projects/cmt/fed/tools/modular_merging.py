@@ -362,7 +362,7 @@ def fedomg_better(models, output_paths, norm_weights, client_ids, prev_global_pa
     print(f"  Optimized Combined Gradient ||Gamma* g||: {combo_norm:.4f}")
     print(f"  Final Invariant Gradient L2 Norm: {igd_norm:.4f}")
 
-    print("\n--- Phase 3b: Extracting Domain-Specific (Orthogonal) Gradients ---")
+    print("\n--- Phase 3b: Extracting and Saving Domain-Specific (Orthogonal) Gradients ---")
     domain_specific_grads = {}
     igd_norm_sq = torch.dot(g_igd, g_igd) + EPS
     
@@ -381,6 +381,20 @@ def fedomg_better(models, output_paths, norm_weights, client_ids, prev_global_pa
         # Log the magnitude to track how "divergent" this domain is
         ortho_norm = torch.norm(g_i_ortho).item()
         print(f"  [{cid}] Domain-specific (Orthogonal) Gradient L2 Norm: {ortho_norm:.4f}")
+        
+        # ==========================================
+        # NEW: Unflatten and Save the Orthogonal Component
+        # ==========================================
+        # Map the 1D tensor back to the model's layer shapes
+        ortho_state_dict = unflatten_tensors(g_i_ortho, global_state, fedomg_keys)
+        
+        # Construct a save path (e.g., 'merged_A.pth' -> 'merged_A_ortho.pth')
+        client_out_path = output_paths[i]
+        ortho_save_path = client_out_path.replace(".pth", "_ortho.pth")
+        
+        # Save as a standard checkpoint dictionary
+        torch.save({"state_dict": ortho_state_dict}, ortho_save_path)
+        print(f"    -> Saved orthogonal component for {cid} to {ortho_save_path}")
 
     print("\n--- Phase 4: Updating Global Model ---")
     # FIX: Because `local_grad` is calculated as (flat_client - flat_global), it represents a positive 
