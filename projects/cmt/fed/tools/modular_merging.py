@@ -362,6 +362,26 @@ def fedomg_better(models, output_paths, norm_weights, client_ids, prev_global_pa
     print(f"  Optimized Combined Gradient ||Gamma* g||: {combo_norm:.4f}")
     print(f"  Final Invariant Gradient L2 Norm: {igd_norm:.4f}")
 
+    print("\n--- Phase 3b: Extracting Domain-Specific (Orthogonal) Gradients ---")
+    domain_specific_grads = {}
+    igd_norm_sq = torch.dot(g_igd, g_igd) + EPS
+    
+    for i, cid in enumerate(client_ids):
+        g_i = client_grads[i]
+        
+        # Calculate the scalar for the projection of g_i onto g_igd
+        proj_scalar = torch.dot(g_i, g_igd) / igd_norm_sq
+        
+        # Subtract the projected component to get the orthogonal (domain-specific) component
+        g_i_ortho = g_i - (proj_scalar * g_igd)
+        
+        # Store it (if you want to use it later)
+        domain_specific_grads[cid] = g_i_ortho
+        
+        # Log the magnitude to track how "divergent" this domain is
+        ortho_norm = torch.norm(g_i_ortho).item()
+        print(f"  [{cid}] Domain-specific (Orthogonal) Gradient L2 Norm: {ortho_norm:.4f}")
+
     print("\n--- Phase 4: Updating Global Model ---")
     # FIX: Because `local_grad` is calculated as (flat_client - flat_global), it represents a positive 
     # weight step. We must ADD ETA_G * g_igd so the global model learns, avoiding catastrophic unlearning.
