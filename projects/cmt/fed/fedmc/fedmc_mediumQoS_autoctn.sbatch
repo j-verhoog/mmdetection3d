@@ -223,7 +223,7 @@ run_merge () {
             --outputs $OUT_A $OUT_B $OUT_C $OUT_D $OUT_E \
             --weight-a $SIZE_A --weight-b $SIZE_B --weight-c $SIZE_C --weight-d $SIZE_D --weight-e $SIZE_E \
             --method fedmc \
-            --fisher-paths $FISH_A $FISH_B $FISH_C $FISH_D $FISH_E
+            --fisher_paths $FISH_A $FISH_B $FISH_C $FISH_D $FISH_E
       "
 }
 
