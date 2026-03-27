@@ -300,7 +300,7 @@ def fedomg_better(models, output_paths, norm_weights, client_ids, prev_global_pa
     G = torch.stack(client_grads, dim=0)
 
     print("\n--- Phase 2: Solving FedOMG On-Server Objective ---")
-
+    print("\n HOT UPDATE!!!!!!!!!!!!!!!!! Optimizing Gamma coefficients with normalized grads and then using unscaled for update!!!!!!!!!!!!!!!!!!!!")
     weight_tensor = torch.tensor(norm_weights, dtype=flat_global.dtype, device=flat_global.device)
     weight_tensor = weight_tensor / (weight_tensor.sum() + EPS)
 
@@ -319,6 +319,11 @@ def fedomg_better(models, output_paths, norm_weights, client_ids, prev_global_pa
         min_gamma_tensor = weight_tensor / GAMMA_BOUND_FACTOR
         max_gamma_tensor = torch.clamp(weight_tensor * GAMMA_BOUND_FACTOR, max=1.0)
         
+        # Force all gradients to have the exact same magnitude (g_fl_norm)
+        # This prevents the solver from "cheating" by picking small-norm gradients.
+        G_norms = torch.norm(G, dim=1, keepdim=True) + EPS
+        G_normalized = (G / G_norms) * g_fl_norm
+
         # Safety check: Ensure the minimums don't sum to > 1.0
         sum_min = min_gamma_tensor.sum().item()
         if sum_min >= 1.0:
@@ -344,8 +349,16 @@ def fedomg_better(models, output_paths, norm_weights, client_ids, prev_global_pa
             raw_gamma = torch.softmax(logits, dim=0)
             gamma = min_gamma_tensor + (remaining_gamma_pool * raw_gamma)
             
-            combo = (gamma[:, None] * G).sum(dim=0)
-            combo_norm = torch.norm(combo) + EPS
+            # used this untill round 5
+            # combo = (gamma[:, None] * G).sum(dim=0)
+            # combo_norm = torch.norm(combo) + EPS
+
+            # Use the NORMALIZED gradients to compute the loss objective
+            combo_normalized = (gamma[:, None] * G_normalized).sum(dim=0)
+            combo_norm_normalized = torch.norm(combo_normalized) + EPS
+            combo = combo_normalized
+            combo_norm = combo_norm_normalized
+
             
             # Base optimization objective
             base_loss = torch.dot(combo, g_fl) + KAPPA * g_fl_norm * combo_norm
@@ -375,24 +388,27 @@ def fedomg_better(models, output_paths, norm_weights, client_ids, prev_global_pa
             )
 
         gamma_star = best_gamma
-        combo = best_combo
-        combo_norm = torch.norm(combo)
 
-        if combo_norm.item() < EPS:
+        # =================================================================
+        # CRITICAL FIX: Apply the optimal Gamma* back to the RAW true gradients
+        # =================================================================
+        final_raw_combo = (gamma_star[:, None] * G).sum(dim=0)
+        final_raw_combo_norm = torch.norm(final_raw_combo) + EPS
+
+        if final_raw_combo_norm.item() < EPS:
             print("  [WARNING] Optimized Gamma*g is near zero. Using g_FL only.")
             g_igd = g_fl.clone()
         else:
-            g_igd = g_fl + KAPPA * g_fl_norm * (combo / (combo_norm + EPS))
+            # Construct g_igd using the TRUE magnitude combination
+            g_igd = g_fl + KAPPA * g_fl_norm * (final_raw_combo / final_raw_combo_norm)
 
         print("  Gamma* coefficients:")
         for cid, gamma_i, max_g, min_g in zip(client_ids, gamma_star.tolist(), max_gamma_tensor.tolist(), min_gamma_tensor.tolist()):
             print(f"    {cid}: {gamma_i:.6f} (Limits: min {min_g:.4f}, max {max_g:.4f})")
 
     print("\n--- Phase 3: Aggregating Aligned Gradients ---")
-    combo_norm = torch.norm(combo).item()
+    print(f"  Optimized Combined Gradient ||Gamma* g|| (Raw): {final_raw_combo_norm.item():.4f}")
     igd_norm = torch.norm(g_igd).item()
-
-    print(f"  Optimized Combined Gradient ||Gamma* g||: {combo_norm:.4f}")
     print(f"  Final Invariant Gradient L2 Norm: {igd_norm:.4f}")
 
     print("\n--- Phase 3b: Extracting and Saving Domain-Specific (Orthogonal) Gradients ---")
