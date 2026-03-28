@@ -60,7 +60,7 @@ def unflatten_tensors(flat_tensor, reference_dict, valid_keys):
 
 def fedomg(models, output_paths, norm_weights, client_ids, prev_global_path="/workspace/work_dirs/fedomg_states/global_model.pth"):
     """
-FedOMG Implementation (ICLR 2025) - With Configurable Exclusions. NOT WOKRING CORRECLT. NOW IS PCGRADIENT PROJECTION WITHOUT THE MOMENTUM OPTIMIZATION. STILL BETTER THAN FEDAVG BUT NOT AS GOOD AS THE FULL OMG.
+    PCGRAD - With Configurable Exclusions. NOT WOKRING CORRECLT. NOW IS PCGRADIENT PROJECTION WITHOUT THE MOMENTUM OPTIMIZATION. STILL BETTER THAN FEDAVG BUT NOT AS GOOD AS THE FULL OMG.
     """
     # =====================================================================
     # [CONFIGURATION] EXCLUSION SETTINGS

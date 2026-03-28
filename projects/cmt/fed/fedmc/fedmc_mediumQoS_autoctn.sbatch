@@ -47,7 +47,7 @@ PRETRAINED_BACKBONE="ckpts/nuim_r50.pth"
 # --- STANDARD SETUP ---
 export SRUN_CPUS_PER_TASK=${SLURM_CPUS_PER_TASK:-1}
 export WANDB_PROJECT="cmt_fedavg_all"
-export RUN_NAME="FedOMG"
+export RUN_NAME="FedMC"
 
 # Gets API key robustly
 export WANDB_API_KEY=$(awk '$1=="machine" && $2=="api.wandb.ai" {found=1}found && $1=="password" {print $2; exit}' "$HOME/.netrc")
@@ -157,7 +157,7 @@ run_training () {
       --env WANDB_DIR=\"/workspace/tmp/wandb/\$SLURM_PROCID\" \
       --env TMPDIR=\"/workspace/tmp/tmp/\$SLURM_PROCID\" \
       --env WANDB_PROJECT=\"$WANDB_PROJECT\" \
-      --env WANDB_NAME=\"FedOMG_${MODEL_NAME}\" \
+      --env WANDB_NAME=\"FedMC_${MODEL_NAME}\" \
       --env WANDB_API_KEY=\"$WANDB_API_KEY\" \
       --env OMP_NUM_THREADS=1 \
       --env MKL_NUM_THREADS=1 \
@@ -232,11 +232,11 @@ run_merge () {
 # ==========================================
 
 # Create persistent WandB Run IDs so each model logs to the same run across rounds
-export WANDB_ID_A="fedmc_A"
-export WANDB_ID_B="fedmc_B"
-export WANDB_ID_C="fedmc_C"
-export WANDB_ID_D="fedmc_D"
-export WANDB_ID_E="fedmc_E"
+export WANDB_ID_A="fedmc_new_A"
+export WANDB_ID_B="fedmc_new_B"
+export WANDB_ID_C="fedmc_new_C"
+export WANDB_ID_D="fedmc_new_D"
+export WANDB_ID_E="fedmc_new_E"
 
 if [ "$START_ROUND" -eq 1 ]; then
     echo "Starting fresh run from Round 1"
