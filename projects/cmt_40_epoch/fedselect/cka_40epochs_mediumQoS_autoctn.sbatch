@@ -106,7 +106,7 @@ module load cuda
 export MASTER_ADDR=$(scontrol show hostnames "$SLURM_JOB_NODELIST" | head -n 1)
 
 # --- ONE General training function for all rounds: CHECK PATH ---
-source /home/nfs/jtverhoog/mmdet/mmdetection3d/projects/cmt_40_epoch/fedselect/runner_40epochs.sh
+source /home/nfs/jtverhoog/mmdet/mmdetection3d/projects/cmt_40_epoch/fedselect/cka_runner_40epochs.sh
 
 # Cleanup
 srun --nodes=$SLURM_NNODES --ntasks-per-node=1 rm -rf "$TMP_BASE"
