@@ -1,9 +1,9 @@
 #!/bin/bash
 #SBATCH --partition=general
 #SBATCH --qos=medium
-#SBATCH --job-name=UNIfedavgfair
-#SBATCH --output=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/cmt/fedavg_fairsplit_40epochs_%j.out
-#SBATCH --error=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/cmt/fedavg_fairsplit_40epochs_%j.err
+#SBATCH --job-name=UNI_unfair
+#SBATCH --output=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/cmt/fedavg_unfairsplit_40epochs_%j.out
+#SBATCH --error=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/cmt/fedavg_unfairsplit_40epochs_%j.err
 #SBATCH --time=36:00:00
 #SBATCH --nodes=1
 #SBATCH --ntasks=2
@@ -18,15 +18,20 @@ set -e # stop if something fails
 NUM_ROUNDS=40       # approx 2hour per round of 1 Epoch
 EPOCHS_PER_ROUND=1 
 SAMPLES_PER_GPU=16
-SIZE_A=140  # A MUST BE BIGGEST for logging
-SIZE_B=140
-SIZE_C=140
-SIZE_D=140
-SIZE_E=140
+SIZE_A=265  # A MUST BE BIGGEST for logging
+SIZE_B=125
+SIZE_C=226
+SIZE_D=71
+SIZE_E=13
 
-START_ROUND=1  # <--- NEW: Set to 1 for new run, or X to start loop at round X, round 16 mains load from global 15.pth
+LOAD_INTERVAL_A=5
+LOAD_INTERVAL_B=11
+LOAD_INTERVAL_C=6
+LOAD_INTERVAL_D=20
+LOAD_INTERVAL_E=111
+
+START_ROUND=1
 START_MODEL='A'
-RESUME_CHECKPOINT="/tudelft.net/staff-umbrella/MscThesisjverhoog/projects/cmt_fedavg/12215490/round_15/global_model.pth"
 
 # Paths
 NETWORK_DATA_ROOT="/tudelft.net/staff-umbrella/MscThesisjverhoog/nuscenes_shadow_root"
@@ -43,7 +48,7 @@ PRETRAINED_BACKBONE="ckpts/nuim_r50.pth"
 # --- STANDARD SETUP ---
 export SRUN_CPUS_PER_TASK=${SLURM_CPUS_PER_TASK:-1}
 export WANDB_PROJECT="cmt_40_epoch"
-export RUN_NAME="FedAvg_uniformfair_40epochs"
+export RUN_NAME="FedAvg_uni_unfair_40epochs"
 
 # Gets API key robustly
 export WANDB_API_KEY=$(awk '$1=="machine" && $2=="api.wandb.ai" {found=1}found && $1=="password" {print $2; exit}' "$HOME/.netrc")
@@ -118,6 +123,7 @@ run_training () {
     local STOP_EPOCH=$6       # NEW ARGUMENT
     local IS_RESUME=$7
     local WANDB_RUN_ID=$8       # get run consistency
+    local CURRENT_LOAD_INTERVAL=$9  # NEW ARGUMENT
     
     local WORK_DIR="$WORK/round_${ROUND}/${MODEL_NAME}"
     
@@ -154,7 +160,7 @@ run_training () {
       --env WANDB_DIR=\"/workspace/tmp/wandb/\$SLURM_PROCID\" \
       --env TMPDIR=\"/workspace/tmp/tmp/\$SLURM_PROCID\" \
       --env WANDB_PROJECT=\"$WANDB_PROJECT\" \
-      --env WANDB_NAME=\"FedAvg_uniform_40total_${MODEL_NAME}\" \
+      --env WANDB_NAME=\"FedAvg_uni_unfair_40total_${MODEL_NAME}\" \
       --env WANDB_API_KEY=\"$WANDB_API_KEY\" \
       --env OMP_NUM_THREADS=1 \
       --env MKL_NUM_THREADS=1 \
@@ -179,7 +185,8 @@ run_training () {
           --cfg-options ${CFG_LOAD_ARG} dist_params.port=$MASTER_PORT \
             data.samples_per_gpu=$SAMPLES_PER_GPU \
             total_epochs=$GLOBAL_EPOCHS \
-            custom_hooks.1.stop_epoch=$STOP_EPOCH
+            custom_hooks.1.stop_epoch=$STOP_EPOCH \
+            data.train.dataset.load_interval=$CURRENT_LOAD_INTERVAL
       '
     "
 }
@@ -220,11 +227,11 @@ run_merge () {
 # ==========================================
 
 # Create persistent WandB Run IDs so each model logs to the same run across rounds
-export WANDB_ID_A="fedavg_A_40epochs_uniform"
-export WANDB_ID_B="fedavg_B_40epochs_uniform"
-export WANDB_ID_C="fedavg_C_40epochs_uniform"
-export WANDB_ID_D="fedavg_D_40epochs_uniform"
-export WANDB_ID_E="fedavg_E_40epochs_uniform"
+export WANDB_ID_A="fedavg_A_40_uniform_unfair"
+export WANDB_ID_B="fedavg_B_40_uniform_unfair"
+export WANDB_ID_C="fedavg_C_40_uniform_unfair"
+export WANDB_ID_D="fedavg_D_40_uniform_unfair"
+export WANDB_ID_E="fedavg_E_40_uniform_unfair"
 
 if [ "$START_ROUND" -eq 1 ]; then
     echo "Starting fresh run from Round 1"
@@ -268,37 +275,37 @@ if [ "$START_MODEL" != "A" ]; then
         echo "Starting Round $i from Model $START_MODEL , then resuming normal training after that."
         if [ "$START_MODEL" = "B" ]; then
             CKPT_A="$WORK/round_${i}/ModelA/epoch_${CURRENT_STOP_EPOCH}.pth"
-            run_training "ModelB" "$CONFIG_B" "$MODEL_B" "$i" "$GLOBAL_MAX_EPOCHS" "$CURRENT_STOP_EPOCH" "$IS_RESUME" "$WANDB_ID_B"
+            run_training "ModelB" "$CONFIG_B" "$MODEL_B" "$i" "$GLOBAL_MAX_EPOCHS" "$CURRENT_STOP_EPOCH" "$IS_RESUME" "$WANDB_ID_B" "$LOAD_INTERVAL_B"
             CKPT_B="$WORK/round_${i}/ModelB/epoch_${CURRENT_STOP_EPOCH}.pth"
-            run_training "ModelC" "$CONFIG_C" "$MODEL_C" "$i" "$GLOBAL_MAX_EPOCHS" "$CURRENT_STOP_EPOCH" "$IS_RESUME" "$WANDB_ID_C"
+            run_training "ModelC" "$CONFIG_C" "$MODEL_C" "$i" "$GLOBAL_MAX_EPOCHS" "$CURRENT_STOP_EPOCH" "$IS_RESUME" "$WANDB_ID_C" "$LOAD_INTERVAL_C"
             CKPT_C="$WORK/round_${i}/ModelC/epoch_${CURRENT_STOP_EPOCH}.pth"
-            run_training "ModelD" "$CONFIG_D" "$MODEL_D" "$i" "$GLOBAL_MAX_EPOCHS" "$CURRENT_STOP_EPOCH" "$IS_RESUME" "$WANDB_ID_D"
+            run_training "ModelD" "$CONFIG_D" "$MODEL_D" "$i" "$GLOBAL_MAX_EPOCHS" "$CURRENT_STOP_EPOCH" "$IS_RESUME" "$WANDB_ID_D" "$LOAD_INTERVAL_D"
             CKPT_D="$WORK/round_${i}/ModelD/epoch_${CURRENT_STOP_EPOCH}.pth"
-            run_training "ModelE" "$CONFIG_E" "$MODEL_E" "$i" "$GLOBAL_MAX_EPOCHS" "$CURRENT_STOP_EPOCH" "$IS_RESUME" "$WANDB_ID_E"
+            run_training "ModelE" "$CONFIG_E" "$MODEL_E" "$i" "$GLOBAL_MAX_EPOCHS" "$CURRENT_STOP_EPOCH" "$IS_RESUME" "$WANDB_ID_E" "$LOAD_INTERVAL_E"
             CKPT_E="$WORK/round_${i}/ModelE/epoch_${CURRENT_STOP_EPOCH}.pth"  
         elif [ "$START_MODEL" = "C" ]; then
             CKPT_A="$WORK/round_${i}/ModelA/epoch_${CURRENT_STOP_EPOCH}.pth"
             CKPT_B="$WORK/round_${i}/ModelB/epoch_${CURRENT_STOP_EPOCH}.pth"    
-            run_training "ModelC" "$CONFIG_C" "$MODEL_C" "$i" "$GLOBAL_MAX_EPOCHS" "$CURRENT_STOP_EPOCH" "$IS_RESUME" "$WANDB_ID_C"
+            run_training "ModelC" "$CONFIG_C" "$MODEL_C" "$i" "$GLOBAL_MAX_EPOCHS" "$CURRENT_STOP_EPOCH" "$IS_RESUME" "$WANDB_ID_C" "$LOAD_INTERVAL_C"
             CKPT_C="$WORK/round_${i}/ModelC/epoch_${CURRENT_STOP_EPOCH}.pth"
-            run_training "ModelD" "$CONFIG_D" "$MODEL_D" "$i" "$GLOBAL_MAX_EPOCHS" "$CURRENT_STOP_EPOCH" "$IS_RESUME" "$WANDB_ID_D"
+            run_training "ModelD" "$CONFIG_D" "$MODEL_D" "$i" "$GLOBAL_MAX_EPOCHS" "$CURRENT_STOP_EPOCH" "$IS_RESUME" "$WANDB_ID_D" "$LOAD_INTERVAL_D"
             CKPT_D="$WORK/round_${i}/ModelD/epoch_${CURRENT_STOP_EPOCH}.pth"
-            run_training "ModelE" "$CONFIG_E" "$MODEL_E" "$i" "$GLOBAL_MAX_EPOCHS" "$CURRENT_STOP_EPOCH" "$IS_RESUME" "$WANDB_ID_E"
+            run_training "ModelE" "$CONFIG_E" "$MODEL_E" "$i" "$GLOBAL_MAX_EPOCHS" "$CURRENT_STOP_EPOCH" "$IS_RESUME" "$WANDB_ID_E" "$LOAD_INTERVAL_E"
             CKPT_E="$WORK/round_${i}/ModelE/epoch_${CURRENT_STOP_EPOCH}.pth"
         elif [ "$START_MODEL" = "D" ]; then
             CKPT_A="$WORK/round_${i}/ModelA/epoch_${CURRENT_STOP_EPOCH}.pth"
             CKPT_B="$WORK/round_${i}/ModelB/epoch_${CURRENT_STOP_EPOCH}.pth"    
             CKPT_C="$WORK/round_${i}/ModelC/epoch_${CURRENT_STOP_EPOCH}.pth"
-            run_training "ModelD" "$CONFIG_D" "$MODEL_D" "$i" "$GLOBAL_MAX_EPOCHS" "$CURRENT_STOP_EPOCH" "$IS_RESUME" "$WANDB_ID_D"
+            run_training "ModelD" "$CONFIG_D" "$MODEL_D" "$i" "$GLOBAL_MAX_EPOCHS" "$CURRENT_STOP_EPOCH" "$IS_RESUME" "$WANDB_ID_D" "$LOAD_INTERVAL_D"
             CKPT_D="$WORK/round_${i}/ModelD/epoch_${CURRENT_STOP_EPOCH}.pth"
-            run_training "ModelE" "$CONFIG_E" "$MODEL_E" "$i" "$GLOBAL_MAX_EPOCHS" "$CURRENT_STOP_EPOCH" "$IS_RESUME" "$WANDB_ID_E"
+            run_training "ModelE" "$CONFIG_E" "$MODEL_E" "$i" "$GLOBAL_MAX_EPOCHS" "$CURRENT_STOP_EPOCH" "$IS_RESUME" "$WANDB_ID_E" "$LOAD_INTERVAL_E"
             CKPT_E="$WORK/round_${i}/ModelE/epoch_${CURRENT_STOP_EPOCH}.pth"
         elif [ "$START_MODEL" = "E" ]; then
             CKPT_A="$WORK/round_${i}/ModelA/epoch_${CURRENT_STOP_EPOCH}.pth"
             CKPT_B="$WORK/round_${i}/ModelB/epoch_${CURRENT_STOP_EPOCH}.pth"    
             CKPT_C="$WORK/round_${i}/ModelC/epoch_${CURRENT_STOP_EPOCH}.pth"
             CKPT_D="$WORK/round_${i}/ModelD/epoch_${CURRENT_STOP_EPOCH}.pth"
-            run_training "ModelE" "$CONFIG_E" "$MODEL_E" "$i" "$GLOBAL_MAX_EPOCHS" "$CURRENT_STOP_EPOCH" "$IS_RESUME" "$WANDB_ID_E"
+            run_training "ModelE" "$CONFIG_E" "$MODEL_E" "$i" "$GLOBAL_MAX_EPOCHS" "$CURRENT_STOP_EPOCH" "$IS_RESUME" "$WANDB_ID_E" "$LOAD_INTERVAL_E"
             CKPT_E="$WORK/round_${i}/ModelE/epoch_${CURRENT_STOP_EPOCH}.pth"
        elif [ "$START_MODEL" = "merge" ]; then
             # Calculate correct previous round and its stop epoch
@@ -322,19 +329,19 @@ if [ "$START_MODEL" != "A" ]; then
                     "$MERGED_A" "$MERGED_B" "$MERGED_C" "$MERGED_D" "$MERGED_E"
             
             # Now run Round 2 training 
-            run_training "ModelA" "$CONFIG_A" "$MODEL_A" "$i" "$GLOBAL_MAX_EPOCHS" "$CURRENT_STOP_EPOCH" "$IS_RESUME" "$WANDB_ID_A"
+            run_training "ModelA" "$CONFIG_A" "$MODEL_A" "$i" "$GLOBAL_MAX_EPOCHS" "$CURRENT_STOP_EPOCH" "$IS_RESUME" "$WANDB_ID_A" "$LOAD_INTERVAL_A"
             CKPT_A="$WORK/round_${i}/ModelA/epoch_${CURRENT_STOP_EPOCH}.pth"
 
-            run_training "ModelB" "$CONFIG_B" "$MODEL_B" "$i" "$GLOBAL_MAX_EPOCHS" "$CURRENT_STOP_EPOCH" "$IS_RESUME" "$WANDB_ID_B"
+            run_training "ModelB" "$CONFIG_B" "$MODEL_B" "$i" "$GLOBAL_MAX_EPOCHS" "$CURRENT_STOP_EPOCH" "$IS_RESUME" "$WANDB_ID_B" "$LOAD_INTERVAL_B"
             CKPT_B="$WORK/round_${i}/ModelB/epoch_${CURRENT_STOP_EPOCH}.pth"
 
-            run_training "ModelC" "$CONFIG_C" "$MODEL_C" "$i" "$GLOBAL_MAX_EPOCHS" "$CURRENT_STOP_EPOCH" "$IS_RESUME" "$WANDB_ID_C"
+            run_training "ModelC" "$CONFIG_C" "$MODEL_C" "$i" "$GLOBAL_MAX_EPOCHS" "$CURRENT_STOP_EPOCH" "$IS_RESUME" "$WANDB_ID_C" "$LOAD_INTERVAL_C"
             CKPT_C="$WORK/round_${i}/ModelC/epoch_${CURRENT_STOP_EPOCH}.pth"
 
-            run_training "ModelD" "$CONFIG_D" "$MODEL_D" "$i" "$GLOBAL_MAX_EPOCHS" "$CURRENT_STOP_EPOCH" "$IS_RESUME" "$WANDB_ID_D"
+            run_training "ModelD" "$CONFIG_D" "$MODEL_D" "$i" "$GLOBAL_MAX_EPOCHS" "$CURRENT_STOP_EPOCH" "$IS_RESUME" "$WANDB_ID_D" "$LOAD_INTERVAL_D"
             CKPT_D="$WORK/round_${i}/ModelD/epoch_${CURRENT_STOP_EPOCH}.pth"
 
-            run_training "ModelE" "$CONFIG_E" "$MODEL_E" "$i" "$GLOBAL_MAX_EPOCHS" "$CURRENT_STOP_EPOCH" "$IS_RESUME" "$WANDB_ID_E"
+            run_training "ModelE" "$CONFIG_E" "$MODEL_E" "$i" "$GLOBAL_MAX_EPOCHS" "$CURRENT_STOP_EPOCH" "$IS_RESUME" "$WANDB_ID_E" "$LOAD_INTERVAL_E"
             CKPT_E="$WORK/round_${i}/ModelE/epoch_${CURRENT_STOP_EPOCH}.pth"
         else
             echo "Invalid START_MODEL specified: $START_MODEL. Must be one of A, B, C, D, E."
@@ -344,19 +351,19 @@ if [ "$START_MODEL" != "A" ]; then
     else
         # UPDATE: Pass both GLOBAL total and LOCAL stop to the training function
         # Note: I am updating the function call arguments below
-        run_training "ModelA" "$CONFIG_A" "$MODEL_A" "$i" "$GLOBAL_MAX_EPOCHS" "$CURRENT_STOP_EPOCH" "$IS_RESUME" "$WANDB_ID_A"
+        run_training "ModelA" "$CONFIG_A" "$MODEL_A" "$i" "$GLOBAL_MAX_EPOCHS" "$CURRENT_STOP_EPOCH" "$IS_RESUME" "$WANDB_ID_A" "$LOAD_INTERVAL_A"
         CKPT_A="$WORK/round_${i}/ModelA/epoch_${CURRENT_STOP_EPOCH}.pth" # Use specific epoch
 
-        run_training "ModelB" "$CONFIG_B" "$MODEL_B" "$i" "$GLOBAL_MAX_EPOCHS" "$CURRENT_STOP_EPOCH" "$IS_RESUME" "$WANDB_ID_B"
+        run_training "ModelB" "$CONFIG_B" "$MODEL_B" "$i" "$GLOBAL_MAX_EPOCHS" "$CURRENT_STOP_EPOCH" "$IS_RESUME" "$WANDB_ID_B" "$LOAD_INTERVAL_B"
         CKPT_B="$WORK/round_${i}/ModelB/epoch_${CURRENT_STOP_EPOCH}.pth" # Use specific epoch
 
-        run_training "ModelC" "$CONFIG_C" "$MODEL_C" "$i" "$GLOBAL_MAX_EPOCHS" "$CURRENT_STOP_EPOCH" "$IS_RESUME" "$WANDB_ID_C"
+        run_training "ModelC" "$CONFIG_C" "$MODEL_C" "$i" "$GLOBAL_MAX_EPOCHS" "$CURRENT_STOP_EPOCH" "$IS_RESUME" "$WANDB_ID_C" "$LOAD_INTERVAL_C"
         CKPT_C="$WORK/round_${i}/ModelC/epoch_${CURRENT_STOP_EPOCH}.pth" # Use specific epoch
 
-        run_training "ModelD" "$CONFIG_D" "$MODEL_D" "$i" "$GLOBAL_MAX_EPOCHS" "$CURRENT_STOP_EPOCH" "$IS_RESUME" "$WANDB_ID_D"
+        run_training "ModelD" "$CONFIG_D" "$MODEL_D" "$i" "$GLOBAL_MAX_EPOCHS" "$CURRENT_STOP_EPOCH" "$IS_RESUME" "$WANDB_ID_D" "$LOAD_INTERVAL_D"
         CKPT_D="$WORK/round_${i}/ModelD/epoch_${CURRENT_STOP_EPOCH}.pth" # Use specific epoch
 
-        run_training "ModelE" "$CONFIG_E" "$MODEL_E" "$i" "$GLOBAL_MAX_EPOCHS" "$CURRENT_STOP_EPOCH" "$IS_RESUME" "$WANDB_ID_E"
+        run_training "ModelE" "$CONFIG_E" "$MODEL_E" "$i" "$GLOBAL_MAX_EPOCHS" "$CURRENT_STOP_EPOCH" "$IS_RESUME" "$WANDB_ID_E" "$LOAD_INTERVAL_E"
         CKPT_E="$WORK/round_${i}/ModelE/epoch_${CURRENT_STOP_EPOCH}.pth" # Use specific epoch
 
     fi
