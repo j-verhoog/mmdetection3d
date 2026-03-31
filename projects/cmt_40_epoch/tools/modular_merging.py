@@ -87,12 +87,34 @@ def PCGRAD(models, output_paths, norm_weights, client_ids, prev_global_path="/wo
     os.makedirs(os.path.dirname(prev_global_path), exist_ok=True)
     num_clients = len(models)
 
+    # ---------------------------------------------------------
+    # Round 0 check (Initialization fallback)
+    # ---------------------------------------------------------
     if not os.path.exists(prev_global_path):
         print(f"[WARNING] No previous global model found at {prev_global_path}.")
-        print("Initializing FedOMG baseline by running a standard FedAvg for Round 0...")
+        print("Initializing GradSplit baseline by running standard FedAvg for Round 0...")
+        
+        # Run FedAvg to create the initial global consensus
         fedavg(models, [prev_global_path] * num_clients, norm_weights) 
+        
+        # Load the newly created global model to get the averaged weights
+        global_ckpt = torch.load(prev_global_path, map_location='cpu')
+        global_state = global_ckpt['state_dict']
+        
         for in_path, out_path in zip(models, output_paths):
-             os.system(f"cp {prev_global_path} {out_path}")
+            # Load the client's individual checkpoint (preserves their 'step', 'meta', etc.)
+            client_ckpt = torch.load(in_path, map_location='cpu')
+            
+            # Safely overwrite ONLY the model weights with the global consensus
+            for k, v in global_state.items():
+                if k in client_ckpt['state_dict']:
+                    client_ckpt['state_dict'][k] = v.clone()
+            
+            # Save the updated, individualized checkpoint for the client
+            os.makedirs(os.path.dirname(out_path), exist_ok=True)
+            torch.save(client_ckpt, out_path)
+            
+        print("Round 0 initialization complete. Client step counts preserved.")
         return
 
     global_ckpt = torch.load(prev_global_path, map_location='cpu')
