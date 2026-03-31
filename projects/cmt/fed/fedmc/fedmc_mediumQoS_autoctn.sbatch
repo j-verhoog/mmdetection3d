@@ -208,6 +208,15 @@ run_merge () {
     local FISH_C="/workspace/work_dirs/round_${ROUND}/ModelC/fisher_matrix.pth"
     local FISH_D="/workspace/work_dirs/round_${ROUND}/ModelD/fisher_matrix.pth"
     local FISH_E="/workspace/work_dirs/round_${ROUND}/ModelE/fisher_matrix.pth"
+    
+    # --- NEW: Dynamic Method Selection ---
+    local MERGE_METHOD="fedmc"
+    if [ "$ROUND" -le 10 ]; then
+        MERGE_METHOD="fedavg"
+        echo "=== Round $ROUND: Merging Models using FEDAVG ==="
+    else
+        echo "=== Round $ROUND: Merging Models using FEDMC ==="
+    fi
 
     echo "=== Merging Models ==="
     apptainer exec --nv --cleanenv \
@@ -222,9 +231,17 @@ run_merge () {
             --inputs $CKPT_A $CKPT_B $CKPT_C $CKPT_D $CKPT_E \
             --outputs $OUT_A $OUT_B $OUT_C $OUT_D $OUT_E \
             --weight-a $SIZE_A --weight-b $SIZE_B --weight-c $SIZE_C --weight-d $SIZE_D --weight-e $SIZE_E \
-            --method fedmc \
+            --method $MERGE_METHOD \
             --fisher_paths $FISH_A $FISH_B $FISH_C $FISH_D $FISH_E
       "
+    
+    # --- NEW: Save the Round 10 global model as the baseline for Round 11's FedMC ---
+    if [ "$ROUND" -eq 10 ]; then
+        echo "Saving Round 10 FedAvg model as baseline for FedMC..."
+        mkdir -p "$WORK/fedmc_states"
+        # Since FedAvg outputs identical global models for A-E, we can just copy OUT_A
+        cp "$OUT_A" "$WORK/fedmc_states/global_model.pth"
+    fi
 }
 
 # ==========================================
