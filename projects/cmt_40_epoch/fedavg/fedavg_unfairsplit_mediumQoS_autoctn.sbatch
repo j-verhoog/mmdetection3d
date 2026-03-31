@@ -34,7 +34,7 @@ START_ROUND=1
 START_MODEL='A'
 
 # Paths
-NETWORK_DATA_ROOT="/tudelft.net/staff-umbrella/MscThesisjverhoog/nuscenes_shadow_root"
+NETWORK_DATA_ROOT="/tudelft.net/staff-umbrella/MscThesisjverhoog/datasets/nuscenes_cmt_full"
 
 CONFIG_A=$NETWORK_DATA_ROOT
 CONFIG_B=$NETWORK_DATA_ROOT
