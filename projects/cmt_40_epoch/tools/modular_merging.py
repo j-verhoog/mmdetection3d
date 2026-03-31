@@ -4,6 +4,7 @@ import os
 import string
 import math
 import importlib.util
+import random
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Merge N models via FedAvg/FedBN and preserve state')
@@ -14,7 +15,8 @@ def parse_args():
     # Optional method flag. Defaults to fedavg to preserve original behavior.
     parser.add_argument('--method', type=str, default='fedavg', 
                     choices=['fedavg', 'fedbn', 'fednorm', 'fedper', 'fed_bn_and_per', 'fedmedian', 'feddyn', 
-                             'fed_dyn_bn_and_per', 'fedselect', 'fedselect_elastic', 'fedselect_fullelastic','fedselect_cka'],
+                             'fed_dyn_bn_and_per', 'fedselect', 'fedselect_elastic', 'fedselect_fullelastic',
+                             'fedselect_cka', 'pcgrad'],
                     help='Aggregation method. Default is fedavg.')
     parser.add_argument('--config', type=str, default=None, 
                         help='Path to the MMDet3D config file (e.g., improved_lightweight_cmt_iterated.py). Required for FedBN.')
@@ -43,6 +45,174 @@ def parse_args():
     args = parser.parse_args()
     return args
 
+def flatten_tensors(state_dict, valid_keys):
+    """Flattens specified keys of a state_dict into a single 1D PyTorch tensor."""
+    return torch.cat([state_dict[k].flatten() for k in valid_keys])
+
+def unflatten_tensors(flat_tensor, reference_dict, valid_keys):
+    """Restores a 1D tensor back into a state_dict dictionary structure."""
+    unflattened = {}
+    idx = 0
+    for k in valid_keys:
+        numel = reference_dict[k].numel()
+        shape = reference_dict[k].shape
+        unflattened[k] = flat_tensor[idx:idx+numel].view(shape).clone()
+        idx += numel
+    return unflattened
+
+
+def PCGRAD(models, output_paths, norm_weights, client_ids, prev_global_path="/workspace/work_dirs/pcgrad_states/global_model.pth"):
+    """
+    PCGRAD - With Configurable Exclusions. NOT WOKRING CORRECLT. NOW IS PCGRADIENT PROJECTION WITHOUT THE MOMENTUM OPTIMIZATION.
+    """
+    # =====================================================================
+    # [CONFIGURATION] EXCLUSION SETTINGS
+    # =====================================================================
+    # By default, we exclude BatchNorm running stats from gradient matching.
+    # You can add any layer prefix or string here to exclude it from FedOMG.
+    # Any parameter whose name contains any of these strings will bypass the 
+    # projection math and simply be aggregated via standard FedAvg.
+    #
+    # Example to exclude the detection head and LayerNorms:
+    # EXCLUDE_PREFIXES = ['running_mean', 'running_var', 'num_batches_tracked', 'bbox_head', 'LayerNorm']
+    # =====================================================================
+    
+    EXCLUDE_PREFIXES = ['bn','running_mean', 'running_var', 'num_batches_tracked', 'pts_bbox_head.task_heads']
+    KEEP_PRIVATE = True     # keeps the excluded prefixes strictly local and does not merge them into the client models
+
+    print("\n" + "="*50)
+    print("Running PCGRAD (On-Server Matching Gradient) Aggregation...")
+    print("="*50)
+    
+    os.makedirs(os.path.dirname(prev_global_path), exist_ok=True)
+    num_clients = len(models)
+
+    if not os.path.exists(prev_global_path):
+        print(f"[WARNING] No previous global model found at {prev_global_path}.")
+        print("Initializing FedOMG baseline by running a standard FedAvg for Round 0...")
+        fedavg(models, [prev_global_path] * num_clients, norm_weights) 
+        for in_path, out_path in zip(models, output_paths):
+             os.system(f"cp {prev_global_path} {out_path}")
+        return
+
+    global_ckpt = torch.load(prev_global_path, map_location='cpu')
+    global_state = global_ckpt['state_dict']
+    
+    # Strictly separate FedOMG keys from standard FedAvg keys based on your config
+    fedomg_keys = []
+    fedavg_keys = []
+    
+    for k, v in global_state.items():
+        if v.is_floating_point():
+            if any(excl in k for excl in EXCLUDE_PREFIXES):
+                fedavg_keys.append(k)
+            else:
+                fedomg_keys.append(k)
+
+    total_params = sum(global_state[k].numel() for k in fedomg_keys)
+    print(f"PCGRAD: Conflict tracking on {len(fedomg_keys)} layers ({total_params:,} true weights).")
+    if not KEEP_PRIVATE:
+        print(f"PCGRAD: Standard averaging on {len(fedavg_keys)} excluded layers/trackers.")
+    else:
+        print(f"PCGRAD: Not including {len(fedavg_keys)} private layers.")
+
+    # 1. Compute Pseudo-Gradients AND Accumulate FedAvg layers
+    print("\n--- Phase 1: Computing Pseudo-Gradients ---")
+    flat_global = flatten_tensors(global_state, fedomg_keys)
+    
+    client_pseudo_grads = []
+    fedavg_accumulators = {k: torch.zeros_like(global_state[k]) for k in fedavg_keys}
+    
+    for i, (m_path, cid, w_i) in enumerate(zip(models, client_ids, norm_weights)):
+        ckpt_i = torch.load(m_path, map_location='cpu')
+        state_i = ckpt_i['state_dict']
+        
+        # Extract PCGRAD gradient
+        flat_client = flatten_tensors(state_i, fedomg_keys)
+        pseudo_grad = flat_global - flat_client
+        client_pseudo_grads.append(pseudo_grad)
+        
+        grad_norm = torch.norm(pseudo_grad).item()
+        print(f"  [{cid}] Extracted true weight gradient. L2 Norm: {grad_norm:.4f}")
+        
+        # Accumulate FedAvg layers
+        for k in fedavg_keys:
+            if k in state_i:
+                fedavg_accumulators[k] += state_i[k] * w_i
+                
+        del ckpt_i, flat_client
+
+    # 2. Conflict Resolution via Gradient Projection
+    print("\n--- Phase 2: Resolving Domain Conflicts (Gradient Matching) ---")
+    total_conflicts_resolved = 0
+    
+    for i in range(num_clients):
+        check_order = list(range(num_clients))
+        random.shuffle(check_order)
+        
+        for j in check_order:
+            if i == j: 
+                continue
+            
+            dot_product = torch.dot(client_pseudo_grads[i], client_pseudo_grads[j]).item()
+            cos_sim = dot_product / (torch.norm(client_pseudo_grads[i]).item() * torch.norm(client_pseudo_grads[j]).item() + 1e-8)
+            print(f"  [EVAL] {client_ids[i]} vs {client_ids[j]} -> Cosine Sim: {cos_sim:.4f}")
+            
+            if dot_product < 0:
+                total_conflicts_resolved += 1
+                norm_sq_j = torch.dot(client_pseudo_grads[j], client_pseudo_grads[j]).item() + 1e-8
+                
+                print(f"      [!] CONFLICT DETECTED. Projecting {client_ids[i]} away from {client_ids[j]}.")
+                
+                projection_scalar = dot_product / norm_sq_j
+                client_pseudo_grads[i] = client_pseudo_grads[i] - (projection_scalar * client_pseudo_grads[j])
+
+    print(f"\nPCGRAD Phase 2 Complete. Total pairwise conflicts resolved: {total_conflicts_resolved}")
+
+    # 3. Aggregate Aligned Gradients
+    print("\n--- Phase 3: Aggregating Aligned Gradients ---")
+    aggregated_grad = torch.zeros_like(flat_global)
+    for i, w_i in enumerate(norm_weights):
+        aggregated_grad += client_pseudo_grads[i] * w_i
+        
+    final_grad_norm = torch.norm(aggregated_grad).item()
+    print(f"  Aggregated Global Gradient L2 Norm: {final_grad_norm:.4f}")
+
+    # 4. Update Global Model 
+    new_flat_global = flat_global - aggregated_grad
+    new_global_weights = unflatten_tensors(new_flat_global, global_state, fedomg_keys)
+    
+    # Merge both PCGRAD weights and FedAvg excluded weights back in
+    for k in fedomg_keys:
+        global_ckpt['state_dict'][k] = new_global_weights[k]
+    for k in fedavg_keys:
+        global_ckpt['state_dict'][k] = fedavg_accumulators[k]
+        
+    print(f"  Saving new conflict-free global model to {prev_global_path}")
+    torch.save(global_ckpt, prev_global_path)
+
+    # 5. Distribute
+    print("\n--- Phase 4: Distributing Global Model ---")
+    for in_path, out_path, cid in zip(models, output_paths, client_ids):
+        ckpt = torch.load(in_path, map_location='cpu')
+        
+        for k in global_ckpt['state_dict'].keys():
+            if not k in fedavg_keys:                # Only overwrite FedOMG keys, keep FedAvg keys local
+                if k in ckpt['state_dict']:
+                    ckpt['state_dict'][k] = global_ckpt['state_dict'][k].clone()
+                
+        if 'optimizer' in ckpt and 'state' in ckpt['optimizer']:
+            for param_id in ckpt['optimizer']['state']:
+                for key in ckpt['optimizer']['state'][param_id]:
+                    if torch.is_tensor(ckpt['optimizer']['state'][param_id][key]):
+                        ckpt['optimizer']['state'][param_id][key].zero_()
+                        
+        os.makedirs(os.path.dirname(out_path), exist_ok=True)
+        torch.save(ckpt, out_path)
+        print(f"  Saved PCGRAD synchronized model for {cid} to {out_path}")
+        
+    print("="*50)
+    print("PCGRAD Aggregation Complete.\n")
 
 def fedavg(models, output_paths, norm_weights):
     """
@@ -1711,6 +1881,14 @@ def main():
             modality=args.modality,
             cka_samples=args.cka_samples
         )
-
+    elif args.method == 'pcgrad':
+            client_ids = [f"Model{string.ascii_uppercase[i]}" for i in range(len(model_paths))]
+            PCGRAD(
+                models=model_paths, 
+                output_paths=output_paths, 
+                norm_weights=norm_weights, 
+                client_ids=client_ids,
+                prev_global_path="/workspace/work_dirs/pcgrad_states/global_model.pth"
+            ) 
 if __name__ == '__main__':
     main()
