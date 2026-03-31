@@ -3,6 +3,8 @@ from html import parser
 import torch
 import os
 import string
+import random
+
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Merge N models via FedAvg/FedBN and preserve state')
@@ -14,7 +16,7 @@ def parse_args():
     parser.add_argument('--method', type=str, default='fedavg', 
                     choices=['fedavg', 'fedbn', 'fednorm', 'fedper', 'fed_bn_and_per', 'fedmedian', 'feddyn', 
                              'fed_dyn_bn_and_per', 'fedselect', 'fedselect_elastic', 'fedselect_fullelastic', 
-                             'fedomg', 'fedomg_better', 'fedmc', 'fedomg_better_better'],
+                             'fedomg', 'fedomg_better', 'fedmc', 'fedomg_better_better', 'gradsplit'],
                     help='Aggregation method. Default is fedavg.')
     parser.add_argument('--config', type=str, default=None, 
                         help='Path to the MMDet3D config file (e.g., improved_lightweight_cmt_iterated.py). Required for FedBN.')
@@ -28,6 +30,10 @@ def parse_args():
         type=float,
         default=0.4,
         help='FedSelect-only: max personalized parameter fraction (default: 0.4).')
+    parser.add_argument('--personalization-factor', type=float, default=1.0, 
+                        help='GradSplit-only: Scaling factor for client-specific residuals added back to the global model (default: 1.0).')
+    parser.add_argument('--decay', type=float, default=1.0,
+                        help='GradSplit-only: Decay factor for historical memory in the client update (default: 1.0, no decay).')
 
     parser.add_argument('--fisher_paths', nargs='+', type=str, default=None, 
                     help='Paths to the saved Fisher Information tensors (Required ONLY for FedMC)')
@@ -38,10 +44,7 @@ def parse_args():
     args = parser.parse_args()
     return args
 
-import random # Add this to your imports at the top if not already there
-import random
 
-import random
 
 def flatten_tensors(state_dict, valid_keys):
     """Flattens specified keys of a state_dict into a single 1D PyTorch tensor."""
@@ -58,7 +61,246 @@ def unflatten_tensors(flat_tensor, reference_dict, valid_keys):
         idx += numel
     return unflattened
 
-def fedomg(models, output_paths, norm_weights, client_ids, prev_global_path="/workspace/work_dirs/fedomg_states/global_model.pth"):
+def gradsplit(models, output_paths, norm_weights, client_ids, 
+              prev_global_path="/workspace/work_dirs/gradsplit_states/global_model.pth", 
+              personalization_factor=1.0,
+              decay=1.0, eps=1e-12):
+    """
+    GRADSPLIT - Multi-Task / Federated Learning via Gradient Splitting.
+    Calculates a shared global consensus direction and splits client updates 
+    into a global projection and a private residual (memory).
+    """
+    # =====================================================================
+    # [CONFIGURATION] EXCLUSION SETTINGS
+    # =====================================================================
+    EXCLUDE_PREFIXES = ['bn', 'running_mean', 'running_var', 'num_batches_tracked', 'pts_bbox_head.task_heads']
+    KEEP_PRIVATE = True     # keeps excluded prefixes strictly local
+    # =====================================================================
+
+    print("\n" + "="*60)
+    print(f"Running GradSplit (Personalization Factor: {personalization_factor:.2f})...")
+    print("="*60)
+    
+    global_dir = os.path.dirname(prev_global_path)
+    memory_dir = os.path.join(global_dir, "client_memories")
+    os.makedirs(global_dir, exist_ok=True)
+    os.makedirs(memory_dir, exist_ok=True)
+    num_clients = len(models)
+
+    # ---------------------------------------------------------
+    # Round 0 check (Initialization fallback)
+    # ---------------------------------------------------------
+    if not os.path.exists(prev_global_path):
+        print(f"[WARNING] No previous global model found at {prev_global_path}.")
+        print("Initializing GradSplit baseline by running standard FedAvg for Round 0...")
+        
+        # Run FedAvg to create the initial global consensus
+        fedavg(models, [prev_global_path] * num_clients, norm_weights) 
+        
+        # Load the newly created global model to get the averaged weights
+        global_ckpt = torch.load(prev_global_path, map_location='cpu')
+        global_state = global_ckpt['state_dict']
+        
+        for in_path, out_path in zip(models, output_paths):
+            # Load the client's individual checkpoint (preserves their 'step', 'meta', etc.)
+            client_ckpt = torch.load(in_path, map_location='cpu')
+            
+            # Safely overwrite ONLY the model weights with the global consensus
+            for k, v in global_state.items():
+                if k in client_ckpt['state_dict']:
+                    client_ckpt['state_dict'][k] = v.clone()
+            
+            # Save the updated, individualized checkpoint for the client
+            os.makedirs(os.path.dirname(out_path), exist_ok=True)
+            torch.save(client_ckpt, out_path)
+            
+        print("Round 0 initialization complete. Client step counts preserved.")
+        return
+
+    # ---------------------------------------------------------
+    # Parse Global Model & Tracked Keys
+    # ---------------------------------------------------------
+    global_ckpt = torch.load(prev_global_path, map_location='cpu')
+    global_state = global_ckpt['state_dict']
+    
+    gradsplit_keys = []
+    fedavg_keys = []
+    
+    for k, v in global_state.items():
+        if v.is_floating_point():
+            if any(excl in k for excl in EXCLUDE_PREFIXES):
+                fedavg_keys.append(k)
+            else:
+                gradsplit_keys.append(k)
+
+    total_params = sum(global_state[k].numel() for k in gradsplit_keys)
+    print(f"GradSplit: Vector tracking on {len(gradsplit_keys)} layers ({total_params:,} true weights).")
+    if not KEEP_PRIVATE:
+        print(f"FedAvg: Standard averaging on {len(fedavg_keys)} excluded layers/trackers.")
+    else:
+        print(f"Keeping {len(fedavg_keys)} excluded layers strictly private.")
+
+    # ---------------------------------------------------------
+    # Phase 1: Extract Client Updates & Load Memories
+    # ---------------------------------------------------------
+    print("\n--- Phase 1: Extracting Local Updates & Memories ---")
+    flat_global = flatten_tensors(global_state, gradsplit_keys)
+    
+    client_updates = []
+    client_memories = []
+    fedavg_accumulators = {k: torch.zeros_like(global_state[k]) for k in fedavg_keys}
+    
+    for i, (m_path, cid, w_i) in enumerate(zip(models, client_ids, norm_weights)):
+        # Load client training result
+        ckpt_i = torch.load(m_path, map_location='cpu')
+        state_i = ckpt_i['state_dict']
+        flat_client = flatten_tensors(state_i, gradsplit_keys)
+        
+        # Load or initialize client memory dictionary
+        mem_path = os.path.join(memory_dir, f"{cid}_memory.pt")
+        if os.path.exists(mem_path):
+            mem_data = torch.load(mem_path, map_location='cpu')
+            
+            # Backward compatibility in case you have old raw tensor files
+            if isinstance(mem_data, dict) and 'memory' in mem_data:
+                mem_i = mem_data['memory']
+                applied_factor = mem_data.get('factor', 1.0)
+            else:
+                mem_i = mem_data
+                applied_factor = 1.0
+        else:
+            print(f"  [INIT] No memory found for {cid}. Initializing zero vector.")
+            mem_i = torch.zeros_like(flat_global)
+            applied_factor = 0.0
+            
+        client_memories.append(mem_i)
+        
+        # EXACT base model client started from = global + (Historical Factor * memory)
+        base_i = flat_global + (applied_factor * mem_i)
+        
+        # True update is difference between trained result and starting base
+        update_i = flat_client - base_i
+        client_updates.append(update_i)
+        
+        grad_norm = torch.norm(update_i).item()
+        print(f"  [{cid}] Extracted weight update. L2 Norm: {grad_norm:.4f} (Base Factor: {applied_factor:.2f})")
+        
+        # Handle excluded layers
+        for k in fedavg_keys:
+            if k in state_i:
+                fedavg_accumulators[k] += state_i[k] * w_i
+                
+        del ckpt_i, flat_client, base_i
+
+    # ---------------------------------------------------------
+    # Phase 2: Calculate Global Consensus Direction
+    # ---------------------------------------------------------
+    print("\n--- Phase 2: Calculating Global Consensus Direction ---")
+    dir_candidate = torch.zeros_like(flat_global)
+    for update_i, w_i in zip(client_updates, norm_weights):
+        dir_candidate += update_i * w_i
+        
+    cand_norm = torch.norm(dir_candidate)
+    if cand_norm < eps:
+        print("  [WARNING] Consensus magnitude near zero. Model may have converged.")
+        shared_dir = torch.zeros_like(dir_candidate)
+    else:
+        shared_dir = dir_candidate / cand_norm
+    
+    print(f"  Consensus Vector calculated. L2 Norm: {cand_norm:.4f}")
+
+    # ---------------------------------------------------------
+    # Phase 3: Split Updates (Projection & Residual)
+    # ---------------------------------------------------------
+    print("\n--- Phase 3: Splitting Updates into Shared & Private ---")
+    proj_updates = []
+    residual_updates = []
+    
+    for i, cid in enumerate(client_ids):
+        dot_product = torch.dot(client_updates[i], shared_dir).item()
+        
+        # 1. Projection (The part that helps the global model)
+        proj_i = dot_product * shared_dir
+        
+        # 2. Residual (The part that conflicts or is domain-specific)
+        resid_i = client_updates[i] - proj_i
+        
+        proj_updates.append(proj_i)
+        residual_updates.append(resid_i)
+        
+        align_score = dot_product / (torch.norm(client_updates[i]).item() + eps)
+        print(f"  [{cid}] Alignment: {align_score:.4f} | Residual Norm: {torch.norm(resid_i).item():.4f}")
+
+    # ---------------------------------------------------------
+    # Phase 4: Aggregate Global & Update Memories
+    # ---------------------------------------------------------
+    print("\n--- Phase 4: Updating Shared Weights & Private Memories ---")
+    
+    # 1. Update Global Model: Sum weighted projections
+    aggregated_proj = torch.zeros_like(flat_global)
+    for proj_i, w_i in zip(proj_updates, norm_weights):
+        aggregated_proj += proj_i * w_i
+        
+    new_flat_global = flat_global + aggregated_proj
+    new_global_weights = unflatten_tensors(new_flat_global, global_state, gradsplit_keys)
+    
+    # Apply to global checkpoint
+    for k in gradsplit_keys:
+        global_ckpt['state_dict'][k] = new_global_weights[k]
+    if not KEEP_PRIVATE:
+        for k in fedavg_keys:
+            global_ckpt['state_dict'][k] = fedavg_accumulators[k]
+            
+    print(f"  Saving new GradSplit global model to {prev_global_path}")
+    torch.save(global_ckpt, prev_global_path)
+
+    # ---------------------------------------------------------
+    # Phase 5: Distribute Individualized Client Models
+    # ---------------------------------------------------------
+    print("\n--- Phase 5: Distributing Individualized Client Models ---")
+    
+    for i, (in_path, out_path, cid) in enumerate(zip(models, output_paths, client_ids)):
+        # Calculate new private memory
+        new_memory_i = (client_memories[i] * decay) + residual_updates[i]
+        
+        # Save memory AND the exact factor to disk for the NEXT round
+        mem_data = {
+            'memory': new_memory_i,
+            'factor': personalization_factor
+        }
+        mem_path = os.path.join(memory_dir, f"{cid}_memory.pt")
+        torch.save(mem_data, mem_path)
+        
+        # Reconstruct this specific client's model (New Global + SCALED Private Memory)
+        new_flat_client = new_flat_global + (personalization_factor * new_memory_i)
+        new_client_weights = unflatten_tensors(new_flat_client, global_state, gradsplit_keys)
+        
+        # Load the base client checkpoint to preserve exact structure & untracked keys
+        ckpt = torch.load(in_path, map_location='cpu')
+        
+        for k in global_ckpt['state_dict'].keys():
+            if k in gradsplit_keys:
+                ckpt['state_dict'][k] = new_client_weights[k].clone()
+            elif not KEEP_PRIVATE: 
+                # If we aren't keeping excluded keys private, sync them from global
+                if k in ckpt['state_dict']:
+                    ckpt['state_dict'][k] = global_ckpt['state_dict'][k].clone()
+                
+        # Reset optimizer states if present to avoid momentum pulling towards old paths
+        if 'optimizer' in ckpt and 'state' in ckpt['optimizer']:
+            for param_id in ckpt['optimizer']['state']:
+                for key in ckpt['optimizer']['state'][param_id]:
+                    if torch.is_tensor(ckpt['optimizer']['state'][param_id][key]):
+                        ckpt['optimizer']['state'][param_id][key].zero_()
+                        
+        os.makedirs(os.path.dirname(out_path), exist_ok=True)
+        torch.save(ckpt, out_path)
+        print(f"  Saved specialized model for {cid} to {out_path}")
+        
+    print("="*60)
+    print("GradSplit Aggregation Complete.\n")
+
+def PCGRAD(models, output_paths, norm_weights, client_ids, prev_global_path="/workspace/work_dirs/PCGRAD_states/global_model.pth"):
     """
     PCGRAD - With Configurable Exclusions. NOT WOKRING CORRECLT. NOW IS PCGRADIENT PROJECTION WITHOUT THE MOMENTUM OPTIMIZATION. STILL BETTER THAN FEDAVG BUT NOT AS GOOD AS THE FULL OMG.
     """
@@ -78,7 +320,7 @@ def fedomg(models, output_paths, norm_weights, client_ids, prev_global_path="/wo
     KEEP_PRIVATE = True     # keeps the excluded prefixes strictly local and does not merge them into the client models
 
     print("\n" + "="*50)
-    print("Running FedOMG (On-Server Matching Gradient) Aggregation...")
+    print("Running PCGRAD (On-Server Matching Gradient) Aggregation...")
     print("="*50)
     
     os.makedirs(os.path.dirname(prev_global_path), exist_ok=True)
@@ -107,11 +349,11 @@ def fedomg(models, output_paths, norm_weights, client_ids, prev_global_path="/wo
                 fedomg_keys.append(k)
 
     total_params = sum(global_state[k].numel() for k in fedomg_keys)
-    print(f"FedOMG: Conflict tracking on {len(fedomg_keys)} layers ({total_params:,} true weights).")
+    print(f"PCGRAD: Conflict tracking on {len(fedomg_keys)} layers ({total_params:,} true weights).")
     if not KEEP_PRIVATE:
-        print(f"FedAvg: Standard averaging on {len(fedavg_keys)} excluded layers/trackers.")
+        print(f"PCGRAD: Standard averaging on {len(fedavg_keys)} excluded layers/trackers.")
     else:
-        print(f"Not including {len(fedavg_keys)} private layers.")
+        print(f"PCGRAD: Not including {len(fedavg_keys)} private layers.")
 
     # 1. Compute Pseudo-Gradients AND Accumulate FedAvg layers
     print("\n--- Phase 1: Computing Pseudo-Gradients ---")
@@ -124,7 +366,7 @@ def fedomg(models, output_paths, norm_weights, client_ids, prev_global_path="/wo
         ckpt_i = torch.load(m_path, map_location='cpu')
         state_i = ckpt_i['state_dict']
         
-        # Extract FedOMG gradient
+        # Extract PCGRAD gradient
         flat_client = flatten_tensors(state_i, fedomg_keys)
         pseudo_grad = flat_global - flat_client
         client_pseudo_grads.append(pseudo_grad)
@@ -164,7 +406,7 @@ def fedomg(models, output_paths, norm_weights, client_ids, prev_global_path="/wo
                 projection_scalar = dot_product / norm_sq_j
                 client_pseudo_grads[i] = client_pseudo_grads[i] - (projection_scalar * client_pseudo_grads[j])
 
-    print(f"\nFedOMG Phase 2 Complete. Total pairwise conflicts resolved: {total_conflicts_resolved}")
+    print(f"\nPCGRAD Phase 2 Complete. Total pairwise conflicts resolved: {total_conflicts_resolved}")
 
     # 3. Aggregate Aligned Gradients
     print("\n--- Phase 3: Aggregating Aligned Gradients ---")
@@ -179,7 +421,7 @@ def fedomg(models, output_paths, norm_weights, client_ids, prev_global_path="/wo
     new_flat_global = flat_global - aggregated_grad
     new_global_weights = unflatten_tensors(new_flat_global, global_state, fedomg_keys)
     
-    # Merge both FedOMG weights and FedAvg excluded weights back in
+    # Merge both PCGRAD weights and FedAvg excluded weights back in
     for k in fedomg_keys:
         global_ckpt['state_dict'][k] = new_global_weights[k]
     for k in fedavg_keys:
@@ -206,10 +448,10 @@ def fedomg(models, output_paths, norm_weights, client_ids, prev_global_path="/wo
                         
         os.makedirs(os.path.dirname(out_path), exist_ok=True)
         torch.save(ckpt, out_path)
-        print(f"  Saved FedOMG synchronized model for {cid} to {out_path}")
+        print(f"  Saved PCGRAD synchronized model for {cid} to {out_path}")
         
     print("="*50)
-    print("FedOMG Aggregation Complete.\n")
+    print("PCGRAD Aggregation Complete.\n")
 
 def fedomg_better(models, output_paths, norm_weights, client_ids, prev_global_path="/workspace/work_dirs/fedomg_states/global_model.pth"):
     EPS = 1e-12
@@ -835,236 +1077,238 @@ def fedomg_better_better(models, output_paths, norm_weights, client_ids, prev_gl
     print("=" * 50)
     print("FedOMG Aggregation Complete.\n")
 
-# legacy version, used for round 2&3, but only used ModelD then for the update due to SGD LR overfitting issues. Still better than FedAvg but not as good as the full OMG with the momentum optimization and proper projection math.
-# def fedomg_better(models, output_paths, norm_weights, client_ids, prev_global_path="/workspace/work_dirs/fedomg_states/global_model.pth"):
-#     EPS = 1e-12
+def legacy():
+    # legacy version, used for round 2&3, but only used ModelD then for the update due to SGD LR overfitting issues. Still better than FedAvg but not as good as the full OMG with the momentum optimization and proper projection math.
+    # def fedomg_better(models, output_paths, norm_weights, client_ids, prev_global_path="/workspace/work_dirs/fedomg_states/global_model.pth"):
+    #     EPS = 1e-12
 
-#     KAPPA = 0.5
-#     ETA_G = 1.0
-#     OMG_INNER_ITERS = 21
-#     OMG_LR = 25.0
-#     OMG_MOMENTUM = 0.5
+    #     KAPPA = 0.5
+    #     ETA_G = 1.0
+    #     OMG_INNER_ITERS = 21
+    #     OMG_LR = 25.0
+    #     OMG_MOMENTUM = 0.5
 
-#     USE_EXCLUSION = True
-#     EXCLUDE_PREFIXES = ['bn', 'running_mean', 'running_var', 'num_batches_tracked', 'pts_bbox_head.task_heads']
-#     KEEP_PRIVATE = True
+    #     USE_EXCLUSION = True
+    #     EXCLUDE_PREFIXES = ['bn', 'running_mean', 'running_var', 'num_batches_tracked', 'pts_bbox_head.task_heads']
+    #     KEEP_PRIVATE = True
 
-#     print("\n" + "=" * 50)
-#     print("Running FedOMG (On-Server Matching Gradient) Aggregation...")
-#     print("=" * 50)
+    #     print("\n" + "=" * 50)
+    #     print("Running FedOMG (On-Server Matching Gradient) Aggregation...")
+    #     print("=" * 50)
 
-#     os.makedirs(os.path.dirname(prev_global_path), exist_ok=True)
-#     num_clients = len(models)
+    #     os.makedirs(os.path.dirname(prev_global_path), exist_ok=True)
+    #     num_clients = len(models)
 
-#     if not os.path.exists(prev_global_path):
-#         print(f"[WARNING] No previous global model found at {prev_global_path}.")
-#         print("Initializing FedOMG baseline by running a standard FedAvg for Round 0...")
-#         # Assuming you have a standard fedavg() function in scope
-#         fedavg(models, [prev_global_path] * num_clients, norm_weights)
-#         for in_path, out_path in zip(models, output_paths):
-#             os.system(f"cp {prev_global_path} {out_path}")
-#         return
+    #     if not os.path.exists(prev_global_path):
+    #         print(f"[WARNING] No previous global model found at {prev_global_path}.")
+    #         print("Initializing FedOMG baseline by running a standard FedAvg for Round 0...")
+    #         # Assuming you have a standard fedavg() function in scope
+    #         fedavg(models, [prev_global_path] * num_clients, norm_weights)
+    #         for in_path, out_path in zip(models, output_paths):
+    #             os.system(f"cp {prev_global_path} {out_path}")
+    #         return
 
-#     global_ckpt = torch.load(prev_global_path, map_location="cpu")
-#     global_state = global_ckpt["state_dict"]
+    #     global_ckpt = torch.load(prev_global_path, map_location="cpu")
+    #     global_state = global_ckpt["state_dict"]
 
-#     fedomg_keys = []
-#     excluded_keys = []
+    #     fedomg_keys = []
+    #     excluded_keys = []
 
-#     for k, v in global_state.items():
-#         if torch.is_tensor(v) and v.is_floating_point():
-#             if USE_EXCLUSION and any(excl in k for excl in EXCLUDE_PREFIXES):
-#                 excluded_keys.append(k)
-#             else:
-#                 fedomg_keys.append(k)
+    #     for k, v in global_state.items():
+    #         if torch.is_tensor(v) and v.is_floating_point():
+    #             if USE_EXCLUSION and any(excl in k for excl in EXCLUDE_PREFIXES):
+    #                 excluded_keys.append(k)
+    #             else:
+    #                 fedomg_keys.append(k)
 
-#     total_params = sum(global_state[k].numel() for k in fedomg_keys)
-#     print(f"FedOMG: Tracking {len(fedomg_keys)} floating-point layers ({total_params:,} true weights).")
+    #     total_params = sum(global_state[k].numel() for k in fedomg_keys)
+    #     print(f"FedOMG: Tracking {len(fedomg_keys)} floating-point layers ({total_params:,} true weights).")
 
-#     if USE_EXCLUSION:
-#         if KEEP_PRIVATE:
-#             print(f"Not including {len(excluded_keys)} excluded/private layers.")
-#         else:
-#             print(f"FedAvg: Standard averaging on {len(excluded_keys)} excluded layers/trackers.")
+    #     if USE_EXCLUSION:
+    #         if KEEP_PRIVATE:
+    #             print(f"Not including {len(excluded_keys)} excluded/private layers.")
+    #         else:
+    #             print(f"FedAvg: Standard averaging on {len(excluded_keys)} excluded layers/trackers.")
 
-#     print("\n--- Phase 1: Computing Local Gradients ---")
-#     flat_global = flatten_tensors(global_state, fedomg_keys)
+    #     print("\n--- Phase 1: Computing Local Gradients ---")
+    #     flat_global = flatten_tensors(global_state, fedomg_keys)
 
-#     client_grads = []
-#     client_states = []
-#     excluded_accumulators = {k: torch.zeros_like(global_state[k]) for k in excluded_keys} if (USE_EXCLUSION and not KEEP_PRIVATE) else None
+    #     client_grads = []
+    #     client_states = []
+    #     excluded_accumulators = {k: torch.zeros_like(global_state[k]) for k in excluded_keys} if (USE_EXCLUSION and not KEEP_PRIVATE) else None
 
-#     for m_path, cid, w_i in zip(models, client_ids, norm_weights):
-#         ckpt_i = torch.load(m_path, map_location="cpu")
-#         state_i = ckpt_i["state_dict"]
-#         client_states.append(ckpt_i)
+    #     for m_path, cid, w_i in zip(models, client_ids, norm_weights):
+    #         ckpt_i = torch.load(m_path, map_location="cpu")
+    #         state_i = ckpt_i["state_dict"]
+    #         client_states.append(ckpt_i)
 
-#         # local_grad defined as Delta (New - Old) -> Equivalent to -1 * standard gradient
-#         flat_client = flatten_tensors(state_i, fedomg_keys)
-#         local_grad = flat_client - flat_global
-#         client_grads.append(local_grad)
+    #         # local_grad defined as Delta (New - Old) -> Equivalent to -1 * standard gradient
+    #         flat_client = flatten_tensors(state_i, fedomg_keys)
+    #         local_grad = flat_client - flat_global
+    #         client_grads.append(local_grad)
 
-#         grad_norm = torch.norm(local_grad).item()
-#         print(f"  [{cid}] Extracted true local gradient. L2 Norm: {grad_norm:.4f}")
+    #         grad_norm = torch.norm(local_grad).item()
+    #         print(f"  [{cid}] Extracted true local gradient. L2 Norm: {grad_norm:.4f}")
 
-#         if USE_EXCLUSION and not KEEP_PRIVATE:
-#             for k in excluded_keys:
-#                 if k in state_i:
-#                     excluded_accumulators[k] += state_i[k] * w_i
+    #         if USE_EXCLUSION and not KEEP_PRIVATE:
+    #             for k in excluded_keys:
+    #                 if k in state_i:
+    #                     excluded_accumulators[k] += state_i[k] * w_i
 
-#         del flat_client
+    #         del flat_client
 
-#     G = torch.stack(client_grads, dim=0)
+    #     G = torch.stack(client_grads, dim=0)
 
-#     print("\n--- Phase 2: Solving FedOMG On-Server Objective ---")
+    #     print("\n--- Phase 2: Solving FedOMG On-Server Objective ---")
 
-#     weight_tensor = torch.tensor(norm_weights, dtype=flat_global.dtype, device=flat_global.device)
-#     weight_tensor = weight_tensor / (weight_tensor.sum() + EPS)
+    #     weight_tensor = torch.tensor(norm_weights, dtype=flat_global.dtype, device=flat_global.device)
+    #     weight_tensor = weight_tensor / (weight_tensor.sum() + EPS)
 
-#     g_fl = (weight_tensor[:, None] * G).sum(dim=0)
+    #     g_fl = (weight_tensor[:, None] * G).sum(dim=0)
 
-#     g_fl_norm = torch.norm(g_fl)
-#     print(f"  Reference FedAvg Gradient L2 Norm: {g_fl_norm.item():.4f}")
+    #     g_fl_norm = torch.norm(g_fl)
+    #     print(f"  Reference FedAvg Gradient L2 Norm: {g_fl_norm.item():.4f}")
 
-#     if g_fl_norm.item() < EPS:
-#         print("  [WARNING] FedAvg reference gradient is near zero. Falling back to g_FL only.")
-#         g_igd = g_fl.clone()
-#         gamma_star = weight_tensor.clone()
-#         combo = g_fl.clone()
-#     else:
-#         # Properly track logits with PyTorch Autograd
-#         logits = torch.log(weight_tensor + EPS).clone().detach().requires_grad_(True)
-        
-#         # FIX: Utilize a native PyTorch optimizer for the inner loop to prevent leaf tensor inplace errors
-#         optimizer = torch.optim.SGD([logits], lr=OMG_LR, momentum=OMG_MOMENTUM)
-
-#         best_loss = None
-#         best_gamma = None
-#         best_combo = None
-
-#         for it in range(OMG_INNER_ITERS):
-#             optimizer.zero_grad()
+    #     if g_fl_norm.item() < EPS:
+    #         print("  [WARNING] FedAvg reference gradient is near zero. Falling back to g_FL only.")
+    #         g_igd = g_fl.clone()
+    #         gamma_star = weight_tensor.clone()
+    #         combo = g_fl.clone()
+    #     else:
+    #         # Properly track logits with PyTorch Autograd
+    #         logits = torch.log(weight_tensor + EPS).clone().detach().requires_grad_(True)
             
-#             gamma = torch.softmax(logits, dim=0)
-#             combo = (gamma[:, None] * G).sum(dim=0)
+    #         # FIX: Utilize a native PyTorch optimizer for the inner loop to prevent leaf tensor inplace errors
+    #         optimizer = torch.optim.SGD([logits], lr=OMG_LR, momentum=OMG_MOMENTUM)
 
-#             combo_norm = torch.norm(combo) + EPS
-#             # Optimization objective: Gamma* = arg min (Gamma g) * g_FL + kappa * ||g_FL|| * ||Gamma g||
-#             loss = torch.dot(combo, g_fl) + KAPPA * g_fl_norm * combo_norm
+    #         best_loss = None
+    #         best_gamma = None
+    #         best_combo = None
 
-#             loss.backward()
-#             optimizer.step()
+    #         for it in range(OMG_INNER_ITERS):
+    #             optimizer.zero_grad()
+                
+    #             gamma = torch.softmax(logits, dim=0)
+    #             combo = (gamma[:, None] * G).sum(dim=0)
 
-#             current_loss = loss.item()
-#             if best_loss is None or current_loss < best_loss:
-#                 best_loss = current_loss
-#                 best_gamma = gamma.detach().clone()
-#                 best_combo = combo.detach().clone()
+    #             combo_norm = torch.norm(combo) + EPS
+    #             # Optimization objective: Gamma* = arg min (Gamma g) * g_FL + kappa * ||g_FL|| * ||Gamma g||
+    #             loss = torch.dot(combo, g_fl) + KAPPA * g_fl_norm * combo_norm
 
-#             print(
-#                 f"  [OMG {it + 1:02d}/{OMG_INNER_ITERS}] "
-#                 f"loss={loss.item():.6f} "
-#                 f"||Gamma g||={combo_norm.item():.4f}"
-#             )
+    #             loss.backward()
+    #             optimizer.step()
 
-#         gamma_star = best_gamma
-#         combo = best_combo
-#         combo_norm = torch.norm(combo)
+    #             current_loss = loss.item()
+    #             if best_loss is None or current_loss < best_loss:
+    #                 best_loss = current_loss
+    #                 best_gamma = gamma.detach().clone()
+    #                 best_combo = combo.detach().clone()
 
-#         if combo_norm.item() < EPS:
-#             print("  [WARNING] Optimized Gamma*g is near zero. Using g_FL only.")
-#             g_igd = g_fl.clone()
-#         else:
-#             # Reconstructing the Invariant Gradient Direction (IGD)
-#             g_igd = g_fl + KAPPA * g_fl_norm * (combo / (combo_norm + EPS))
+    #             print(
+    #                 f"  [OMG {it + 1:02d}/{OMG_INNER_ITERS}] "
+    #                 f"loss={loss.item():.6f} "
+    #                 f"||Gamma g||={combo_norm.item():.4f}"
+    #             )
 
-#         print("  Gamma* coefficients:")
-#         for cid, gamma_i in zip(client_ids, gamma_star.tolist()):
-#             print(f"    {cid}: {gamma_i:.6f}")
+    #         gamma_star = best_gamma
+    #         combo = best_combo
+    #         combo_norm = torch.norm(combo)
 
-#     print("\n--- Phase 3: Aggregating Aligned Gradients ---")
-#     combo_norm = torch.norm(combo).item()
-#     igd_norm = torch.norm(g_igd).item()
+    #         if combo_norm.item() < EPS:
+    #             print("  [WARNING] Optimized Gamma*g is near zero. Using g_FL only.")
+    #             g_igd = g_fl.clone()
+    #         else:
+    #             # Reconstructing the Invariant Gradient Direction (IGD)
+    #             g_igd = g_fl + KAPPA * g_fl_norm * (combo / (combo_norm + EPS))
 
-#     print(f"  Optimized Combined Gradient ||Gamma* g||: {combo_norm:.4f}")
-#     print(f"  Final Invariant Gradient L2 Norm: {igd_norm:.4f}")
+    #         print("  Gamma* coefficients:")
+    #         for cid, gamma_i in zip(client_ids, gamma_star.tolist()):
+    #             print(f"    {cid}: {gamma_i:.6f}")
 
-#     print("\n--- Phase 3b: Extracting and Saving Domain-Specific (Orthogonal) Gradients ---")
-#     domain_specific_grads = {}
-#     igd_norm_sq = torch.dot(g_igd, g_igd) + EPS
-    
-#     for i, cid in enumerate(client_ids):
-#         g_i = client_grads[i]
+    #     print("\n--- Phase 3: Aggregating Aligned Gradients ---")
+    #     combo_norm = torch.norm(combo).item()
+    #     igd_norm = torch.norm(g_igd).item()
+
+    #     print(f"  Optimized Combined Gradient ||Gamma* g||: {combo_norm:.4f}")
+    #     print(f"  Final Invariant Gradient L2 Norm: {igd_norm:.4f}")
+
+    #     print("\n--- Phase 3b: Extracting and Saving Domain-Specific (Orthogonal) Gradients ---")
+    #     domain_specific_grads = {}
+    #     igd_norm_sq = torch.dot(g_igd, g_igd) + EPS
         
-#         # Calculate the scalar for the projection of g_i onto g_igd
-#         proj_scalar = torch.dot(g_i, g_igd) / igd_norm_sq
-        
-#         # Subtract the projected component to get the orthogonal (domain-specific) component
-#         g_i_ortho = g_i - (proj_scalar * g_igd)
-        
-#         # Store it (if you want to use it later)
-#         domain_specific_grads[cid] = g_i_ortho
-        
-#         # Log the magnitude to track how "divergent" this domain is
-#         ortho_norm = torch.norm(g_i_ortho).item()
-#         print(f"  [{cid}] Domain-specific (Orthogonal) Gradient L2 Norm: {ortho_norm:.4f}")
-        
-#         # ==========================================
-#         # NEW: Unflatten and Save the Orthogonal Component
-#         # ==========================================
-#         # Map the 1D tensor back to the model's layer shapes
-#         ortho_state_dict = unflatten_tensors(g_i_ortho, global_state, fedomg_keys)
-        
-#         # Construct a save path (e.g., 'merged_A.pth' -> 'merged_A_ortho.pth')
-#         client_out_path = output_paths[i]
-#         ortho_save_path = client_out_path.replace(".pth", "_ortho.pth")
-        
-#         # Save as a standard checkpoint dictionary
-#         torch.save({"state_dict": ortho_state_dict}, ortho_save_path)
-#         print(f"    -> Saved orthogonal component for {cid} to {ortho_save_path}")
+    #     for i, cid in enumerate(client_ids):
+    #         g_i = client_grads[i]
+            
+    #         # Calculate the scalar for the projection of g_i onto g_igd
+    #         proj_scalar = torch.dot(g_i, g_igd) / igd_norm_sq
+            
+    #         # Subtract the projected component to get the orthogonal (domain-specific) component
+    #         g_i_ortho = g_i - (proj_scalar * g_igd)
+            
+    #         # Store it (if you want to use it later)
+    #         domain_specific_grads[cid] = g_i_ortho
+            
+    #         # Log the magnitude to track how "divergent" this domain is
+    #         ortho_norm = torch.norm(g_i_ortho).item()
+    #         print(f"  [{cid}] Domain-specific (Orthogonal) Gradient L2 Norm: {ortho_norm:.4f}")
+            
+    #         # ==========================================
+    #         # NEW: Unflatten and Save the Orthogonal Component
+    #         # ==========================================
+    #         # Map the 1D tensor back to the model's layer shapes
+    #         ortho_state_dict = unflatten_tensors(g_i_ortho, global_state, fedomg_keys)
+            
+    #         # Construct a save path (e.g., 'merged_A.pth' -> 'merged_A_ortho.pth')
+    #         client_out_path = output_paths[i]
+    #         ortho_save_path = client_out_path.replace(".pth", "_ortho.pth")
+            
+    #         # Save as a standard checkpoint dictionary
+    #         torch.save({"state_dict": ortho_state_dict}, ortho_save_path)
+    #         print(f"    -> Saved orthogonal component for {cid} to {ortho_save_path}")
 
-#     print("\n--- Phase 4: Updating Global Model ---")
-#     # FIX: Because `local_grad` is calculated as (flat_client - flat_global), it represents a positive 
-#     # weight step. We must ADD ETA_G * g_igd so the global model learns, avoiding catastrophic unlearning.
-#     new_flat_global = flat_global + (ETA_G * g_igd)
-#     new_global_weights = unflatten_tensors(new_flat_global, global_state, fedomg_keys)
+    #     print("\n--- Phase 4: Updating Global Model ---")
+    #     # FIX: Because `local_grad` is calculated as (flat_client - flat_global), it represents a positive 
+    #     # weight step. We must ADD ETA_G * g_igd so the global model learns, avoiding catastrophic unlearning.
+    #     new_flat_global = flat_global + (ETA_G * g_igd)
+    #     new_global_weights = unflatten_tensors(new_flat_global, global_state, fedomg_keys)
 
-#     for k in fedomg_keys:
-#         global_ckpt["state_dict"][k] = new_global_weights[k]
+    #     for k in fedomg_keys:
+    #         global_ckpt["state_dict"][k] = new_global_weights[k]
 
-#     if USE_EXCLUSION and not KEEP_PRIVATE:
-#         for k in excluded_keys:
-#             global_ckpt["state_dict"][k] = excluded_accumulators[k]
+    #     if USE_EXCLUSION and not KEEP_PRIVATE:
+    #         for k in excluded_keys:
+    #             global_ckpt["state_dict"][k] = excluded_accumulators[k]
 
-#     print(f"  Saving new FedOMG global model to {prev_global_path}")
-#     torch.save(global_ckpt, prev_global_path)
+    #     print(f"  Saving new FedOMG global model to {prev_global_path}")
+    #     torch.save(global_ckpt, prev_global_path)
 
-#     print("\n--- Phase 5: Distributing Global Model ---")
-#     for ckpt, out_path, cid in zip(client_states, output_paths, client_ids):
-#         if KEEP_PRIVATE and USE_EXCLUSION:
-#             for k in fedomg_keys:
-#                 if k in ckpt["state_dict"]:
-#                     ckpt["state_dict"][k] = global_ckpt["state_dict"][k].clone()
-#         else:
-#             for k in global_ckpt["state_dict"].keys():
-#                 if k in ckpt["state_dict"] and (
-#                     (k in fedomg_keys) or
-#                     (USE_EXCLUSION and not KEEP_PRIVATE and k in excluded_keys)
-#                 ):
-#                     ckpt["state_dict"][k] = global_ckpt["state_dict"][k].clone()
+    #     print("\n--- Phase 5: Distributing Global Model ---")
+    #     for ckpt, out_path, cid in zip(client_states, output_paths, client_ids):
+    #         if KEEP_PRIVATE and USE_EXCLUSION:
+    #             for k in fedomg_keys:
+    #                 if k in ckpt["state_dict"]:
+    #                     ckpt["state_dict"][k] = global_ckpt["state_dict"][k].clone()
+    #         else:
+    #             for k in global_ckpt["state_dict"].keys():
+    #                 if k in ckpt["state_dict"] and (
+    #                     (k in fedomg_keys) or
+    #                     (USE_EXCLUSION and not KEEP_PRIVATE and k in excluded_keys)
+    #                 ):
+    #                     ckpt["state_dict"][k] = global_ckpt["state_dict"][k].clone()
 
-#         if "optimizer" in ckpt and "state" in ckpt["optimizer"]:
-#             for param_id in ckpt["optimizer"]["state"]:
-#                 for key in ckpt["optimizer"]["state"][param_id]:
-#                     if torch.is_tensor(ckpt["optimizer"]["state"][param_id][key]):
-#                         ckpt["optimizer"]["state"][param_id][key].zero_()
+    #         if "optimizer" in ckpt and "state" in ckpt["optimizer"]:
+    #             for param_id in ckpt["optimizer"]["state"]:
+    #                 for key in ckpt["optimizer"]["state"][param_id]:
+    #                     if torch.is_tensor(ckpt["optimizer"]["state"][param_id][key]):
+    #                         ckpt["optimizer"]["state"][param_id][key].zero_()
 
-#         os.makedirs(os.path.dirname(out_path), exist_ok=True)
-#         torch.save(ckpt, out_path)
-#         print(f"  Saved FedOMG synchronized model for {cid} to {out_path}")
+    #         os.makedirs(os.path.dirname(out_path), exist_ok=True)
+    #         torch.save(ckpt, out_path)
+    #         print(f"  Saved FedOMG synchronized model for {cid} to {out_path}")
 
-#     print("=" * 50)
-#     print("FedOMG Aggregation Complete.\n")
+    #     print("=" * 50)
+    #     print("FedOMG Aggregation Complete.\n")
+    return
 
 def fedavg(models, output_paths, norm_weights):
     """
@@ -2761,7 +3005,7 @@ def main():
         )
     elif args.method == 'fedomg':
             client_ids = [f"Model{string.ascii_uppercase[i]}" for i in range(len(model_paths))]
-            fedomg(
+            PCGRAD(
                 models=model_paths, 
                 output_paths=output_paths, 
                 norm_weights=norm_weights, 
@@ -2799,6 +3043,16 @@ def main():
             select_ratio=args.select_ratio,
             max_sparsity=args.max_sparsity
         )
+    elif args.method == 'gradsplit':
+        client_ids = [f"Model{string.ascii_uppercase[i]}" for i in range(len(model_paths))]
+        gradsplit(model_paths, 
+                  output_paths, 
+                  norm_weights, 
+                  client_ids, 
+                  prev_global_path="/workspace/work_dirs/gradsplit_states/global_model.pth", 
+                  personalization_factor=1.0,
+                  decay=1.0, 
+                  eps=1e-12)
 
 if __name__ == '__main__':
     main()
