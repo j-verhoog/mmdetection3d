@@ -22,6 +22,7 @@ export SRUN_CPUS_PER_TASK=${SLURM_CPUS_PER_TASK:-1}
 # --- CONFIGURATION MATCHING FEDAVG ---
 PRETRAINED_BACKBONE="ckpts/nuim_r50.pth"
 TARGET_EPOCHS=40  # Matches 40 Epochs
+SAMPLES_PER_GPU=16
 
 # FOR NAMING STICK TO: A–Z  a–z  0–9  .  _  -
 export WANDB_PROJECT="cmt_40_epoch"
@@ -93,14 +94,14 @@ srun --ntasks=2 --gpus-per-task=1 bash -lc "
     cd /workspace/mmdet/mmdetection3d && \
     export PYTHONPATH=/workspace/mmdet/mmdetection3d:/workspace/mmdet:\$PYTHONPATH && \
     python -u tools/train.py \
-      projects/cmt/fed/rain_clear/improved_lightweight_cmt_iterated.py \
+      projects/cmt/fed/all_domains/improved_lightweight_cmt_iterated.py \
       --launcher slurm \
       --work-dir /workspace/work_dirs \
       --cfg-options \
         evaluation.interval=1 \
         load_from='"$PRETRAINED_BACKBONE"' \
         total_epochs=$TARGET_EPOCHS \
-        data.samples_per_gpu=8 \
+        data.samples_per_gpu=$SAMPLES_PER_GPU  \
         dist_params.port='"$MASTER_PORT"'
   '
 "
