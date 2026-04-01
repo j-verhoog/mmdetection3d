@@ -173,6 +173,7 @@ run_training () {
       --env NCCL_SOCKET_IFNAME=\"campus\" \
       --env WANDB_RUN_ID=\"$WANDB_RUN_ID\" \
       --env WANDB_RESUME=\"allow\" \
+      --env WANDB_INIT_TIMEOUT=\"300\" \
       \"$APPTAINER_IMAGE\" \
       bash -lc '
         cd /workspace/mmdet/mmdetection3d && \
