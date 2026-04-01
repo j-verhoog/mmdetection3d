@@ -23,6 +23,8 @@ echo "Target directory: $TARGET_DIR"
 # -type f: Ensures we only look at files (not directories)
 # -print0 + read -d '': Handles file paths safely
 
+
+# make sure to exclude the centralized model runs!!
 removed_count=0
 while IFS= read -r -d '' file; do
     if rm -v "$file"; then
@@ -32,6 +34,8 @@ done < <(find "$TARGET_DIR" -maxdepth 5 -type f \( \
     -name "latest.pth" -o \
     -name "epoch_[1-9].pth" -o \
     -name "epoch_1[1-6].pth" \
+    -name "epoch_2[1-6].pth" \
+    -name "epoch_3[1-6].pth" \
 \) -print0)
 
 echo "Total files removed: $removed_count"
