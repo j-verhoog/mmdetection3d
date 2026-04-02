@@ -43,7 +43,7 @@ PRETRAINED_BACKBONE="ckpts/nuim_r50.pth"
 # --- STANDARD SETUP ---
 export SRUN_CPUS_PER_TASK=${SLURM_CPUS_PER_TASK:-1}
 export WANDB_PROJECT="cmt_40_epoch"
-export RUN_NAME="FedAvg_uniformfair_40epochs"
+export RUN_NAME="FedAvg_uniformfair"
 
 # Gets API key robustly
 export WANDB_API_KEY=$(awk '$1=="machine" && $2=="api.wandb.ai" {found=1}found && $1=="password" {print $2; exit}' "$HOME/.netrc")
@@ -221,11 +221,11 @@ run_merge () {
 # ==========================================
 
 # Create persistent WandB Run IDs so each model logs to the same run across rounds
-export WANDB_ID_A="fedavg_A_40epochs_uniform"
-export WANDB_ID_B="fedavg_B_40epochs_uniform"
-export WANDB_ID_C="fedavg_C_40epochs_uniform"
-export WANDB_ID_D="fedavg_D_40epochs_uniform"
-export WANDB_ID_E="fedavg_E_40epochs_uniform"
+export WANDB_ID_A="fedavgA_uniform123"
+export WANDB_ID_B="fedavgB_uniform123"
+export WANDB_ID_C="fedavgC_uniform123"
+export WANDB_ID_D="fedavgD_uniform123"
+export WANDB_ID_E="fedavgE_uniform123"
 
 if [ "$START_ROUND" -eq 1 ]; then
     echo "Starting fresh run from Round 1"
