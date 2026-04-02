@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --partition=general
-#SBATCH --qosshort
+#SBATCH --qos=short
 #SBATCH --job-name=PAdaMFed
 #SBATCH --output=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/cmt/padamfed_job_%j.out
 #SBATCH --error=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/cmt/padamfed_job_%j.err
