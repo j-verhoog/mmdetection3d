@@ -392,11 +392,11 @@ optimizer_config = dict(
     use_grad_clip=False,
 )
 
-# lr_config = dict(
-#     policy='cyclic',
-#     target_ratio=(6, 0.0001),
-#     cyclic_times=1,
-#     step_ratio_up=0.4)
+lr_config = dict(
+    policy='cyclic',
+    target_ratio=(6, 0.0001),
+    cyclic_times=1,
+    step_ratio_up=0.4)
 # momentum_config = dict(
 #     policy='cyclic',
 #     target_ratio=(0.8947368421052632, 1),
