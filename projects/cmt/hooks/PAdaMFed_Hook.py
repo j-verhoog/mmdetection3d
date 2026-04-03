@@ -195,9 +195,11 @@ class PAdaMFedVRFp16OptimizerHook(Fp16OptimizerHook):
                 update_grads[name] = g_local
                 total_sq_norm += float(torch.sum(g_local * g_local).item())
 
+        unclipped_norm = None
         if self.use_grad_clip:
             update_grads, clip_stats = self._apply_manual_grad_clip(update_grads, runner)
             total_sq_norm = 0.0
+            unclipped_norm = clip_stats['pre_clip_norm']            
             for g in update_grads.values():
                 total_sq_norm += float(torch.sum(g * g).item())
             if clip_stats["was_clipped"]:
@@ -228,13 +230,17 @@ class PAdaMFedVRFp16OptimizerHook(Fp16OptimizerHook):
         self.loss_scaler.update(self._scale_update_param)
         runner.meta.setdefault("fp16", {})["loss_scaler"] = self.loss_scaler.state_dict()
 
-        runner.log_buffer.update(
-            {
+        log_vars = {
                 "padamfed_vr_global_norm": float(global_norm),
                 "padamfed_vr_eta": float(self.eta),
                 "padamfed_vr_beta": float(self.beta),
                 "padamfed_vr_active_vr_mode": int(self.active_vr_mode),
-            },
+                }
+        if unclipped_norm is not None:
+            log_vars["padamfed_vr_unclipped_norm"] = float(unclipped_norm)
+
+        runner.log_buffer.update(
+            log_vars,
             runner.outputs.get("num_samples", 1),
         )
 
