@@ -64,7 +64,7 @@ STEPS_ModelA=887
 STEPS_ModelB=337
 STEPS_ModelC=587
 STEPS_ModelD=116
-STEPS_ModelE=19      # to double check this one still
+STEPS_ModelE=25      # at least 20, for at 20 it logs (has logged 17 things, and logs 6 after)
 
 # ==========================================
 # --- AUTO-DETECT RESUME STATE ---

@@ -769,3 +769,6 @@ def main():
         strict_key_check=args.strict_key_check,
         eps=args.eps,
     )
+
+if __name__ == "__main__":
+    main()
