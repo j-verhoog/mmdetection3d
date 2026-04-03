@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --partition=general
 #SBATCH --qos=short
-#SBATCH --job-name=PAdaMFed
+#SBATCH --job-name=3PAdaMFed
 #SBATCH --output=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/cmt/padamfed_noclip_nolr_shortQoS_autoctn_job_%j.out
 #SBATCH --error=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/cmt/padamfed_noclip_nolr_shortQoS_autoctn_job_%j.err
 #SBATCH --time=04:00:00
@@ -46,7 +46,7 @@ PRETRAINED_BACKBONE="ckpts/nuim_r50.pth"
 # --- STANDARD SETUP ---
 export SRUN_CPUS_PER_TASK=${SLURM_CPUS_PER_TASK:-1}
 export WANDB_PROJECT="cmt_fedavg_all"
-export RUN_NAME="PAdaMFed"
+export RUN_NAME="PAdaMFed_test_noclip_nolr"
 
 # Gets API key robustly
 export WANDB_API_KEY=$(awk '$1=="machine" && $2=="api.wandb.ai" {found=1}found && $1=="password" {print $2; exit}' "$HOME/.netrc")
@@ -169,7 +169,7 @@ run_training () {
       --env WANDB_DIR=\"/workspace/tmp/wandb/\$SLURM_PROCID\" \
       --env TMPDIR=\"/workspace/tmp/tmp/\$SLURM_PROCID\" \
       --env WANDB_PROJECT=\"$WANDB_PROJECT\" \
-      --env WANDB_NAME=\"PAdaMFed_${MODEL_NAME}\" \
+      --env WANDB_NAME=\"PAdaMFed_noClipLR_${MODEL_NAME}\" \
       --env WANDB_API_KEY=\"$WANDB_API_KEY\" \
       --env OMP_NUM_THREADS=1 \
       --env MKL_NUM_THREADS=1 \
@@ -267,11 +267,11 @@ run_merge () {
 # ==========================================
 
 # Create persistent WandB Run IDs so each model logs to the same run across rounds
-export WANDB_ID_A="padamfed_A"
-export WANDB_ID_B="padamfed_B"
-export WANDB_ID_C="padamfed_C"
-export WANDB_ID_D="padamfed_D"
-export WANDB_ID_E="padamfed_E"
+export WANDB_ID_A="padamfed_A_test_noclip_nolr"
+export WANDB_ID_B="padamfed_B_test_noclip_nolr"
+export WANDB_ID_C="padamfed_C_test_noclip_nolr"
+export WANDB_ID_D="padamfed_D_test_noclip_nolr"
+export WANDB_ID_E="padamfed_E_test_noclip_nolr"
 
 if [ "$START_ROUND" -eq 1 ]; then
     echo "Starting fresh run from Round 1"
