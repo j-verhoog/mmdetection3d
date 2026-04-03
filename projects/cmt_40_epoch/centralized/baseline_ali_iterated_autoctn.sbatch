@@ -19,8 +19,8 @@ export SRUN_CPUS_PER_TASK=${SLURM_CPUS_PER_TASK:-1}
 
 # --- CONFIGURATION MATCHING FEDAVG ---
 PRETRAINED_BACKBONE="ckpts/nuim_r50.pth"
-TARGET_EPOCHS=40  # Matches 40 Epochs
-SAMPLES_PER_GPU=16
+export TARGET_EPOCHS=40  # Matches 40 Epochs
+export SAMPLES_PER_GPU=16
 
 export WANDB_PROJECT="cmt_40_epoch"
 export WANDB_NAME="centralized_model"
@@ -97,6 +97,8 @@ srun --ntasks=2 --gpus-per-task=1 bash -lc "
   --env TRAIN_ARGS=\"$TRAIN_ARGS\" \
   --env WANDB_RUN_ID=\"$WANDB_RUN_ID\" \
   --env WANDB_RESUME=\"allow\" \
+  --env TARGET_EPOCHS=\"$TARGET_EPOCHS\" \
+  --env SAMPLES_PER_GPU=\"$SAMPLES_PER_GPU\" \
   \"$APPTAINER_IMAGE\" \
   bash -lc '
     cd /workspace/mmdet/mmdetection3d && \
