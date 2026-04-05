@@ -250,11 +250,11 @@ run_merge () {
 # ==========================================
 
 # Create persistent WandB Run IDs so each model logs to the same run across rounds
-export WANDB_ID_A="fedmc_new_A"
-export WANDB_ID_B="fedmc_new_B"
-export WANDB_ID_C="fedmc_new_C"
-export WANDB_ID_D="fedmc_new_D"
-export WANDB_ID_E="fedmc_new_E"
+export WANDB_ID_A="fedmc_A_retry"
+export WANDB_ID_B="fedmc_B_retry"
+export WANDB_ID_C="fedmc_C_retry"
+export WANDB_ID_D="fedmc_D_retry"
+export WANDB_ID_E="fedmc_E_retry"
 
 if [ "$START_ROUND" -eq 1 ]; then
     echo "Starting fresh run from Round 1"
