@@ -27,7 +27,7 @@ class PAdaMFedVRFp16OptimizerHook(Fp16OptimizerHook):
         loss_scale: Union[float, str, dict] = 512.,
         distributed: bool = True,
         custom_fp16=None,
-        exclude_prefixes=(),
+        exclude_prefixes=('bn', 'running_mean', 'running_var', 'num_batches_tracked', 'pts_bbox_head.task_heads'),
         eta=None,
         beta=None,
         eps=1e-12,

@@ -32,8 +32,11 @@ def PAdaMFed_VR(
     strict_key_check=True,
     eps=1e-12,
 ):
-    if exclude_prefixes is None:
-        exclude_prefixes = []
+    # if exclude_prefixes is None:
+    #     exclude_prefixes = []
+
+    if not exclude_prefixes:
+        exclude_prefixes = ['bn', 'running_mean', 'running_var', 'num_batches_tracked', 'pts_bbox_head.task_heads']
 
     _validate_inputs(models, output_paths, norm_weights, client_ids)
 
@@ -398,8 +401,10 @@ def initialize_padamfed_vr_server_state(
     exclude_prefixes=None,
     local_steps_map=None,
 ):
-    if exclude_prefixes is None:
-        exclude_prefixes = []
+    # if exclude_prefixes is None:
+    #     exclude_prefixes = []
+    if not exclude_prefixes:
+        exclude_prefixes = ['bn', 'running_mean', 'running_var', 'num_batches_tracked', 'pts_bbox_head.task_heads']
 
     global_ckpt = torch.load(initial_global_path, map_location="cpu")
     global_state = global_ckpt["state_dict"]
@@ -633,7 +638,7 @@ def _parse_args():
     parser.add_argument(
         "--exclude-prefixes",
         nargs="*",
-        default=[],
+        default=['bn', 'running_mean', 'running_var', 'num_batches_tracked', 'pts_bbox_head.task_heads'],
         help="Key substrings to exclude from merge/update",
     )
     parser.add_argument(
