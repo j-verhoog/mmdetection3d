@@ -11,10 +11,17 @@ class FisherComputationHook(Hook):
     def __init__(self, save_path, num_batches=100):
         self.save_path = save_path
         self.num_batches = num_batches
-def after_train(self, runner):
+        self.train_loader = None  # Safely store the dataloader
+
+    def before_train_epoch(self, runner):
+        # Capture the train dataloader during the epoch so we can use it after training
+        if self.train_loader is None:
+            self.train_loader = runner.data_loader
+
+    def after_train(self, runner):
         runner.logger.info(f"Computing Fisher Information Matrix (up to {self.num_batches} batches)...")
         model = runner.model
-        optim_wrapper = runner.optim_wrapper
+        optimizer = runner.optimizer
         
         model.train()
         
@@ -23,26 +30,23 @@ def after_train(self, runner):
             if param.requires_grad:
                 fisher_diag[name] = torch.zeros_like(param.data)
 
-        dataloader = runner.train_dataloader
+        if self.train_loader is None:
+            runner.logger.error("Train dataloader not found! Cannot compute Fisher.")
+            return
+
         batch_count = 0
         
-        for data_batch in dataloader:
+        for data_batch in self.train_loader:
             if batch_count >= self.num_batches:
                 break
                 
-            optim_wrapper.zero_grad()
+            optimizer.zero_grad()
             
-            with optim_wrapper.optim_context(model):
-                data = model.data_preprocessor(data_batch, training=True)
-                if isinstance(data, dict):
-                    losses = model(**data, mode='loss')
-                elif isinstance(data, (list, tuple)):
-                    losses = model(*data, mode='loss')
-                
-                parsed_losses, _ = model.parse_losses(losses)
-                loss = parsed_losses['loss']
+            # MMCV 1.x syntax: train_step handles the forward pass and loss parsing automatically
+            outputs = model.train_step(data_batch, optimizer)
+            loss = outputs['loss']
             
-            optim_wrapper.backward(loss)
+            loss.backward()
             
             # ACCUMULATE ONLY (Don't divide yet)
             with torch.no_grad():
