@@ -340,29 +340,20 @@ class PAdaMFedVRFp16OptimizerHook(Fp16OptimizerHook):
                 return
             raise FileNotFoundError(f"Previous global checkpoint not found: {self.prev_global_path}")
 
-        prev_ckpt = torch.load(self.prev_global_path, map_location="cpu")
-        if "state_dict" not in prev_ckpt:
-            raise KeyError(f"{self.prev_global_path} does not contain 'state_dict'")
-
-        prev_state = prev_ckpt["state_dict"]
-
-        if self.strict_state_check:
-            current_named_params = dict(self._root_model.named_parameters())
-            for name in self.mergeable_param_names:
-                if name not in prev_state:
-                    raise RuntimeError(f"Previous global state missing key: {name}")
-                if prev_state[name].shape != current_named_params[name].shape:
-                    raise RuntimeError(
-                        f"Shape mismatch for {name}: prev_global={prev_state[name].shape}, current={current_named_params[name].shape}"
-                    )
-
+        from mmcv.runner import load_checkpoint
+        
         self.prev_global_model = copy.deepcopy(self._root_model)
-        load_res = self.prev_global_model.load_state_dict(prev_state, strict=False)
-
-        runner.logger.info(
-            f"[PAdaMFed-VR] prev_global_model loaded "
-            f"(missing={load_res.missing_keys}, unexpected={load_res.unexpected_keys})"
+        
+        # MMCV's loader automatically handles spconv transpositions and runner logging
+        load_checkpoint(
+            self.prev_global_model, 
+            self.prev_global_path, 
+            map_location="cpu", 
+            strict=False, 
+            logger=runner.logger
         )
+        
+        runner.logger.info("[PAdaMFed-VR] prev_global_model loaded via MMCV.")
 
         if self.freeze_prev_global_norm_stats:
             self._freeze_norm_stats(self.prev_global_model)

@@ -28,6 +28,10 @@ class DisableGTCBGSAndAlignScheduleHook(Hook):
     Safely disables CBGS and GT Sampling at a specified epoch, 
     and dynamically recalculates the training schedule to align 
     learning rate decay (like CosineAnnealing) with the new epoch length.
+
+
+    THIS DOES NOT WORK WELL!! Adjusting the CBGS sampling mid fly breaks the iteration count in Dataloader and should be rebuilt.
+
     """
     priority = 'HIGH'
     def __init__(self, disable_after_epoch=15):

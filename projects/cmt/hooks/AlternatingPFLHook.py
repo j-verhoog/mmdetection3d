@@ -8,6 +8,8 @@ class AlternatingPFLHook(Hook):
     """
     Implements Alternating Optimization for element-wise masked PFL.
     Alternates between training only personalized parameters and only global parameters.
+
+        NOT YET DONE IMPLEMENTATION!!! For Ali & Ricardo this frozen/unfrozen logic did not help training.
     """
     def __init__(self, mask_path, personal_steps=50, global_steps=50):
         self.mask_path = mask_path

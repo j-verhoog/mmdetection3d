@@ -10,6 +10,9 @@ class FedSelectLocalTrainingHook(Hook):
     Personalized parameters (mask=1) receive normal gradients.
     Global parameters (mask=0) receive heavily scaled-down gradients (or 0) 
     to preserve global knowledge.
+
+    NOT YET DONE IMPLEMENTATION!!! For Ali & Ricardo this frozen/unfrozen logic did not help training.
+    
     """
     def __init__(self, mask_path, global_lr_scale=0.01, personal_lr_scale=1.0):
         """
