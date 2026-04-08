@@ -18,7 +18,7 @@ class FisherComputationHook(Hook):
         if self.train_loader is None:
             self.train_loader = runner.data_loader
 
-    def after_train(self, runner):
+    def after_train_epoch(self, runner):
         runner.logger.info(f"Computing Fisher Information Matrix (up to {self.num_batches} batches)...")
         model = runner.model
         optimizer = runner.optimizer

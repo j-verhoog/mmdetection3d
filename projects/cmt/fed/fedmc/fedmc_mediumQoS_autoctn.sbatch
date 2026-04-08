@@ -24,10 +24,6 @@ SIZE_C=226
 SIZE_D=71
 SIZE_E=13
 
-START_ROUND=1  # <--- NEW: Set to 1 for new run, or X to start loop at round X, round 16 mains load from global 15.pth
-START_MODEL='A'
-RESUME_CHECKPOINT="/tudelft.net/staff-umbrella/MscThesisjverhoog/projects/cmt_fedavg/12215490/round_15/global_model.pth"
-
 # Paths
 DAY_CLEAR_DATAROOT="/tudelft.net/staff-umbrella/MscThesisjverhoog/datasets/cmt_subsets/Default_NoFair_SingleClient/boston_day_clear"
 DAY_RAIN_DATAROOT="/tudelft.net/staff-umbrella/MscThesisjverhoog/datasets/cmt_subsets/Default_NoFair_SingleClient/boston_day_rain"
@@ -48,10 +44,7 @@ PRETRAINED_BACKBONE="ckpts/nuim_r50.pth"
 export SRUN_CPUS_PER_TASK=${SLURM_CPUS_PER_TASK:-1}
 export WANDB_PROJECT="cmt_fedavg_all"
 export RUN_NAME="FedMC"
-
-# Gets API key robustly
 export WANDB_API_KEY=$(awk '$1=="machine" && $2=="api.wandb.ai" {found=1}found && $1=="password" {print $2; exit}' "$HOME/.netrc")
-
 export APPTAINER_IMAGE=/tudelft.net/staff-umbrella/MscThesisjverhoog/image/mmdet3d_v1rc5.sif
 export WORK=/tudelft.net/staff-umbrella/MscThesisjverhoog/projects/$WANDB_PROJECT/$RUN_NAME
 mkdir -p "$WORK"
@@ -59,6 +52,8 @@ mkdir -p "$WORK"
 # ==========================================
 # --- AUTO-DETECT RESUME STATE ---
 # ==========================================
+START_ROUND=1
+START_MODEL='A'
 LATEST_ROUND=0
 for (( i=1; i<=NUM_ROUNDS; i++ )); do
     if [ -d "$WORK/round_$i" ]; then
