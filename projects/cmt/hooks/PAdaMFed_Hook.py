@@ -7,7 +7,7 @@ import torch
 import torch.nn as nn
 from mmcv.runner.hooks import HOOKS
 from mmcv.runner.hooks.optimizer import Fp16OptimizerHook
-
+from mmcv.parallel import DataContainer
 
 @HOOKS.register_module()
 class PAdaMFedVRFp16OptimizerHook(Fp16OptimizerHook):
@@ -290,6 +290,21 @@ class PAdaMFedVRFp16OptimizerHook(Fp16OptimizerHook):
 
         return raw
 
+    def _unpack_data_batch(self, data_batch, device):
+        """Manually unpack DataContainers since the unwrapped model doesn't do it automatically."""
+        unpacked = {}
+        for key, value in data_batch.items():
+            if isinstance(value, DataContainer):
+                # In DDP, data is wrapped in a list of length 1 for the current GPU
+                val = value.data[0] if isinstance(value.data, list) else value.data
+                if isinstance(val, torch.Tensor):
+                    val = val.to(device)
+                unpacked[key] = val
+            else:
+                unpacked[key] = value
+        return unpacked
+
+
     def _compute_prev_global_grads_same_batch(self, runner):
         if self.prev_global_model is None:
             raise RuntimeError("prev_global_model is not initialized")
@@ -300,11 +315,13 @@ class PAdaMFedVRFp16OptimizerHook(Fp16OptimizerHook):
                 "Could not access current data batch. "
                 "Exact PAdaMFed-VR needs the same batch for both current and previous-global gradients."
             )
-
+        device = next(self.prev_global_model.parameters()).device
+        unpacked_data = self._unpack_data_batch(data_batch, device)
         self.prev_global_model.zero_grad()
 
-        outputs = self.prev_global_model.train_step(data_batch, optimizer=None)
-
+        # outputs = self.prev_global_model.train_step(data_batch, optimizer=None)
+        outputs = self.prev_global_model.train_step(unpacked_data, optimizer=None)
+        
         if not isinstance(outputs, dict) or "loss" not in outputs:
             raise RuntimeError("prev_global_model.train_step did not return a dict containing 'loss'")
 
@@ -340,20 +357,33 @@ class PAdaMFedVRFp16OptimizerHook(Fp16OptimizerHook):
                 return
             raise FileNotFoundError(f"Previous global checkpoint not found: {self.prev_global_path}")
 
-        from mmcv.runner import load_checkpoint
-        
         self.prev_global_model = copy.deepcopy(self._root_model)
         
-        # MMCV's loader automatically handles spconv transpositions and runner logging
-        load_checkpoint(
-            self.prev_global_model, 
-            self.prev_global_path, 
-            map_location="cpu", 
-            strict=False, 
-            logger=runner.logger
-        )
+        # Load the checkpoint manually
+        ckpt = torch.load(self.prev_global_path, map_location="cpu")
+        state_dict = ckpt.get("state_dict", ckpt)
+        model_state_dict = self.prev_global_model.state_dict()
+
+        # Fix spconv version mismatch: (C_in, C_out, K1, K2, K3) -> (C_out, K1, K2, K3, C_in)
+        transposed_count = 0
+        for k in list(state_dict.keys()):
+            if k in model_state_dict:
+                ckpt_shape = state_dict[k].shape
+                model_shape = model_state_dict[k].shape
+                
+                # Check if it's a 5D tensor mismatch that matches the exact spconv permutation
+                if ckpt_shape != model_shape and len(ckpt_shape) == 5 and len(model_shape) == 5:
+                    expected_shape = (ckpt_shape[1], ckpt_shape[2], ckpt_shape[3], ckpt_shape[4], ckpt_shape[0])
+                    if expected_shape == model_shape:
+                        state_dict[k] = state_dict[k].permute(1, 2, 3, 4, 0).contiguous()
+                        transposed_count += 1
+
+        # Load the corrected state dict
+        self.prev_global_model.load_state_dict(state_dict, strict=False)
         
-        runner.logger.info("[PAdaMFed-VR] prev_global_model loaded via MMCV.")
+        if transposed_count > 0:
+            runner.logger.info(f"[PAdaMFed-VR] Auto-transposed {transposed_count} spconv weights to match current model backend.")
+        runner.logger.info("[PAdaMFed-VR] prev_global_model loaded manually.")
 
         if self.freeze_prev_global_norm_stats:
             self._freeze_norm_stats(self.prev_global_model)
