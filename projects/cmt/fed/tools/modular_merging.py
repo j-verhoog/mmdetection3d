@@ -16,7 +16,7 @@ def parse_args():
     parser.add_argument('--method', type=str, default='fedavg', 
                     choices=['fedavg', 'fedbn', 'fednorm', 'fedper', 'fed_bn_and_per', 'fedmedian', 'feddyn', 
                              'fed_dyn_bn_and_per', 'fedselect', 'fedselect_elastic', 'fedselect_fullelastic', 
-                             'fedomg', 'fedomg_better', 'fedmc', 'fedomg_better_better', 'gradsplit'],
+                             'fedomg', 'fedomg_better', 'fedmc', 'fedomg_better_better', 'gradsplit', 'gradsplit_simpler'],
                     help='Aggregation method. Default is fedavg.')
     parser.add_argument('--config', type=str, default=None, 
                         help='Path to the MMDet3D config file (e.g., improved_lightweight_cmt_iterated.py). Required for FedBN.')
@@ -297,6 +297,435 @@ def gradsplit(models, output_paths, norm_weights, client_ids,
         torch.save(ckpt, out_path)
         print(f"  Saved specialized model for {cid} to {out_path}")
         
+    print("="*60)
+    print("GradSplit Aggregation Complete.\n")
+
+def gradsplit_simpler(models, output_paths, norm_weights, client_ids, 
+              prev_global_path="/workspace/work_dirs/gradsplit_states/global_model.pth", 
+              personalization_factor=1.0,
+              decay=1.0, eps=1e-12):
+    """
+    GRADSPLIT - Multi-Task / Federated Learning via Gradient Splitting.
+    Calculates a shared global consensus direction and splits client updates 
+    into a global projection and a private residual (memory).
+    """
+    # =====================================================================
+    # [CONFIGURATION] EXCLUSION SETTINGS
+    # =====================================================================
+    EXCLUDE_PREFIXES = ['bn', 'running_mean', 'running_var', 'num_batches_tracked', 'pts_bbox_head.task_heads']
+    KEEP_PRIVATE = True     # keeps excluded prefixes strictly local
+    # =====================================================================
+
+    print("\n" + "="*60)
+    print(f"Running GradSplit (Personalization Factor: {personalization_factor:.2f})...")
+    print("="*60)
+    
+    global_dir = os.path.dirname(prev_global_path)
+    memory_dir = os.path.join(global_dir, "client_memories")
+    os.makedirs(global_dir, exist_ok=True)
+    os.makedirs(memory_dir, exist_ok=True)
+    num_clients = len(models)
+
+    print(f"Global checkpoint path: {prev_global_path}")
+    print(f"Number of client models: {num_clients}")
+    print(f"Client IDs: {client_ids}")
+    print(f"Normalized aggregation weights: {[float(w) for w in norm_weights]}")
+    print(f"Sum of normalized weights: {sum(float(w) for w in norm_weights):.6f}")
+
+    # ---------------------------------------------------------
+    # Round 0 check (Initialization fallback)
+    # ---------------------------------------------------------
+    if not os.path.exists(prev_global_path):
+        print(f"[WARNING] No previous global model found at {prev_global_path}.")
+        print("Initializing GradSplit baseline by running standard FedAvg for Round 0...")
+        
+        # Run FedAvg to create the initial global consensus
+        fedavg(models, [prev_global_path] * num_clients, norm_weights) 
+        
+        # Load the newly created global model to get the averaged weights
+        global_ckpt = torch.load(prev_global_path, map_location='cpu')
+        global_state = global_ckpt['state_dict']
+        
+        print(f"Round 0 FedAvg global model created with {len(global_state)} state_dict entries.")
+
+        for in_path, out_path in zip(models, output_paths):
+            # Load the client's individual checkpoint (preserves their 'step', 'meta', etc.)
+            client_ckpt = torch.load(in_path, map_location='cpu')
+            
+            # Safely overwrite ONLY the model weights with the global consensus
+            for k, v in global_state.items():
+                if k in client_ckpt['state_dict']:
+                    client_ckpt['state_dict'][k] = v.clone()
+            
+            # Save the updated, individualized checkpoint for the client
+            os.makedirs(os.path.dirname(out_path), exist_ok=True)
+            torch.save(client_ckpt, out_path)
+            print(f"  Initialized client checkpoint from global consensus: {out_path}")
+            
+        print("Round 0 initialization complete. Client step counts preserved.")
+        return
+
+    # ---------------------------------------------------------
+    # Parse Global Model & Tracked Keys
+    # ---------------------------------------------------------
+    global_ckpt = torch.load(prev_global_path, map_location='cpu')
+    global_state = global_ckpt['state_dict']
+    
+    gradsplit_keys = []
+    fedavg_keys = []
+    
+    for k, v in global_state.items():
+        if v.is_floating_point():
+            if any(excl in k for excl in EXCLUDE_PREFIXES):
+                fedavg_keys.append(k)
+            else:
+                gradsplit_keys.append(k)
+
+    total_params = sum(global_state[k].numel() for k in gradsplit_keys)
+    print(f"GradSplit: Vector tracking on {len(gradsplit_keys)} layers ({total_params:,} true weights).")
+    if not KEEP_PRIVATE:
+        print(f"FedAvg: Standard averaging on {len(fedavg_keys)} excluded layers/trackers.")
+    else:
+        print(f"Keeping {len(fedavg_keys)} excluded layers strictly private.")
+
+    print(f"Tracked flattened vector length: {total_params:,}")
+    print(f"Excluded floating-point keys: {len(fedavg_keys)}")
+
+    # ---------------------------------------------------------
+    # Phase 1: Extract Client Updates & Load Memories
+    # ---------------------------------------------------------
+    print("\n--- Phase 1: Extracting Local Updates & Memories ---")
+    prev_flat_global = flatten_tensors(global_state, gradsplit_keys)
+    
+    client_updates = []
+    client_memories = []
+    fedavg_accumulators = {k: torch.zeros_like(global_state[k]) for k in fedavg_keys}
+    
+    print(f"Previous global flattened vector shape: {tuple(prev_flat_global.shape)}")
+    
+    for i, (m_path, cid, w_i) in enumerate(zip(models, client_ids, norm_weights)):
+        # Load client training result
+        ckpt_i = torch.load(m_path, map_location='cpu')
+        state_i = ckpt_i['state_dict']
+        flat_client = flatten_tensors(state_i, gradsplit_keys)
+
+        print(f"  [{cid}] Loading model from: {m_path}")
+        print(f"  [{cid}] Flattened client vector shape: {tuple(flat_client.shape)}")
+        print(f"  [{cid}] Client aggregation weight: {float(w_i):.6f}")
+        
+        update_i = flat_client - prev_flat_global
+        client_updates.append(update_i)
+        
+        grad_norm = torch.norm(update_i).item()
+        grad_mean_abs = update_i.abs().mean().item()
+        grad_max_abs = update_i.abs().max().item()
+        print(f"  [{cid}] Extracted weight update. L2 Norm: {grad_norm:.4f}")
+        print(f"  [{cid}] Mean |update|: {grad_mean_abs:.8f} | Max |update|: {grad_max_abs:.8f}")
+
+        # Keep placeholder memory handling structure intact for compatibility
+        # even though this simpler version does not reconstruct via memory.
+        mem_path = os.path.join(memory_dir, f"{cid}_memory.pt")
+        if os.path.exists(mem_path):
+            mem_data = torch.load(mem_path, map_location='cpu')
+            if isinstance(mem_data, dict) and 'memory' in mem_data:
+                mem_i = mem_data['memory']
+            else:
+                mem_i = mem_data
+            print(f"  [{cid}] Loaded existing memory from: {mem_path}")
+        else:
+            mem_i = torch.zeros_like(prev_flat_global)
+            print(f"  [{cid}] No previous memory found. Using zero memory placeholder.")
+        client_memories.append(mem_i)
+
+        # # Handle excluded layers
+        # for k in fedavg_keys:
+        #     if k in state_i:
+        #         fedavg_accumulators[k] += state_i[k] * w_i
+        if not KEEP_PRIVATE:
+            for k in fedavg_keys:
+                if k in state_i:
+                    fedavg_accumulators[k] += state_i[k] * w_i
+                
+        del ckpt_i, flat_client
+
+    # ---------------------------------------------------------
+    # Phase 2: Calculate Consensus / Semi-Consensus Directions
+    # ---------------------------------------------------------
+    print("\n--- Phase 2: Calculating Global Consensus Direction ---")
+
+    num_clients = len(client_updates)
+    total_dims = client_updates[0].numel()
+
+    # Stack all client update vectors into one matrix of shape [num_clients, total_dims]
+    # Each row is one client's full flattened update vector.
+    update_matrix = torch.stack(client_updates, dim=0)
+
+    # Convert each update entry to its sign:
+    # +1 = wants this weight to increase
+    # -1 = wants this weight to decrease
+    #  0 = no change for this weight
+    sign_matrix = torch.sign(update_matrix)
+
+    # Reshape the client weights so broadcasting works over all flattened dimensions.
+    weight_tensor = torch.tensor(norm_weights, dtype=update_matrix.dtype, device=update_matrix.device).view(num_clients, 1)
+
+    print(f"Update matrix shape: {tuple(update_matrix.shape)}")
+    print(f"Sign matrix shape: {tuple(sign_matrix.shape)}")
+    print(f"Weight tensor shape: {tuple(weight_tensor.shape)}")
+
+    # Count, per flattened coordinate, how many clients want + / - / 0 movement.
+    nonzero_counts = (sign_matrix != 0).sum(dim=0)
+    pos_counts = (sign_matrix == 1).sum(dim=0)
+    neg_counts = (sign_matrix == -1).sum(dim=0)
+
+    # 5/5 full agreement masks
+    all_agree_pos_mask = pos_counts == num_clients
+    all_agree_neg_mask = neg_counts == num_clients
+    all_agree_zero_mask = nonzero_counts == 0
+    all_agree_mask = all_agree_pos_mask | all_agree_neg_mask | all_agree_zero_mask
+
+    # 4/5 semi-agreement masks
+    at_least4_pos_mask = pos_counts >= 4
+    at_least4_neg_mask = neg_counts >= 4
+    semi_agree_mask = (at_least4_pos_mask | at_least4_neg_mask) & (~all_agree_mask)
+
+    # Everything else is personalized / not globally agreed enough
+    personalized_mask = ~(all_agree_mask | semi_agree_mask)
+
+    num_all_agree = all_agree_mask.sum().item()
+    num_semi_agree = semi_agree_mask.sum().item()
+    num_personalized = personalized_mask.sum().item()
+
+    print(f"  Total flattened dimensions: {total_dims:,}")
+    print(f"  Full invariant agreement (5/5 same sign or all zero): {num_all_agree:,} / {total_dims:,} ({100.0 * num_all_agree / total_dims:.2f}%)")
+    print(f"  Semi-invariant agreement (4/5 same nonzero sign, excluding 5/5): {num_semi_agree:,} / {total_dims:,} ({100.0 * num_semi_agree / total_dims:.2f}%)")
+    print(f"  Personalized dimensions (3 or fewer agreeing): {num_personalized:,} / {total_dims:,} ({100.0 * num_personalized / total_dims:.2f}%)")
+
+    print(f"  5/5 positive-agreement dimensions: {all_agree_pos_mask.sum().item():,}")
+    print(f"  5/5 negative-agreement dimensions: {all_agree_neg_mask.sum().item():,}")
+    print(f"  5/5 zero-agreement dimensions: {all_agree_zero_mask.sum().item():,}")
+    print(f"  4/5 positive-agreement dimensions: {at_least4_pos_mask.sum().item() - all_agree_pos_mask.sum().item():,}")
+    print(f"  4/5 negative-agreement dimensions: {at_least4_neg_mask.sum().item() - all_agree_neg_mask.sum().item():,}")
+
+    client_signs = []
+    for update_i in client_updates:
+        client_signs.append(torch.sign(update_i))
+
+    print("\n  Pairwise sign agreement per client:")
+    for i, cid_i in enumerate(client_ids):
+        for j, cid_j in enumerate(client_ids):
+            if j <= i:
+                continue
+            pair_agree_mask = client_signs[i] == client_signs[j]
+            pair_agree_count = pair_agree_mask.sum().item()
+            print(f"    [{cid_i} vs {cid_j}] Agree on sign in {pair_agree_count:,} / {total_dims:,} dims ({100.0 * pair_agree_count / total_dims:.2f}%)")
+
+    # These direction vectors are sparse over the flattened space:
+    # - invariant_direction contains the weighted average update ONLY on 5/5-agreed coordinates
+    # - semi_invariant_direction contains the weighted average update ONLY on 4/5-agreed coordinates
+    invariant_direction = torch.zeros_like(prev_flat_global)
+    semi_invariant_direction = torch.zeros_like(prev_flat_global)
+
+    if num_all_agree > 0:
+        invariant_direction[all_agree_mask] = (
+            (update_matrix[:, all_agree_mask] * weight_tensor).sum(dim=0)
+        )
+
+    if num_semi_agree > 0:
+        semi_invariant_direction[semi_agree_mask] = (
+            (update_matrix[:, semi_agree_mask] * weight_tensor).sum(dim=0)
+        )
+
+    invariant_norm = torch.norm(invariant_direction)
+    semi_invariant_norm = torch.norm(semi_invariant_direction)
+
+    print(f"\n  Invariant direction L2 norm: {invariant_norm:.4f}")
+    print(f"  Semi-invariant direction L2 norm: {semi_invariant_norm:.4f}")
+    print(f"  Invariant nonzero entries: {(invariant_direction != 0).sum().item():,}")
+    print(f"  Semi-invariant nonzero entries: {(semi_invariant_direction != 0).sum().item():,}")
+
+    # ---------------------------------------------------------
+    # Phase 3: FedAvg global model
+    # ---------------------------------------------------------
+    # 1. Setup accumulators for the N-way average using the first model's structure
+    temp_ckpt = torch.load(models[0], map_location='cpu')
+
+    # 2. Setup accumulators for the N-way average
+    running_sum = {}
+    presence_weights = {}
+    
+    for k, v in temp_ckpt['state_dict'].items():
+        if not v.is_floating_point() or 'num_batches_tracked' in k:
+             continue
+             
+        running_sum[k] = torch.zeros_like(v)
+        presence_weights[k] = 0.0
+        
+    del temp_ckpt
+    
+    # 3. Iterate sequentially through remaining models
+    print("Averaging weights...")
+    print(f"Number of float keys being averaged: {len(running_sum)}")
+    for i in range(len(models)):
+        m_path = models[i]
+        w_i = norm_weights[i]
+        
+        ckpt_i = torch.load(m_path, map_location='cpu')
+        state_dict_i = ckpt_i['state_dict']
+
+        print(f"  Averaging model {i+1}/{len(models)}: {m_path} with weight {float(w_i):.6f}")
+        
+        for k in running_sum.keys():
+            if k in state_dict_i:
+                running_sum[k] += state_dict_i[k] * w_i
+                presence_weights[k] += w_i
+                
+        # Free memory after processing each model
+        del ckpt_i 
+        
+    # Calculate final averaged weights
+    averaged_weights = {}
+    missing_avg_keys = []
+    for k in running_sum.keys():
+        if presence_weights[k] > 0:
+            averaged_weights[k] = running_sum[k] / presence_weights[k]
+        else:
+            averaged_weights[k] = global_state[k].clone()
+            missing_avg_keys.append(k)
+
+    print(f"Finished averaging weights across clients.")
+    print(f"Keys with zero presence weight fallback to previous global: {len(missing_avg_keys)}")
+    if len(missing_avg_keys) > 0:
+        print(f"  Example fallback key: {missing_avg_keys[0]}")
+
+    # Build the full new global checkpoint for all parameters.
+    # This global model always has values for all params.
+    new_global_state = {}
+    for k, v in global_state.items():
+        if k in averaged_weights:
+            new_global_state[k] = averaged_weights[k].clone()
+        else:
+            # Non-floating keys / skipped keys are kept from the previous global checkpoint
+            new_global_state[k] = v.clone()
+
+    # For excluded keys, either keep them private in clients or sync them in the global checkpoint.
+    # Even when KEEP_PRIVATE=True for clients, we still store a complete global model on disk.
+    # Here we keep averaged excluded float keys in the saved global model if available.
+    if KEEP_PRIVATE:
+        print("KEEP_PRIVATE=True: excluded keys will remain private in distributed client checkpoints.")
+        print("But the saved global model will still contain full values for all parameters.")
+    else:
+        print("KEEP_PRIVATE=False: excluded keys will also be synchronized from the global model.")
+
+    # Flatten the tracked part of the averaged global model.
+    # This is the full FedAvg global over all tracked keys, before masking during client redistribution.
+    new_flat_global = flatten_tensors(new_global_state, gradsplit_keys)
+
+    # Optional diagnostics: how much the new global changed from the previous global.
+    global_delta = new_flat_global - prev_flat_global
+    global_delta_norm = torch.norm(global_delta).item()
+    print(f"Full averaged global tracked vector L2 delta from previous global: {global_delta_norm:.4f}")
+    print(f"Full averaged global tracked vector mean |delta|: {global_delta.abs().mean().item():.8f}")
+    print(f"Full averaged global tracked vector max |delta|: {global_delta.abs().max().item():.8f}")
+
+    # Write the full new global state into the checkpoint and save it.
+    for k in global_ckpt['state_dict'].keys():
+        if k in new_global_state:
+            global_ckpt['state_dict'][k] = new_global_state[k].clone()
+
+    print(f"Saving full averaged global model to: {prev_global_path}")
+    torch.save(global_ckpt, prev_global_path)
+
+    # ---------------------------------------------------------
+    # Phase 4: Diagnostics for masked redistribution
+    # ---------------------------------------------------------
+    print("\n--- Phase 4: Preparing Masked Client Redistribution ---")
+    print("Global model has now been computed for all parameters.")
+    print("Next, each client will only copy/blend the masked globally-agreed coordinates from this global model.")
+    print("All other tracked coordinates remain exactly as they were in that client's own final local model.")
+
+    # ---------------------------------------------------------
+    # Phase 5: Distribute Individualized Client Models
+    # ---------------------------------------------------------
+    print("\n--- Phase 5: Distributing Individualized Client Models ---")
+
+    use_semi_invariant = True
+    beta = personalization_factor
+
+    if beta < 0.0 or beta > 1.0:
+        raise ValueError(f"beta must be in [0, 1], got {beta}")
+
+    if use_semi_invariant:
+        global_mask = all_agree_mask | semi_agree_mask
+        mask_name = "invariant + semi-invariant"
+    else:
+        global_mask = all_agree_mask
+        mask_name = "invariant only"
+
+    num_globalized = global_mask.sum().item()
+    total_dims = global_mask.numel()
+
+    print(f"  Global overwrite mode: {mask_name}")
+    print(f"  Beta blend factor: {beta:.2f}")
+    print(f"  Globalized dimensions: {num_globalized:,} / {total_dims:,} ({100.0 * num_globalized / total_dims:.2f}%)")
+    print(f"  Private dimensions kept from each client: {total_dims - num_globalized:,} / {total_dims:,} ({100.0 * (total_dims - num_globalized) / total_dims:.2f}%)")
+
+    for i, (in_path, out_path, cid) in enumerate(zip(models, output_paths, client_ids)):
+        ckpt = torch.load(in_path, map_location='cpu')
+        state_i = ckpt['state_dict']
+
+        flat_client = flatten_tensors(state_i, gradsplit_keys)
+
+        print(f"  [{cid}] Preparing individualized checkpoint from: {in_path}")
+        print(f"  [{cid}] Flat client norm before masked overwrite: {torch.norm(flat_client).item():.4f}")
+
+        # Start from the client's own final trained model this round
+        new_flat_client = flat_client.clone()
+
+        # On the selected consensus mask:
+        # beta = 0  -> keep client value
+        # beta = 1  -> fully take global value
+        # 0<beta<1  -> interpolate between client and global
+        #
+        # Exact vector math on masked coordinates:
+        # new = (1-beta)*client + beta*global
+        #
+        # Outside the mask, the client stays completely private and unchanged.
+        before_mask_values = flat_client[global_mask]
+        global_mask_values = new_flat_global[global_mask]
+
+        new_flat_client[global_mask] = (
+            (1.0 - beta) * before_mask_values +
+            beta * global_mask_values
+        )
+
+        new_client_weights = unflatten_tensors(new_flat_client, global_state, gradsplit_keys)
+
+        # Copy the tracked flattened tensors back into the checkpoint
+        for k in global_ckpt['state_dict'].keys():
+            if k in gradsplit_keys:
+                ckpt['state_dict'][k] = new_client_weights[k].clone()
+            elif not KEEP_PRIVATE:
+                if k in ckpt['state_dict']:
+                    ckpt['state_dict'][k] = global_ckpt['state_dict'][k].clone()
+
+        # Reset optimizer states if present to avoid momentum pulling towards old paths
+        if 'optimizer' in ckpt and 'state' in ckpt['optimizer']:
+            for param_id in ckpt['optimizer']['state']:
+                for key in ckpt['optimizer']['state'][param_id]:
+                    if torch.is_tensor(ckpt['optimizer']['state'][param_id][key]):
+                        ckpt['optimizer']['state'][param_id][key].zero_()
+
+        os.makedirs(os.path.dirname(out_path), exist_ok=True)
+        torch.save(ckpt, out_path)
+
+        changed_dims = global_mask.sum().item()
+        changed_norm = torch.norm(new_flat_client - flat_client).item()
+        private_dims = total_dims - changed_dims
+        print(f"  [{cid}] Saved blended model to {out_path} | Overwritten/blended dims: {changed_dims:,}")
+        print(f"  [{cid}] Private dims kept unchanged: {private_dims:,}")
+        print(f"  [{cid}] L2 change introduced by masked overwrite: {changed_norm:.4f}")
+
     print("="*60)
     print("GradSplit Aggregation Complete.\n")
 
@@ -3054,6 +3483,16 @@ def main():
                   output_paths, 
                   norm_weights, 
                   client_ids, 
+                  prev_global_path="/workspace/work_dirs/gradsplit_states/global_model.pth", 
+                  personalization_factor=1.0,
+                  decay=1.0, 
+                  eps=1e-12)
+    elif args.method == 'gradsplit_simpler':
+        client_ids = [f"Model{string.ascii_uppercase[i]}" for i in range(len(model_paths))]
+        gradsplit_simpler(model_paths, 
+                          output_paths, 
+                          norm_weights, 
+                          client_ids, 
                   prev_global_path="/workspace/work_dirs/gradsplit_states/global_model.pth", 
                   personalization_factor=1.0,
                   decay=1.0, 
