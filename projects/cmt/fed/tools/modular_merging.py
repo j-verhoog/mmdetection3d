@@ -2611,6 +2611,11 @@ def fedmc(models, fisher_paths, output_paths, norm_weights, client_ids,
         if 'state_dict' in fisher_i: # Handle case if saved as a dict like checkpoints
             fisher_i = fisher_i['state_dict']
         
+        
+        # strip the wierd naming if it exists (e.g., 'module.layer1.weight' -> 'layer1.weight')
+        fisher_i = {k.replace('module.', ''): v for k, v in fisher_i.items()}
+        
+
         all_importance = []
         current_personalized = 0
         
