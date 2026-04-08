@@ -97,13 +97,13 @@ run_merge () {
             --weight-a $SIZE_A --weight-b $SIZE_B --weight-c $SIZE_C --weight-d $SIZE_D --weight-e $SIZE_E \
             --method $METHOD \
             --config projects/cmt/fed/fedSelect/improved_lightweight_cmt_iterated_FedSelect.py \
-            --select-ratio 0.02 \
-            --max-sparsity 0.4"
+            --select-ratio 0.005 \
+            --max-sparsity 0.1"
             
     # Append CKA specific arguments if the method is fedselect_cka
     if [ "$METHOD" = "fedselect_cka" ]; then
         MERGE_CMD="$MERGE_CMD \
-            --runner-path projects/cmt_40_epoch/fedselect/scripts_cmt_copy/runner.py \
+            --runner-path projects/cmt_40_epoch/fedcka/scripts_cmt_copy/runner.py \
             --data-dir /tudelft.net/staff-umbrella/IntelligentVehiclesPublicDatasets/nuscenes \
             --modality lidar_camera"
     fi

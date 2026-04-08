@@ -50,6 +50,11 @@ class ModelComparator:
         self.temp_dir = temp_dir
         self.verbose = verbose
         self.bn_module_cache = {}  # Cache BN modules for efficient reuse
+
+    def _log(self, message: str):
+        """Print only when verbose logging is enabled."""
+        if self.verbose:
+            print(message)
     
     def _setup_temp_dir(self):
         """Create fresh temp directory."""
@@ -93,7 +98,7 @@ class ModelComparator:
         
         try:
             # Phase 1: Cache Model A activations
-            print(f"  [Phase 1] Caching activations for Model A ({len(self.sample_files)} samples)...")
+            self._log(f"  [Phase 1] Caching activations for Model A ({len(self.sample_files)} samples)...")
             model_a, pipeline_a = load_model_and_pipeline(self.config_path, model_a_path)
             hooks_a, handles_a = register_hooks(model_a, hook_filter)
             
@@ -103,15 +108,15 @@ class ModelComparator:
                 
                 # Debug first sample
                 if i == 0:
-                    print(f"    Model A sample 0: captured {len(acts)} activations")
+                    self._log(f"    Model A sample 0: captured {len(acts)} activations")
                     for name, act in list(acts.items())[:3]:
                         if act is not None:
                             if isinstance(act, dict) and act.get("is_sparse"):
-                                print(f"      {name}: SPARSE dict {act['features'].shape}, CPU (cached)")
+                                self._log(f"      {name}: SPARSE dict {act['features'].shape}, CPU (cached)")
                             else:
-                                print(f"      {name}: {act.shape}, {act.device}")
+                                self._log(f"      {name}: {act.shape}, {act.device}")
                         else:
-                            print(f"      {name}: None")
+                            self._log(f"      {name}: None")
             
             for h in handles_a:
                 h.remove()
@@ -119,7 +124,7 @@ class ModelComparator:
             torch.cuda.empty_cache()
             
             # Phase 2: Stream Model B and compute metric
-            print(f"  [Phase 2] Computing {metric.get_name()} with Model B...")
+            self._log(f"  [Phase 2] Computing {metric.get_name()} with Model B...")
             model_b, pipeline_b = load_model_and_pipeline(self.config_path, model_b_path)
             hooks_b, handles_b = register_hooks(model_b, hook_filter)
             
@@ -131,15 +136,15 @@ class ModelComparator:
                 
                 # Debug first sample
                 if i == 0:
-                    print(f"    Model A sample 0: captured {len(acts)} activations")
-                    for name, act in list(acts.items())[:3]:
+                    self._log(f"    Model B sample 0: captured {len(acts_b)} activations")
+                    for name, act in list(acts_b.items())[:3]:
                         if act is not None:
                             if isinstance(act, dict) and act.get("is_sparse"):
-                                print(f"      {name}: SPARSE dict {act['features'].shape}, CPU (cached)")
+                                self._log(f"      {name}: SPARSE dict {act['features'].shape}, CPU (cached)")
                             else:
-                                print(f"      {name}: {act.shape}, {act.device}")
+                                self._log(f"      {name}: {act.shape}, {act.device}")
                         else:
-                            print(f"      {name}: None")
+                            self._log(f"      {name}: None")
                 
                 try:
                     acts_a = torch.load(os.path.join(self.temp_dir, f"{i}.pt"))
@@ -151,9 +156,9 @@ class ModelComparator:
                 
                 # Debug common layers
                 if i == 0:
-                    print(f"    Sample 0: {len(common_layers)} common layers out of A={len(acts_a)} B={len(acts_b)}")
+                    self._log(f"    Sample 0: {len(common_layers)} common layers out of A={len(acts_a)} B={len(acts_b)}")
                     if len(common_layers) > 0:
-                        print(f"    Common layer examples: {list(common_layers)[:3]}")
+                        self._log(f"    Common layer examples: {list(common_layers)[:3]}")
                 
                 for layer in common_layers:
                     score = metric.compute_layer_score(acts_a[layer], acts_b[layer])
@@ -199,7 +204,7 @@ class ModelComparator:
         Returns:
             Dict mapping layer names to metric scores
         """
-        print(f"  Computing {metric.get_name()} (extracting BN modules)...")
+        self._log(f"  Computing {metric.get_name()} (extracting BN modules)...")
         
         # Load both models
         model_a, pipeline_a = load_model_and_pipeline(self.config_path, model_a_path)
@@ -230,7 +235,7 @@ class ModelComparator:
         common_bn_layers = set(bn_modules_a.keys()) & set(bn_modules_b.keys())
         
         for layer_name in common_bn_layers:
-            print(f"    Comparing BN Layer: {layer_name} ...") if self.verbose else None
+            self._log(f"    Comparing BN Layer: {layer_name} ...")
             score = metric.compute_layer_score(
                 bn_modules_a[layer_name],
                 bn_modules_b[layer_name]
@@ -275,7 +280,7 @@ class ModelComparator:
         
         for metric in metrics:
             metric_name = metric.get_name()
-            print(f"\n[{metric_name}]")
+            self._log(f"\n[{metric_name}]")
             
             if isinstance(metric, CKAMetric):
                 # Activation-based metric
@@ -289,7 +294,7 @@ class ModelComparator:
                 )
             
             results[metric_name] = scores
-            print(f"  Compared {len(scores)} layers")
+            self._log(f"  Compared {len(scores)} layers")
         
         return results
     

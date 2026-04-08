@@ -1463,6 +1463,10 @@ def fedselect_cka(models, output_paths, norm_weights, client_ids, prev_global_pa
     os.makedirs(mask_dir, exist_ok=True)
     os.makedirs(os.path.dirname(prev_global_path), exist_ok=True)
 
+    print(f"Ensured directories exist:")
+    print(f"  mask_dir={mask_dir}")
+    print(f"  global_dir={os.path.dirname(prev_global_path)}")
+
     if not config or not data_dir:
         raise ValueError("FedSelect CKA requires --config and --data-dir to be provided.")
 
@@ -1474,8 +1478,15 @@ def fedselect_cka(models, output_paths, norm_weights, client_ids, prev_global_pa
     prev_state = prev_global_ckpt['state_dict']
     
     valid_keys = [k for k, v in prev_state.items() if v.is_floating_point() and 'num_batches_tracked' not in k]
+    print(f"Valid floating-point keys used for masking/aggregation: {len(valid_keys)}")
+    for k in valid_keys[:10]:
+        print(f"  {k} | shape={tuple(prev_state[k].shape)} | numel={prev_state[k].numel()}")
+
     total_params = sum(prev_state[k].numel() for k in valid_keys)
     print(f"Total valid parameters: {total_params:,}")
+
+    print(f"Max allowed personalized params per client: {int(total_params * max_sparsity):,}")
+    print(f"Target params to newly personalize per round: {int(total_params * select_ratio):,}")
 
     # 1. Dynamically import runner.py
     if not os.path.exists(runner_path):
@@ -1496,6 +1507,9 @@ def fedselect_cka(models, output_paths, norm_weights, client_ids, prev_global_pa
             except ValueError:
                 pass
     current_round = max(existing_rounds) + 1 if existing_rounds else 0
+    print(f"Detected previous rounds: {sorted(existing_rounds)}")
+    print(f"Current round inferred as: {current_round}")
+
     round_mask_dir = os.path.join(mask_dir, f"round_{current_round}")
     os.makedirs(round_mask_dir, exist_ok=True)
     print(f"Saving historical masks for round {current_round} to {round_mask_dir}")
@@ -1503,6 +1517,9 @@ def fedselect_cka(models, output_paths, norm_weights, client_ids, prev_global_pa
     # 2. Phase 1: Client Subnetwork Discovery via CKA
     print("\nPhase 1: Discovering personalized client layers via CKA...")
     for m_path, cid in zip(models, client_ids):
+        print(f"\n==================== CLIENT {cid} ====================")
+        print(f"Client checkpoint path: {m_path}")
+
         mask_path = os.path.join(mask_dir, f"{cid}_mask.pth")
         
         # Load existing mask to preserve history across rounds
@@ -1518,6 +1535,11 @@ def fedselect_cka(models, output_paths, norm_weights, client_ids, prev_global_pa
         k_to_select = int(total_params * select_ratio)
         k_to_select = min(k_to_select, max_allowed - current_personalized)
         
+        print(f"{cid}: current_personalized={current_personalized:,} / {total_params:,} ({current_personalized / total_params * 100:.2f}%)")
+        print(f"{cid}: max_allowed={max_allowed:,}")
+        print(f"{cid}: remaining personalization budget={max_allowed - current_personalized:,}")
+        print(f"{cid}: final k_to_select={k_to_select:,}")
+
         if k_to_select > 0:
             print(f"\n--- Computing CKA for {cid} ---")
             cka_rows = cka_runner.run_cka(
@@ -1531,8 +1553,14 @@ def fedselect_cka(models, output_paths, norm_weights, client_ids, prev_global_pa
 
             # Filter out NaNs and sort by CKA score DESCENDING (Highest CKA first)
             valid_cka = [(idx, name, score) for idx, name, score in cka_rows if not math.isnan(score)]
+            print(f"{cid}: CKA returned {len(cka_rows)} rows.")
+            print(f"{cid}: valid CKA rows={len(valid_cka)}, NaN rows filtered out={len(cka_rows) - len(valid_cka)}")
+
             valid_cka.sort(key=lambda x: x[2], reverse=True)
-            
+            print(f"{cid}: Top 10 layers by CKA:")
+            for idx, name, score in valid_cka[:10]:
+                print(f"  idx={idx} | layer={name} | cka={score:.6f}")
+                
             new_personalized = 0
             layers_masked = 0
             
@@ -1545,6 +1573,8 @@ def fedselect_cka(models, output_paths, norm_weights, client_ids, prev_global_pa
                 layer_new_params = sum((~client_mask[k]).sum().item() for k in layer_keys)
                 
                 if layer_new_params > 0:
+                    print(f"{cid}: SELECTING layer {layer_name} with CKA={score:.6f}, adding {layer_new_params:,} new params")
+
                     # Apply mask to the entire layer
                     for k in layer_keys:
                         # Convert 0s to 1s
@@ -1597,7 +1627,10 @@ def fedselect_cka(models, output_paths, norm_weights, client_ids, prev_global_pa
             running_sum[k] / presence_weights[k].clamp(min=1e-9),
             prev_state[k] # Fallback to previous global if all clients personalized it
         )
-        
+    
+    num_fallback_keys = sum((presence_weights[k] <= 0).all().item() for k in valid_keys)
+    print(f"Keys fully falling back to previous global because all clients personalized them: {num_fallback_keys}")
+
     for k in valid_keys:
         prev_global_ckpt['state_dict'][k] = averaged_weights[k]
     torch.save(prev_global_ckpt, prev_global_path)

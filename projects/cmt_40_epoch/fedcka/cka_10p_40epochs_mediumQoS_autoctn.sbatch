@@ -2,15 +2,15 @@
 #SBATCH --partition=general
 #SBATCH --qos=medium
 #SBATCH --job-name=fs-cka
-#SBATCH --output=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/cmt/fs_cka_job%j_rank%t.out
-#SBATCH --error=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/cmt/fs_cka_job%j_rank%t.err
+#SBATCH --output=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/cmt/fs_cka_10p_job%j_rank%t.out
+#SBATCH --error=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/cmt/fs_cka_10p_job%j_rank%t.err
 #SBATCH --time=36:00:00
 #SBATCH --nodes=1
 #SBATCH --ntasks=2
 #SBATCH --ntasks-per-node=2
 #SBATCH --gres=gpu:a40:2
 #SBATCH --cpus-per-task=8
-#SBATCH --mem=48G
+#SBATCH --mem=64G
 
 set -e # stop if something fails
 echo "=== Starting Job ID: $SLURM_JOB_ID ==="
@@ -41,7 +41,7 @@ PRETRAINED_BACKBONE="ckpts/nuim_r50.pth"
 # --- STANDARD SETUP ---
 export SRUN_CPUS_PER_TASK=${SLURM_CPUS_PER_TASK:-1}
 export WANDB_PROJECT="cmt_40_epoch"
-export RUN_NAME="FS_cka_40epochs"
+export RUN_NAME="FS_cka_10p_40epochs"
 CONTINUE_WANDB_RUN=true
 
 # Gets API key robustly
@@ -106,7 +106,7 @@ module load cuda
 export MASTER_ADDR=$(scontrol show hostnames "$SLURM_JOB_NODELIST" | head -n 1)
 
 # --- ONE General training function for all rounds: CHECK PATH ---
-source /home/nfs/jtverhoog/mmdet/mmdetection3d/projects/cmt_40_epoch/fedselect/cka_runner_40epochs.sh
+source /home/nfs/jtverhoog/mmdet/mmdetection3d/projects/cmt_40_epoch/fedcka/cka_10p_runner_40epochs.sh
 
 # Cleanup
 srun --nodes=$SLURM_NNODES --ntasks-per-node=1 rm -rf "$TMP_BASE"
