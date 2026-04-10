@@ -1560,6 +1560,10 @@ def fedselect_cka(models, output_paths, norm_weights, client_ids, prev_global_pa
             print(f"{cid}: Top 10 layers by CKA:")
             for idx, name, score in valid_cka[:10]:
                 print(f"  idx={idx} | layer={name} | cka={score:.6f}")
+            
+            print(f"{cid}: Lowest 10 layers by CKA:")
+            for idx, name, score in valid_cka[-10:]:
+                print(f"  idx={idx} | layer={name} | cka={score:.6f}")
                 
             new_personalized = 0
             layers_masked = 0

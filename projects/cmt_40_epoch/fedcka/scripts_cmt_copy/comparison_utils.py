@@ -541,7 +541,8 @@ def process_single_sample(
     model: nn.Module,
     pipeline: Any,
     sample_path,  # Can be str (single file) or tuple (lidar_file, camera_file)
-    hooks: Dict[str, Any]
+    hooks: Dict[str, Any],
+    verbose=False
 ) -> Dict[str, torch.Tensor]:
     """
     Run inference on a single sample using exact same logic as inference_multi_modality_detector.
@@ -562,7 +563,7 @@ def process_single_sample(
     try:
         if is_multimodal:
             lidar_path, camera_path = sample_path
-            print(f"Processing multimodal sample: {os.path.basename(lidar_path)} + {os.path.basename(camera_path)}")
+            print(f"Processing multimodal sample: {os.path.basename(lidar_path)} + {os.path.basename(camera_path)}") if verbose else None
             
             # EXACT REPLICATION OF inference_multi_modality_detector LOGIC
             cfg = model.cfg
@@ -607,7 +608,7 @@ def process_single_sample(
                     lidar2img=[calibration_info['lidar2img']],
                     lidar2cam=[calibration_info['lidar2cam']]
                 ))
-                print(f"    Added calibration matrices (shapes: intrinsic={cam_intrinsic_4x4.shape}, lidar2img={calibration_info['lidar2img'].shape}, lidar2cam={calibration_info['lidar2cam'].shape})")
+                print(f"    Added calibration matrices (shapes: intrinsic={cam_intrinsic_4x4.shape}, lidar2img={calibration_info['lidar2img'].shape}, lidar2cam={calibration_info['lidar2cam'].shape})") if verbose else None
             else:
                 # Fallback dummy values if calibration fails
                 dummy_intrinsic = np.eye(4)

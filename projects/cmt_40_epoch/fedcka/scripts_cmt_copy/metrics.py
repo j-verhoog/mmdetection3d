@@ -19,7 +19,7 @@ class CKAMetric(ActivationMetric):
     Includes an algebraic expansion for sparse tensors to prevent OOM.
     """
     
-    def compute_layer_score(self, activation_a: Any, activation_b: Any) -> float:
+    def compute_layer_score(self, activation_a: Any, activation_b: Any, verbose=False) -> float:
         if activation_a is None or activation_b is None:
             return float('nan')
             
@@ -91,7 +91,7 @@ class CKAMetric(ActivationMetric):
             if denom > 0:
                 cka_score = hsic_xy / denom
                 val = torch.clamp(cka_score, 0.0, 1.0).item()
-                print(f"Sparse CKA Score: {1.0 - val:.4f} (Dist) | {val:.4f} (Sim)")
+                print(f"Sparse CKA Score: {1.0 - val:.4f} (Dist) | {val:.4f} (Sim)") if verbose else None
                 return float(1.0 - val)
             return float('nan')
 
