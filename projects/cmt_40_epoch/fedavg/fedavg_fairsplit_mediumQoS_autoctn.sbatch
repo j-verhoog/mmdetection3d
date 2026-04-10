@@ -154,7 +154,7 @@ run_training () {
       --env WANDB_DIR=\"/workspace/tmp/wandb/\$SLURM_PROCID\" \
       --env TMPDIR=\"/workspace/tmp/tmp/\$SLURM_PROCID\" \
       --env WANDB_PROJECT=\"$WANDB_PROJECT\" \
-      --env WANDB_NAME=\"FedAvg_uniform_40total_${MODEL_NAME}\" \
+      --env WANDB_NAME=\"FedAvg_uniformREAL_40total_${MODEL_NAME}\" \
       --env WANDB_API_KEY=\"$WANDB_API_KEY\" \
       --env OMP_NUM_THREADS=1 \
       --env MKL_NUM_THREADS=1 \
@@ -181,7 +181,7 @@ run_training () {
             data.samples_per_gpu=$SAMPLES_PER_GPU \
             total_epochs=$GLOBAL_EPOCHS \
             custom_hooks.1.stop_epoch=$STOP_EPOCH \
-            data.train.dataset.ann_file=\"${NETWORK_DATA_ROOT}/nuscenes_infos_train_uniformfedavg_${MODEL_NAME}.pkl\"
+            data.train.dataset.ann_file=\"data/nuscenes/nuscenes_infos_train_uniformfedavg_${MODEL_NAME}.pkl\"
       '
     "
 }
@@ -222,11 +222,11 @@ run_merge () {
 # ==========================================
 
 # Create persistent WandB Run IDs so each model logs to the same run across rounds
-export WANDB_ID_A="fedavgA_uniform123"
-export WANDB_ID_B="fedavgB_uniform123"
-export WANDB_ID_C="fedavgC_uniform123"
-export WANDB_ID_D="fedavgD_uniform123"
-export WANDB_ID_E="fedavgE_uniform123"
+export WANDB_ID_A="fedavgA_uniformREAL"
+export WANDB_ID_B="fedavgB_uniformREAL"
+export WANDB_ID_C="fedavgC_uniformREAL"
+export WANDB_ID_D="fedavgD_uniformREAL"
+export WANDB_ID_E="fedavgE_uniformREAL"
 
 if [ "$START_ROUND" -eq 1 ]; then
     echo "Starting fresh run from Round 1"
