@@ -159,8 +159,9 @@ data = dict(
         dataset=dict(
             type=dataset_type,
             data_root=data_root,
-            ann_file=data_root + '/nuscenes_infos_train.pkl',
-            load_interval=10,  # Improved: use 10% of data (vs 50% normally)
+            # Point to the specific client file
+            ann_file=data_root + '/nuscenes_infos_train_uniformfedavg_ModelA.pkl', 
+            # REMOVED: load_interval=10 (since the pkl only contains the 10% it needs)
             pipeline=train_pipeline,
             classes=class_names,
             modality=input_modality,

@@ -29,7 +29,7 @@ START_MODEL='A'
 RESUME_CHECKPOINT="/tudelft.net/staff-umbrella/MscThesisjverhoog/projects/cmt_fedavg/12215490/round_15/global_model.pth"
 
 # Paths
-NETWORK_DATA_ROOT="/tudelft.net/staff-umbrella/MscThesisjverhoog/datasets/nuscenes_cmt_full"
+export NETWORK_DATA_ROOT="/tudelft.net/staff-umbrella/MscThesisjverhoog/datasets/nuscenes_cmt_full"
 
 CONFIG_A=$NETWORK_DATA_ROOT
 CONFIG_B=$NETWORK_DATA_ROOT
@@ -180,7 +180,8 @@ run_training () {
           --cfg-options ${CFG_LOAD_ARG} dist_params.port=$MASTER_PORT \
             data.samples_per_gpu=$SAMPLES_PER_GPU \
             total_epochs=$GLOBAL_EPOCHS \
-            custom_hooks.1.stop_epoch=$STOP_EPOCH
+            custom_hooks.1.stop_epoch=$STOP_EPOCH \
+            data.train.dataset.ann_file=\"${NETWORK_DATA_ROOT}/nuscenes_infos_train_uniformfedavg_${MODEL_NAME}.pkl\"
       '
     "
 }
