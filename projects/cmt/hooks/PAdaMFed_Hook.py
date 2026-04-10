@@ -3,6 +3,7 @@ import copy
 import math
 from typing import Optional, Union
 
+from mmdetection3d.projects.cmt_40_epoch.fedcka.scripts_cmt_copy import runner
 import torch
 import torch.nn as nn
 from mmcv.runner.hooks import HOOKS
@@ -363,27 +364,37 @@ class PAdaMFedVRFp16OptimizerHook(Fp16OptimizerHook):
         ckpt = torch.load(self.prev_global_path, map_location="cpu")
         state_dict = ckpt.get("state_dict", ckpt)
         model_state_dict = self.prev_global_model.state_dict()
-
-        # Fix spconv version mismatch: (C_in, C_out, K1, K2, K3) -> (C_out, K1, K2, K3, C_in)
         transposed_count = 0
-        for k in list(state_dict.keys()):
-            if k in model_state_dict:
-                ckpt_shape = state_dict[k].shape
-                model_shape = model_state_dict[k].shape
-                
-                # Check if it's a 5D tensor mismatch that matches the exact spconv permutation
-                if ckpt_shape != model_shape and len(ckpt_shape) == 5 and len(model_shape) == 5:
-                    expected_shape = (ckpt_shape[1], ckpt_shape[2], ckpt_shape[3], ckpt_shape[4], ckpt_shape[0])
-                    if expected_shape == model_shape:
-                        state_dict[k] = state_dict[k].permute(1, 2, 3, 4, 0).contiguous()
-                        transposed_count += 1
+        loaded_count = 0
 
-        # Load the corrected state dict
-        self.prev_global_model.load_state_dict(state_dict, strict=False)
-        
-        if transposed_count > 0:
-            runner.logger.info(f"[PAdaMFed-VR] Auto-transposed {transposed_count} spconv weights to match current model backend.")
-        runner.logger.info("[PAdaMFed-VR] prev_global_model loaded manually.")
+        # Wrap in no_grad to ensure clean, untracked memory updates
+        with torch.no_grad():
+            for k, param in model_state_dict.items():
+                if k in state_dict:
+                    ckpt_val = state_dict[k]
+                    
+                    # 1. Sanitize weird tuple wrappers if they accidentally exist in the dict
+                    if isinstance(ckpt_val, tuple):
+                        ckpt_val = ckpt_val[-1] 
+                    
+                    if not torch.is_tensor(ckpt_val):
+                        continue
+                        
+                    # 2. Handle spconv permutation manually
+                    if ckpt_val.shape != param.shape and len(ckpt_val.shape) == 5 and len(param.shape) == 5:
+                        expected_shape = (ckpt_val.shape[1], ckpt_val.shape[2], ckpt_val.shape[3], ckpt_val.shape[4], ckpt_val.shape[0])
+                        if expected_shape == tuple(param.shape):
+                            ckpt_val = ckpt_val.permute(1, 2, 3, 4, 0).contiguous()
+                            transposed_count += 1
+                    
+                    # 3. Safely copy if shapes match, otherwise log and skip (no crashing!)
+                    if ckpt_val.shape == param.shape:
+                        param.copy_(ckpt_val)
+                        loaded_count += 1
+                    else:
+                        runner.logger.warning(f"[PAdaMFed-VR] Skip {k}: ckpt shape {ckpt_val.shape} != model shape {param.shape}")
+
+        runner.logger.info(f"[PAdaMFed-VR] Directly loaded {loaded_count} params. Auto-transposed {transposed_count} spconv weights.")
 
         if self.freeze_prev_global_norm_stats:
             self._freeze_norm_stats(self.prev_global_model)
