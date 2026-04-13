@@ -16,7 +16,7 @@ def parse_args():
     parser.add_argument('--method', type=str, default='fedavg', 
                     choices=['fedavg', 'fedbn', 'fednorm', 'fedper', 'fed_bn_and_per', 'fedmedian', 'feddyn', 
                              'fed_dyn_bn_and_per', 'fedselect', 'fedselect_elastic', 'fedselect_fullelastic',
-                             'fedselect_cka', 'pcgrad'],
+                             'fedselect_cka', 'pcgrad', 'fedmc'],
                     help='Aggregation method. Default is fedavg.')
     parser.add_argument('--config', type=str, default=None, 
                         help='Path to the MMDet3D config file (e.g., improved_lightweight_cmt_iterated.py). Required for FedBN.')
@@ -38,6 +38,10 @@ def parse_args():
     parser.add_argument('--cka-samples', type=int, default=10, help='FedSelect CKA: Max samples to process for CKA.')
     # ------------------------------------
 
+    # FedMC specific arguments
+    parser.add_argument('--fisher_paths', nargs='+', type=str, default=None, 
+                    help='Paths to the saved Fisher Information tensors (Required ONLY for FedMC)')
+    
     for i, char in enumerate(string.ascii_lowercase):
         help_text = f'Weight for model {char.upper()}' if i < 5 else argparse.SUPPRESS
         parser.add_argument(f'--weight-{char}', type=float, default=None, help=help_text)
@@ -1658,6 +1662,222 @@ def fedselect_cka(models, output_paths, norm_weights, client_ids, prev_global_pa
         torch.save(ckpt, out_path)
         print(f"Saved personalized FedSelect CKA model to {out_path}")
 
+def fedmc(models, fisher_paths, output_paths, norm_weights, client_ids, 
+          prev_global_path="/workspace/work_dirs/fedmc_states/global_model.pth", 
+          mask_dir="/workspace/work_dirs/fedmc_masks", 
+          select_ratio=0.05, max_sparsity=0.5):
+    """
+    FedMC implementation (Information Content Model Customization). 
+    Automatically discovers and freezes personalized subnetworks for each client 
+    based on Fisher Information (parameter importance), then aggregates the shared parameters.
+    """
+    print(f"Running FedMC Aggregation (select_ratio={select_ratio}, max_sparsity={max_sparsity})...")
+    os.makedirs(mask_dir, exist_ok=True)
+    os.makedirs(os.path.dirname(prev_global_path), exist_ok=True)
+
+    if not fisher_paths:
+        raise ValueError("Error: 'fisher_paths' must be provided when running FedMC. Check your argparse inputs.")
+
+    # 1. Load Pre-Training Global Weights
+    if not os.path.exists(prev_global_path):
+        print(f"No previous global model found at {prev_global_path}. Exiting FedMC since we need a baseline for aggregation. Please run one round of standard FedAvg first.")
+        exit(1)
+        
+    prev_global_ckpt = torch.load(prev_global_path, map_location='cpu')
+    prev_state = prev_global_ckpt['state_dict']
+    
+    # Identify valid floating-point keys
+    valid_keys = [k for k, v in prev_state.items() if v.is_floating_point() and 'num_batches_tracked' not in k]
+    total_params = sum(prev_state[k].numel() for k in valid_keys)
+    print(f"Total valid parameters for FedMC: {total_params:,}")
+
+    # ---------------------------------------------------------
+    # Layer Mapping for Visualization (Created Once)
+    # ---------------------------------------------------------
+    mapping_file = os.path.join(mask_dir, "layer_mapping.pth")
+    if not os.path.exists(mapping_file):
+        layer_info = {}
+        current_idx = 0
+        for k in valid_keys:
+            numel = prev_state[k].numel()
+            layer_info[k] = {
+                "shape": list(prev_state[k].shape),
+                "numel": numel,
+                "start_idx": current_idx,
+                "end_idx": current_idx + numel
+            }
+            current_idx += numel
+        torch.save(layer_info, mapping_file)
+        print(f"Created layer mapping file at {mapping_file}")
+
+    # ---------------------------------------------------------
+    # Auto-Detect Current Round Directory
+    # ---------------------------------------------------------
+    existing_rounds = []
+    for d in os.listdir(mask_dir):
+        if d.startswith("round_") and os.path.isdir(os.path.join(mask_dir, d)):
+            try:
+                existing_rounds.append(int(d.split("_")[1]))
+            except ValueError:
+                pass
+    current_round = max(existing_rounds) + 1 if existing_rounds else 0
+    round_mask_dir = os.path.join(mask_dir, f"round_{current_round}")
+    os.makedirs(round_mask_dir, exist_ok=True)
+    print(f"Saving historical Fisher masks for round {current_round} to {round_mask_dir}")
+
+    # ---------------------------------------------------------
+    # Phase 1: Client Subnetwork Discovery using Fisher Information
+    # ---------------------------------------------------------
+    print("\nPhase 1: Discovering informative client subnetworks via Fisher Information...")
+    for m_path, f_path, cid in zip(models, fisher_paths, client_ids):
+        mask_path = os.path.join(mask_dir, f"{cid}_mask.pth")
+        
+        # Load or initialize client mask (0 = Global, 1 = Personalized)
+        if os.path.exists(mask_path):
+            client_mask = torch.load(mask_path)
+        else:
+            client_mask = {k: torch.zeros_like(prev_state[k], dtype=torch.bool) for k in valid_keys}
+
+        ckpt_i = torch.load(m_path, map_location='cpu')
+        state_i = ckpt_i['state_dict']
+        
+        # Load Fisher Information diagonal
+        fisher_i = torch.load(f_path, map_location='cpu')
+        if 'state_dict' in fisher_i: # Handle case if saved as a dict like checkpoints
+            fisher_i = fisher_i['state_dict']
+        
+        
+        # strip the wierd naming if it exists (e.g., 'module.layer1.weight' -> 'layer1.weight')
+        fisher_i = {k.replace('module.', ''): v for k, v in fisher_i.items()}
+        
+
+        all_importance = []
+        current_personalized = 0
+        
+        for k in valid_keys:
+            if k in state_i and k in fisher_i:
+                # Use Fisher Information as the importance metric (using abs as a safety net)
+                importance = torch.abs(fisher_i[k])
+                
+                # Only evaluate parameters that are currently shared (mask == 0)
+                global_mask = ~client_mask[k]
+                all_importance.append(importance[global_mask].flatten())
+                current_personalized += client_mask[k].sum().item()
+                
+        # Determine how many new parameters to select this round
+        cat_importance = torch.cat(all_importance)
+        k_to_select = int(total_params * select_ratio)
+        max_allowed = int(total_params * max_sparsity)
+        k_to_select = min(k_to_select, max_allowed - current_personalized)
+        
+        if k_to_select > 0 and len(cat_importance) > 0:
+            k_to_select = min(k_to_select, len(cat_importance))
+            
+            # --- FISHER LOGGING ---
+            avg_overall_fisher = cat_importance.mean().item()
+            top_values = torch.topk(cat_importance, k_to_select).values
+            threshold = top_values[-1].item()
+            avg_selected_fisher = top_values.mean().item()
+            
+            print(f"\n[{cid}] FISHER INFORMATIVENESS:")
+            print(f"  -> Avg Fisher (all shared params): {avg_overall_fisher:.6e}")
+            print(f"  -> Avg Fisher (selected top-K):    {avg_selected_fisher:.6e}")
+            print(f"  -> Fisher Threshold Cutoff:        {threshold:.6e}")
+            
+            # Update the mask permanently
+            new_personalized = 0
+            layer_counts = {}
+            
+            for k in valid_keys:
+                if k in state_i and k in fisher_i:
+                    importance = torch.abs(fisher_i[k])
+                    
+                    # Flip 0 to 1 if it exceeds the Fisher threshold and is currently 0
+                    new_ones = (~client_mask[k]) & (importance >= threshold)
+                    client_mask[k][new_ones] = True
+                    
+                    selected_in_layer = new_ones.sum().item()
+                    new_personalized += selected_in_layer
+                    
+                    if selected_in_layer > 0:
+                        layer_counts[k] = selected_in_layer
+            
+            # Print top 3 layers with the most highly informative parameters
+            top_layers = sorted(layer_counts.items(), key=lambda x: x[1], reverse=True)[:3]
+            print(f"  -> Most informative layers modified: {', '.join([f'{k} (+{v} params)' for k, v in top_layers])}")
+            print(f"  -> Total Sparsity: {(current_personalized + new_personalized) / total_params * 100:.2f}% (+{new_personalized:,} new)")
+        else:
+            print(f"\n[{cid}] Reached max sparsity or no params to select. Total sparsity: {current_personalized / total_params * 100:.2f}%")
+            
+        torch.save(client_mask, mask_path)
+
+        # Save historical visualization mask (0=Global, 1=Personal)
+        vis_mask = {k: v.to(torch.int8) for k, v in client_mask.items()}
+        hist_mask_path = os.path.join(round_mask_dir, f"{cid}_mask.pt")
+        torch.save(vis_mask, hist_mask_path)
+
+        del ckpt_i, fisher_i
+        
+    # ---------------------------------------------------------
+    # Phase 2: Masked Server Aggregation
+    # ---------------------------------------------------------
+    print("\nPhase 2: Aggregating non-informative (shared) parameters on server...")
+    running_sum = {k: torch.zeros_like(v) for k, v in prev_state.items() if k in valid_keys}
+    presence_weights = {k: torch.zeros_like(v) for k, v in prev_state.items() if k in valid_keys}
+    
+    for m_path, cid, w_i in zip(models, client_ids, norm_weights):
+        mask_path = os.path.join(mask_dir, f"{cid}_mask.pth")
+        client_mask = torch.load(mask_path)
+        
+        ckpt_i = torch.load(m_path, map_location='cpu')
+        state_i = ckpt_i['state_dict']
+        
+        for k in valid_keys:
+            if k in state_i:
+                # Active mask = 1 where parameter is shared (mask == 0)
+                active_mask = (~client_mask[k]).float()
+                running_sum[k] += state_i[k] * active_mask * w_i
+                presence_weights[k] += active_mask * w_i
+                
+        del ckpt_i
+        
+    # Finalize averaged weights
+    averaged_weights = {}
+    for k in valid_keys:
+        valid_mask = presence_weights[k] > 0
+        averaged_weights[k] = torch.where(
+            valid_mask,
+            running_sum[k] / presence_weights[k].clamp(min=1e-9),
+            prev_state[k] # Fallback if all clients personalized it
+        )
+        
+    # Save the new global model
+    for k in valid_keys:
+        prev_global_ckpt['state_dict'][k] = averaged_weights[k]
+    torch.save(prev_global_ckpt, prev_global_path)
+    del prev_global_ckpt
+
+    # ---------------------------------------------------------
+    # Phase 3: Client Subnetwork Injection & Saving
+    # ---------------------------------------------------------
+    print("Phase 3: Injecting shared weights back into client models...")
+    for in_path, out_path, cid in zip(models, output_paths, client_ids):
+        ckpt = torch.load(in_path, map_location='cpu')
+        state = ckpt['state_dict']
+        
+        mask_path = os.path.join(mask_dir, f"{cid}_mask.pth")
+        client_mask = torch.load(mask_path)
+        
+        for k in valid_keys:
+            if k in state:
+                # Final weight = Mask * Local + (1 - Mask) * Global
+                m = client_mask[k].float()
+                state[k] = (m * state[k]) + ((1.0 - m) * averaged_weights[k])
+                        
+        os.makedirs(os.path.dirname(out_path), exist_ok=True)
+        torch.save(ckpt, out_path)
+        print(f"Saved personalized FedMC model for {cid} to {out_path}")
+
 def main():
     args = parse_args()
     
@@ -1949,5 +2169,18 @@ def main():
                 client_ids=client_ids,
                 prev_global_path="/workspace/work_dirs/pcgrad_states/global_model.pth"
             ) 
+    elif args.method == 'fedmc':
+        client_ids = [f"Model{string.ascii_uppercase[i]}" for i in range(len(model_paths))]
+        fedmc(
+            models=model_paths, 
+            output_paths=output_paths, 
+            norm_weights=norm_weights, 
+            client_ids=client_ids,
+            fisher_paths=args.fisher_paths,
+            prev_global_path="/workspace/work_dirs/fedmc_states/global_model.pth", 
+            mask_dir="/workspace/work_dirs/fedmc_masks",
+            select_ratio=args.select_ratio,
+            max_sparsity=args.max_sparsity
+        )
 if __name__ == '__main__':
     main()
