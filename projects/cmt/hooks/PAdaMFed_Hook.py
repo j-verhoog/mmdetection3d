@@ -298,8 +298,14 @@ class PAdaMFedVRFp16OptimizerHook(Fp16OptimizerHook):
             if isinstance(value, DataContainer):
                 # In DDP, data is wrapped in a list of length 1 for the current GPU
                 val = value.data[0] if isinstance(value.data, list) else value.data
+                
+                # 1. Handle single tensors
                 if isinstance(val, torch.Tensor):
                     val = val.to(device)
+                # 2. Handle lists of tensors (mmdet3d standard for 'points', 'gt_bboxes', etc.)
+                elif isinstance(val, list):
+                    val = [v.to(device) if isinstance(v, torch.Tensor) else v for v in val]
+                
                 unpacked[key] = val
             else:
                 unpacked[key] = value
@@ -362,7 +368,14 @@ class PAdaMFedVRFp16OptimizerHook(Fp16OptimizerHook):
         
         # Load the checkpoint manually
         ckpt = torch.load(self.prev_global_path, map_location="cpu")
-        state_dict = ckpt.get("state_dict", ckpt)
+        
+        # 1. Auto-detect the root state dictionary
+        state_dict = ckpt
+        for possible_key in ["state_dict", "model", "model_state"]:
+            if possible_key in state_dict and isinstance(state_dict[possible_key], dict):
+                state_dict = state_dict[possible_key]
+                break
+
         model_state_dict = self.prev_global_model.state_dict()
         transposed_count = 0
         loaded_count = 0
@@ -371,23 +384,21 @@ class PAdaMFedVRFp16OptimizerHook(Fp16OptimizerHook):
         with torch.no_grad():
             for k, param in model_state_dict.items():
                 if k in state_dict:
-                    ckpt_val = state_dict[k]
+                    # 2. Safely unwrap the tensor regardless of MMCV wrappers
+                    ckpt_val = self._unwrap_tensor(state_dict[k])
                     
-                    # 1. Sanitize weird tuple wrappers if they accidentally exist in the dict
-                    if isinstance(ckpt_val, tuple):
-                        ckpt_val = ckpt_val[-1] 
-                    
-                    if not torch.is_tensor(ckpt_val):
+                    if ckpt_val is None or not torch.is_tensor(ckpt_val):
+                        runner.logger.warning(f"[PAdaMFed-VR] Skip {k}: Could not extract a valid tensor from checkpoint.")
                         continue
                         
-                    # 2. Handle spconv permutation manually
+                    # 3. Handle spconv permutation manually
                     if ckpt_val.shape != param.shape and len(ckpt_val.shape) == 5 and len(param.shape) == 5:
                         expected_shape = (ckpt_val.shape[1], ckpt_val.shape[2], ckpt_val.shape[3], ckpt_val.shape[4], ckpt_val.shape[0])
                         if expected_shape == tuple(param.shape):
                             ckpt_val = ckpt_val.permute(1, 2, 3, 4, 0).contiguous()
                             transposed_count += 1
                     
-                    # 3. Safely copy if shapes match, otherwise log and skip (no crashing!)
+                    # 4. Safely copy if shapes match
                     if ckpt_val.shape == param.shape:
                         param.copy_(ckpt_val)
                         loaded_count += 1
@@ -412,14 +423,17 @@ class PAdaMFedVRFp16OptimizerHook(Fp16OptimizerHook):
             for name in self.mergeable_param_names:
                 if name not in loaded:
                     raise RuntimeError(f"Previous control variate missing key: {name}")
-                self.prev_local_control[name] = loaded[name].clone()
+                # Target the exact device of the model parameter
+                target_device = self.param_name_to_param[name].device
+                self.prev_local_control[name] = loaded[name].clone().to(target_device)
 
             runner.logger.info(f"[PAdaMFed-VR] Loaded previous local control from {path}")
         else:
             self.prev_local_control = {}
             for name in self.mergeable_param_names:
                 param = self.param_name_to_param[name]
-                self.prev_local_control[name] = torch.zeros_like(param.data, device="cpu")
+                # Inherits parameter's device
+                self.prev_local_control[name] = torch.zeros_like(param.data)
             runner.logger.info(f"[PAdaMFed-VR] No previous local control found for {self.client_id}; initialized zeros")
 
     def _load_server_broadcast_direction(self, runner):
@@ -437,19 +451,17 @@ class PAdaMFedVRFp16OptimizerHook(Fp16OptimizerHook):
         if loaded is None:
             if self.warmup_if_missing_server_state:
                 runner.logger.warning(
-                    "[PAdaMFed-VR] server_state['last_broadcast_direction'] is missing or None. "
-                    "Warmup mode will be used."
+                    "[PAdaMFed-VR] server_state['last_broadcast_direction'] is missing or None. Warmup mode will be used."
                 )
                 return
-            raise RuntimeError(
-                "server_state['last_broadcast_direction'] is missing. "
-                "The server must save the broadcast direction βc^t + (1-β)g^t."
-            )
+            raise RuntimeError("server_state['last_broadcast_direction'] is missing.")
 
         for name in self.mergeable_param_names:
             if name not in loaded:
                 raise RuntimeError(f"Broadcast direction missing key: {name}")
-            self.broadcast_direction[name] = loaded[name].clone()
+            # Target the exact device of the model parameter
+            target_device = self.param_name_to_param[name].device
+            self.broadcast_direction[name] = loaded[name].clone().to(target_device)
 
         runner.logger.info("[PAdaMFed-VR] Loaded broadcast direction from server state")
 
@@ -457,7 +469,8 @@ class PAdaMFedVRFp16OptimizerHook(Fp16OptimizerHook):
         self.current_control_accum = {}
         for name in self.mergeable_param_names:
             param = self.param_name_to_param[name]
-            self.current_control_accum[name] = torch.zeros_like(param.data, device="cpu")
+            # torch.zeros_like automatically inherits the device and dtype of `param.data`
+            self.current_control_accum[name] = torch.zeros_like(param.data)
 
     def _apply_manual_grad_clip(self, grad_dict, runner):
         if not self.use_grad_clip:
@@ -508,6 +521,24 @@ class PAdaMFedVRFp16OptimizerHook(Fp16OptimizerHook):
         for g in grad_dict.values():
             total += float(torch.sum(torch.abs(g.detach()) ** norm_type).item())
         return total ** (1.0 / norm_type)
+    
+    def _unwrap_tensor(self, val):
+        """Recursively unwraps lists, tuples, or dicts to find the underlying tensor."""
+        if torch.is_tensor(val):
+            return val
+        elif isinstance(val, (list, tuple)):
+            # MMCV sometimes wraps tensors in tuples; usually the last item is the tensor
+            return self._unwrap_tensor(val[-1])
+        elif isinstance(val, dict):
+            # If wrapped in a dict, check common keys
+            for k in ["data", "tensor", "weight", "bias"]:
+                if k in val:
+                    return self._unwrap_tensor(val[k])
+            # If it's a single-key dictionary, assume that's the tensor
+            if len(val) == 1:
+                return self._unwrap_tensor(next(iter(val.values())))
+            return None
+        return None
 
     def _sanitize_grad_dict(self, grad_dict, runner, tag):
         out = {}
