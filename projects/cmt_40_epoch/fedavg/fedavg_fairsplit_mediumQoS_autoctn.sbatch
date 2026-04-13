@@ -2,8 +2,8 @@
 #SBATCH --partition=general
 #SBATCH --qos=medium
 #SBATCH --job-name=UNIfedavgfair
-#SBATCH --output=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/cmt/fedavg_fairsplit_40epochs_%j.out
-#SBATCH --error=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/cmt/fedavg_fairsplit_40epochs_%j.err
+#SBATCH --output=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/cmt/fedavg_fairsplit2_40epochs_%j.out
+#SBATCH --error=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/cmt/fedavg_fairsplit2_40epochs_%j.err
 #SBATCH --time=36:00:00
 #SBATCH --nodes=1
 #SBATCH --ntasks=2
@@ -43,7 +43,7 @@ PRETRAINED_BACKBONE="ckpts/nuim_r50.pth"
 # --- STANDARD SETUP ---
 export SRUN_CPUS_PER_TASK=${SLURM_CPUS_PER_TASK:-1}
 export WANDB_PROJECT="cmt_40_epoch"
-export RUN_NAME="FedAvg_uniformfair"
+export RUN_NAME="FedAvg_uniformfairREAL"
 
 # Gets API key robustly
 export WANDB_API_KEY=$(awk '$1=="machine" && $2=="api.wandb.ai" {found=1}found && $1=="password" {print $2; exit}' "$HOME/.netrc")
@@ -222,11 +222,11 @@ run_merge () {
 # ==========================================
 
 # Create persistent WandB Run IDs so each model logs to the same run across rounds
-export WANDB_ID_A="fedavgA_uniformREAL"
-export WANDB_ID_B="fedavgB_uniformREAL"
-export WANDB_ID_C="fedavgC_uniformREAL"
-export WANDB_ID_D="fedavgD_uniformREAL"
-export WANDB_ID_E="fedavgE_uniformREAL"
+export WANDB_ID_A="fedavgA_uniformREAL2"
+export WANDB_ID_B="fedavgB_uniformREAL2"
+export WANDB_ID_C="fedavgC_uniformREAL2"
+export WANDB_ID_D="fedavgD_uniformREAL2"
+export WANDB_ID_E="fedavgE_uniformREAL2"
 
 if [ "$START_ROUND" -eq 1 ]; then
     echo "Starting fresh run from Round 1"
