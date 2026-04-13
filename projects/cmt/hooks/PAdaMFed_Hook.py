@@ -181,8 +181,8 @@ class PAdaMFedVRFp16OptimizerHook(Fp16OptimizerHook):
 
             if self.active_vr_mode:
                 grad_prev_global = prev_global_grads[name]
-                c_i_prev = self.prev_local_control[name].to(grad_cur.device)
-                broadcast = self.broadcast_direction[name].to(grad_cur.device)
+                c_i_prev = self.prev_local_control[name]
+                broadcast = self.broadcast_direction[name]
                 g_local = grad_cur + broadcast - float(self.beta) * c_i_prev - (1.0 - float(self.beta)) * grad_prev_global
             else:
                 g_local = grad_cur
