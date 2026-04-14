@@ -1,10 +1,10 @@
 #!/bin/bash
 #SBATCH --partition=general
 #SBATCH --qos=short
-#SBATCH --job-name=3PAdaMFed
-#SBATCH --output=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/cmt/padamfed_noclip_nolr_shortQoS_autoctn_job_%j.out
-#SBATCH --error=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/cmt/padamfed_noclip_nolr_shortQoS_autoctn_job_%j.err
-#SBATCH --time=04:00:00
+#SBATCH --job-name=4PAdaMFed
+#SBATCH --output=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/cmt/padamfed4_noclip_nolr_shortQoS_autoctn_job_%j.out
+#SBATCH --error=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/cmt/padamfed4_noclip_nolr_shortQoS_autoctn_job_%j.err
+#SBATCH --time=02:00:00
 #SBATCH --nodes=1
 #SBATCH --ntasks=2
 #SBATCH --ntasks-per-node=2
