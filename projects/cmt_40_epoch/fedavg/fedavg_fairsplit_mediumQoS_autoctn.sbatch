@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --partition=general
 #SBATCH --qos=medium
-#SBATCH --job-name=UNIfedavgfair
+#SBATCH --job-name=2UNIfedavgfair
 #SBATCH --output=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/cmt/fedavg_fairsplit2_40epochs_%j.out
 #SBATCH --error=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/cmt/fedavg_fairsplit2_40epochs_%j.err
 #SBATCH --time=36:00:00
