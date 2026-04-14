@@ -180,9 +180,12 @@ class PAdaMFedVRFp16OptimizerHook(Fp16OptimizerHook):
             grad_cur = raw_current_grads[name]
 
             if self.active_vr_mode:
-                grad_prev_global = prev_global_grads[name]
-                c_i_prev = self.prev_local_control[name]
-                broadcast = self.broadcast_direction[name]
+                # [FAIL-SAFE] Force all tensors to the exact device of grad_cur before math
+                target_device = grad_cur.device
+                grad_prev_global = prev_global_grads[name].to(target_device)
+                c_i_prev = self.prev_local_control[name].to(target_device)
+                broadcast = self.broadcast_direction[name].to(target_device)
+                
                 g_local = grad_cur + broadcast - float(self.beta) * c_i_prev - (1.0 - float(self.beta)) * grad_prev_global
             else:
                 g_local = grad_cur
@@ -226,7 +229,8 @@ class PAdaMFedVRFp16OptimizerHook(Fp16OptimizerHook):
                     lr_mult = self._get_lr_multiplier(name)
 
                 step_alpha = -float(self.eta) * float(lr_mult) / float(global_norm)
-                param.data.add_(update_grads[name], alpha=step_alpha)
+                # [FAIL-SAFE] Force the update tensor to match the parameter's device
+                param.data.add_(update_grads[name].to(param.device), alpha=step_alpha)
 
         self.loss_scaler.update(self._scale_update_param)
         runner.meta.setdefault("fp16", {})["loss_scaler"] = self.loss_scaler.state_dict()
@@ -257,7 +261,10 @@ class PAdaMFedVRFp16OptimizerHook(Fp16OptimizerHook):
 
     def after_run(self, runner):
         control_path = self._control_path()
-        torch.save(self.current_control_accum, control_path)
+        
+        # [FAIL-SAFE] Push all tensors to CPU before saving to disk to prevent GPU mapping errors later
+        cpu_control_accum = {k: v.detach().cpu() for k, v in self.current_control_accum.items()}
+        torch.save(cpu_control_accum, control_path)
 
         runner.logger.info(f"[PAdaMFed-VR] Saved control variate for {self.client_id} to {control_path}")
         runner.logger.info(f"[PAdaMFed-VR] local_iter_count={self.local_iter_count}, configured_local_steps={self.local_steps_per_round}")
@@ -284,8 +291,10 @@ class PAdaMFedVRFp16OptimizerHook(Fp16OptimizerHook):
                 raw[name] = param.grad.detach().clone()
 
         for name in self.mergeable_param_names:
+            # [FAIL-SAFE] Ensure the incoming tensor is on the accumulator's device
+            target_device = self.current_control_accum[name].device
             self.current_control_accum[name].add_(
-                raw[name].detach().cpu(),
+                raw[name].to(target_device),
                 alpha=1.0 / float(self.local_steps_per_round)
             )
 

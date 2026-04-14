@@ -1,9 +1,9 @@
 #!/bin/bash
 #SBATCH --partition=general
 #SBATCH --qos=medium
-#SBATCH --job-name=3PAdaMFed
-#SBATCH --output=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/cmt/padamfed_noclip_nolr_mediumQoS_autoctn_job_%j.out
-#SBATCH --error=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/cmt/padamfed_noclip_nolr_mediumQoS_autoctn_job_%j.err
+#SBATCH --job-name=4PAdaMFed
+#SBATCH --output=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/cmt/padamfed4_noclip_nolr_mediumQoS_autoctn_job_%j.out
+#SBATCH --error=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/cmt/padamfed4_noclip_nolr_mediumQoS_autoctn_job_%j.err
 #SBATCH --time=36:00:00
 #SBATCH --nodes=1
 #SBATCH --ntasks=2
