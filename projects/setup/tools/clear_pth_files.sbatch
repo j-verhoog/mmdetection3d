@@ -10,8 +10,8 @@
 #SBATCH --mem=16G
 
 # Define the target directory
-# TARGET_DIR="/home/nfs/jtverhoog/mmdet/MscThesisjverhoog/projects/cmt_fedavg_all/"
-TARGET_DIR="/home/nfs/jtverhoog/mmdet/MscThesisjverhoog/projects/cmt_40_epoch/"
+TARGET_DIR="/home/nfs/jtverhoog/mmdet/MscThesisjverhoog/projects/cmt_fedavg_all/"
+# TARGET_DIR="/home/nfs/jtverhoog/mmdet/MscThesisjverhoog/projects/cmt_40_epoch/"
 
 echo "Starting checkpoint cleanup at: $(date)"
 echo "Current Disk usage staff-umbrella:"
@@ -33,10 +33,8 @@ while IFS= read -r -d '' file; do
     fi
 done < <(find "$TARGET_DIR" -maxdepth 8 -type f \( \
     -name "latest.pth" -o \
-    -name "epoch_[1-9].pth" -o \
-    -name "epoch_1[1-7].pth" \
-    -name "epoch_2[1-7].pth" \
-    -name "epoch_3[1-7].pth" \
+    -name "epoch_[0-9].pth" -o \
+    -name "epoch_1[0-8].pth" \
 \) -print0)
 
 echo "Total files removed: $removed_count"
