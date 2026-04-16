@@ -389,7 +389,7 @@ custom_imports = dict(
 custom_hooks = [
     dict(
         type='DisableGTImportanceHook',
-        disable_after_epoch=15  # Turns off at the start of Epoch 16
+        disable_after_epoch=30  # Turns off at the start of Epoch 16
     ),
     # Add this new hook:
     dict(
