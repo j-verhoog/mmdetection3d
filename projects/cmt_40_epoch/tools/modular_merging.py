@@ -38,6 +38,10 @@ def parse_args():
     parser.add_argument('--cka-samples', type=int, default=10, help='FedSelect CKA: Max samples to process for CKA.')
     # ------------------------------------
 
+
+    # optimizer reset argument    
+    parser.add_argument('--no-reset-optimizer', action='store_true', default=False, help='If set, does not zero out optimizer states in merged checkpoints to reset momentum.')
+
     # fedCKA overwirte for dynamic sparsity
     parser.add_argument('--dynamic-sparsity', type=float, default=0.0, help='FedCKA: Dynamic sparsity fraction for this round (default: 0.0 for no dynamic sparsity).')
 
@@ -243,7 +247,7 @@ def PCGRAD(models, output_paths, norm_weights, client_ids, prev_global_path="/wo
     print("="*50)
     print("PCGRAD Aggregation Complete.\n")
 
-def fedavg(models, output_paths, norm_weights):
+def fedavg(models, output_paths, norm_weights, no_reset_optimizer=False):
     """
     Original FedAvg implementation. Averages all valid floating-point keys.
     Maintains exact original functionality.
@@ -293,12 +297,13 @@ def fedavg(models, output_paths, norm_weights):
         
         for k in averaged_weights.keys():
             ckpt['state_dict'][k] = averaged_weights[k]
-            
-        if 'optimizer' in ckpt and 'state' in ckpt['optimizer']:
-            for param_id in ckpt['optimizer']['state']:
-                for key in ckpt['optimizer']['state'][param_id]:
-                    if torch.is_tensor(ckpt['optimizer']['state'][param_id][key]):
-                        ckpt['optimizer']['state'][param_id][key].zero_()
+        
+        if not no_reset_optimizer:
+            if 'optimizer' in ckpt and 'state' in ckpt['optimizer']:
+                for param_id in ckpt['optimizer']['state']:
+                    for key in ckpt['optimizer']['state'][param_id]:
+                        if torch.is_tensor(ckpt['optimizer']['state'][param_id][key]):
+                            ckpt['optimizer']['state'][param_id][key].zero_()
                         
         os.makedirs(os.path.dirname(out_path), exist_ok=True)
         torch.save(ckpt, out_path)
@@ -1968,7 +1973,8 @@ def main():
         
     # Route to the appropriate modular function
     if args.method == 'fedavg':
-        fedavg(model_paths, output_paths, norm_weights)
+        print(f'Optimizer state will be reset: {not args.no_reset_optimizer}')
+        fedavg(model_paths, output_paths, norm_weights, args.no_reset_optimizer)
         
     elif args.method == 'fedbn':
         if args.config is None:
