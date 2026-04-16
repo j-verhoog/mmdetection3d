@@ -11,7 +11,7 @@
 
 # Define the target directory
 # Default projects root (can be overridden by first script argument)
-PROJECTS_ROOT="${1:-/home/jolle/mmdetection3d/projects}"
+PROJECTS_ROOT="${1:-/tudelft.net/staff-umbrella/MscThesisjverhoog/projects}"
 
 # Subfolders to process under the projects root
 SUBDIRS=(fcos3d pointpillars pointpillars4x8 test cmt_fedavg_all_val cmt_fedavg cmt)
