@@ -165,6 +165,28 @@ class PAdaMFedVRFp16OptimizerHook(Fp16OptimizerHook):
         self.loss_scaler.scale(runner.outputs["loss"]).backward()
         self.loss_scaler.unscale_(runner.optimizer)
 
+        # ---------------------------------------------------------
+        # START OF FIX 1: Check for FP16 Overflow
+        # ---------------------------------------------------------
+        is_finite = True
+        for param in self.param_name_to_param.values():
+            if param.grad is not None and not torch.isfinite(param.grad).all():
+                is_finite = False
+                break
+
+        if not is_finite:
+            runner.logger.warning("[PAdaMFed-VR] FP16 overflow detected. Skipping local iteration to protect control variates.")
+            # Update the scaler so it reduces the scale factor for the next batch
+            self.loss_scaler.update()
+            runner.meta.setdefault("fp16", {})["loss_scaler"] = self.loss_scaler.state_dict()
+            # Zero out the corrupted gradients and abort this step entirely
+            self._root_model.zero_grad()
+            runner.optimizer.zero_grad()
+            return
+        # ---------------------------------------------------------
+        # END OF FIX 1
+        # ---------------------------------------------------------
+
         raw_current_grads = self._collect_current_raw_grads_and_accumulate_control()
         raw_current_grads = self._sanitize_grad_dict(raw_current_grads, runner, "raw_current_grads")
 
