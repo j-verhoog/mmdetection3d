@@ -12,10 +12,11 @@
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=64G
 
+# wrong epoch count ...
 set -e # stop if something fails
 
 # --- FEDERATED SETTINGS ---
-NUM_ROUNDS=40       # approx 2hour per round of 1 Epoch
+NUM_ROUNDS=20       # approx 2hour per round of 1 Epoch
 EPOCHS_PER_ROUND=1 
 SAMPLES_PER_GPU=16
 SIZE_A=265  # A MUST BE BIGGEST for logging
@@ -43,7 +44,7 @@ PRETRAINED_BACKBONE="ckpts/nuim_r50.pth"
 # --- STANDARD SETUP ---
 export SRUN_CPUS_PER_TASK=${SLURM_CPUS_PER_TASK:-1}
 export WANDB_PROJECT="cmt_40_epoch"
-export RUN_NAME="FedMC_40p_40epoch"
+export RUN_NAME="FedMC_40p"
 export WANDB_API_KEY=$(awk '$1=="machine" && $2=="api.wandb.ai" {found=1}found && $1=="password" {print $2; exit}' "$HOME/.netrc")
 export APPTAINER_IMAGE=/tudelft.net/staff-umbrella/MscThesisjverhoog/image/mmdet3d_v1rc5.sif
 export WORK=/tudelft.net/staff-umbrella/MscThesisjverhoog/projects/$WANDB_PROJECT/$RUN_NAME
@@ -247,11 +248,11 @@ run_merge () {
 # ==========================================
 
 # Create persistent WandB Run IDs so each model logs to the same run across rounds
-export WANDB_ID_A="fedmc_A_40epochsREAL"
-export WANDB_ID_B="fedmc_B_40epochsREAL"
-export WANDB_ID_C="fedmc_C_40epochsREAL"
-export WANDB_ID_D="fedmc_D_40epochsREAL"
-export WANDB_ID_E="fedmc_E_40epochsREAL"
+export WANDB_ID_A="fedmc_A_40epochs"
+export WANDB_ID_B="fedmc_B_40epochs"
+export WANDB_ID_C="fedmc_C_40epochs"
+export WANDB_ID_D="fedmc_D_40epochs"
+export WANDB_ID_E="fedmc_E_40epochs"
 
 if [ "$START_ROUND" -eq 1 ]; then
     echo "Starting fresh run from Round 1"
