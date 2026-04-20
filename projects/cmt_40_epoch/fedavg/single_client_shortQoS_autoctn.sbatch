@@ -1,10 +1,10 @@
 #!/bin/bash
 #SBATCH --partition=general
-#SBATCH --qos=medium
-#SBATCH --job-name=SC_nO_fedavg
-#SBATCH --output=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/cmt/fedavg_singleclient_noOptReset_40epochs_%j.out
-#SBATCH --error=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/cmt/fedavg_singleclient_noOptReset_40epochs_%j.err
-#SBATCH --time=36:00:00
+#SBATCH --qos=short
+#SBATCH --job-name=SC_fedavg
+#SBATCH --output=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/cmt/fedavg_singleclient_40epochs_%j.out
+#SBATCH --error=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/cmt/fedavg_singleclient_40epochs_%j.err
+#SBATCH --time=04:00:00
 #SBATCH --nodes=1
 #SBATCH --ntasks=2
 #SBATCH --ntasks-per-node=2
@@ -35,7 +35,7 @@ PRETRAINED_BACKBONE="ckpts/nuim_r50.pth"
 # --- STANDARD SETUP ---
 export SRUN_CPUS_PER_TASK=${SLURM_CPUS_PER_TASK:-1}
 export WANDB_PROJECT="cmt_40_epoch"
-export RUN_NAME="FedAvg_singleclientDebug_noOptReset_40epochs"
+export RUN_NAME="FedAvg_singleclientDebug_40epochs"
 
 # Gets API key robustly
 export WANDB_API_KEY=$(awk '$1=="machine" && $2=="api.wandb.ai" {found=1}found && $1=="password" {print $2; exit}' "$HOME/.netrc")
@@ -130,7 +130,7 @@ run_training () {
       --env WANDB_DIR=\"/workspace/tmp/wandb/\$SLURM_PROCID\" \
       --env TMPDIR=\"/workspace/tmp/tmp/\$SLURM_PROCID\" \
       --env WANDB_PROJECT=\"$WANDB_PROJECT\" \
-      --env WANDB_NAME=\"FedAvg_SCDebug_noOptReset_40total_${MODEL_NAME}\" \
+      --env WANDB_NAME=\"FedAvg_SCDebug_40total_${MODEL_NAME}\" \
       --env WANDB_API_KEY=\"$WANDB_API_KEY\" \
       --env OMP_NUM_THREADS=1 \
       --env MKL_NUM_THREADS=1 \
@@ -187,8 +187,7 @@ run_merge () {
             --outputs $OUT_A $OUT_B $OUT_C $OUT_D $OUT_E \
             --weight-a $SIZE_A --weight-b $SIZE_B --weight-c $SIZE_C --weight-d $SIZE_D --weight-e $SIZE_E \
             --method fedavg \
-            --config projects/cmt/fed/all_domains/improved_lightweight_cmt_iterated.py \
-            --no-reset-optimizer
+            --config projects/cmt/fed/all_domains/improved_lightweight_cmt_iterated.py
       "
 }
 
@@ -197,7 +196,7 @@ run_merge () {
 # ==========================================
 
 # Create persistent WandB Run ID so the model logs to the same run across rounds
-export WANDB_ID_A="fedavg_SCDebug_noOptReset_40epochs"
+export WANDB_ID_A="fedavg_SCDebug_40epochs"
 
 if [ "$START_ROUND" -eq 1 ]; then
     echo "Starting fresh run from Round 1"
