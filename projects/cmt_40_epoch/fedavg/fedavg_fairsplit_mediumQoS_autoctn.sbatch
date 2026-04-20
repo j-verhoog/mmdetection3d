@@ -181,7 +181,8 @@ run_training () {
             data.samples_per_gpu=$SAMPLES_PER_GPU \
             total_epochs=$GLOBAL_EPOCHS \
             custom_hooks.1.stop_epoch=$STOP_EPOCH \
-            data.train.dataset.ann_file=\"data/nuscenes/nuscenes_infos_train_uniformfedavg_${MODEL_NAME}.pkl\"
+            data.train.dataset.ann_file=\"data/nuscenes/nuscenes_infos_train_uniformfedavg_${MODEL_NAME}.pkl\" \
+            custom_hooks.0.DisableGTImportanceHook=30 \
       '
     "
 }
@@ -213,7 +214,8 @@ run_merge () {
             --outputs $OUT_A $OUT_B $OUT_C $OUT_D $OUT_E \
             --weight-a $SIZE_A --weight-b $SIZE_B --weight-c $SIZE_C --weight-d $SIZE_D --weight-e $SIZE_E \
             --method fedavg \
-            --config projects/cmt/fed/all_domains/improved_lightweight_cmt_iterated.py
+            --config projects/cmt/fed/all_domains/improved_lightweight_cmt_iterated.py \
+            --no-reset-optimizer
       "
 }
 
