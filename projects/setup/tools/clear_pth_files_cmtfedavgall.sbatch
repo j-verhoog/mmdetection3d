@@ -73,13 +73,13 @@ for dir in */; do
                 else
                     echo "  🗑️ [DELETING] $file"
                     # UNCOMMENT THE LINE BELOW TO ACTUALLY DELETE
-                    # rm "$file"
+                    rm "$file"
                 fi
             else
                 # Catch-all for things like latest.pth or incorrectly formatted files
                 echo "  🗑️ [DELETING] $file (Not a targeted epoch file)"
                 # UNCOMMENT THE LINE BELOW TO ACTUALLY DELETE
-                # rm "$file"
+                rm "$file"
             fi
         done
 
@@ -109,7 +109,7 @@ for dir in */; do
         find "$dir_name" "${PRUNE_ARGS[@]}" -type f -name "*.pth" ! -name "epoch_40.pth" -print | while read -r file; do
             echo "  🗑️ [DELETING] $file"
             # UNCOMMENT THE LINE BELOW TO ACTUALLY DELETE
-            # rm "$file"
+            rm "$file"
         done
     fi
 done
