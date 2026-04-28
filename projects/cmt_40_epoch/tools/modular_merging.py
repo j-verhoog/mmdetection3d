@@ -1731,6 +1731,39 @@ def fedselect_cka(models, output_paths, norm_weights, client_ids, prev_global_pa
         os.makedirs(os.path.dirname(out_path), exist_ok=True)
         torch.save(ckpt, out_path)
         print(f"Saved personalized FedSelect CKA model to {out_path}")
+    
+    # ---------------------------------------------------------
+    # Phase 4: Cleanup .pth files older than 2 rounds ago
+    # ---------------------------------------------------------
+    print("\nPhase 4: Cleaning up old .pth checkpoint files...")
+    # Base directory to search (usually the parent of prev_global_path)
+    base_search_dir = os.path.dirname(prev_global_path)
+    threshold_round = current_round - 2
+    
+    if threshold_round >= 0:
+        deleted_count = 0
+        for root, dirs, files in os.walk(base_search_dir):
+            # Check if we are currently inside any folder named 'round_X'
+            round_folder = next((p for p in root.split(os.sep) if p.startswith("round_")), None)
+            
+            if round_folder:
+                try:
+                    r_num = int(round_folder.split("_")[1])
+                    # If the round is older than current_round - 2, clear its .pth files ONLY
+                    if r_num < threshold_round:
+                        for f in files:
+                            if f.endswith(".pth"):
+                                target_file = os.path.join(root, f)
+                                os.remove(target_file)
+                                deleted_count += 1
+                                print(f"  🗑️ Deleted old round file: {target_file}")
+                except ValueError:
+                    pass # Ignore folders that are named "round_something" but aren't numbers
+                    
+        print(f"Cleanup complete. Removed {deleted_count} old .pth files.")
+    else:
+        print(f"Current round is {current_round}. No cleanup needed yet.")
+
 
 def fedmc(models, fisher_paths, output_paths, norm_weights, client_ids, 
           prev_global_path="/workspace/work_dirs/fedmc_states/global_model.pth", 
