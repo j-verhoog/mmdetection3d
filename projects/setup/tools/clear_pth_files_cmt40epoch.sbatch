@@ -36,9 +36,15 @@ for dir in */; do
         continue
     fi
 
-    # 2. CENTRALIZED MODEL LOGIC (Keep epochs 10-25 & 40)
+    # 2. CENTRALIZED MODEL LOGIC (Keep 10-25, 40, and latest 2 epochs)
     if [[ "$dir_name" == "centralized_model" ]]; then
-        echo "📂 Processing $dir_name (Rules: Keep epochs 10-25 & 40)..."
+        echo "📂 Processing $dir_name (Rules: Keep epochs 10-25, 40, & latest 2 epochs)..."
+        
+        # Dynamically find the highest two epoch numbers to protect them if the run is active
+        latest_epochs=($(find "$dir_name" -maxdepth 1 -type f -name "epoch_*.pth" | grep -Eo 'epoch_[0-9]+\.pth' | grep -Eo '[0-9]+' | sort -n | tail -n 2))
+        if [ ${#latest_epochs[@]} -gt 0 ]; then
+            echo "  🛡️ Protecting latest centralized epochs: ${latest_epochs[*]}"
+        fi
         
         # Find all .pth files in the centralized folder
         find "$dir_name" -type f -name "*.pth" | while read -r file; do
@@ -48,8 +54,17 @@ for dir in */; do
             if [[ "$filename" =~ ^epoch_([0-9]+)\.pth$ ]]; then
                 epoch=${BASH_REMATCH[1]}
 
-                # Check if epoch is between 10 and 25, OR exactly 40
-                if { [ "$epoch" -ge 10 ] && [ "$epoch" -le 25 ]; } || [ "$epoch" -eq 40 ]; then
+                # Check if it's one of the latest two epochs
+                is_latest=false
+                for le in "${latest_epochs[@]}"; do
+                    if [ "$epoch" -eq "$le" ]; then
+                        is_latest=true
+                        break
+                    fi
+                done
+
+                # Check if epoch is between 10 and 25, exactly 40, OR is one of the latest running epochs
+                if { [ "$epoch" -ge 10 ] && [ "$epoch" -le 25 ]; } || [ "$epoch" -eq 40 ] || [ "$is_latest" = true ]; then
                     echo "  ✅ [KEEPING] $file"
                 else
                     echo "  🗑️ [DELETING] $file"
@@ -57,20 +72,38 @@ for dir in */; do
                     # rm "$file"
                 fi
             else
-                # If it's a .pth file but doesn't match 'epoch_XX.pth' (like latest.pth), delete it
+                # Catch-all for things like latest.pth or incorrectly formatted files
                 echo "  🗑️ [DELETING] $file (Not a targeted epoch file)"
                 # UNCOMMENT THE LINE BELOW TO ACTUALLY DELETE
                 # rm "$file"
             fi
         done
 
-    # 3. ALL OTHER FOLDERS LOGIC (Keep epoch_40.pth only)
+    # 3. ALL OTHER FOLDERS LOGIC (Keep epoch_40.pth & completely protect latest 2 rounds)
     else
-        echo "📂 Processing $dir_name (Rules: Keep epoch_40.pth only)..."
+        echo "📂 Processing $dir_name (Rules: Keep epoch_40.pth & protect latest 2 rounds)..."
         
-        # Finds all .pth files deep inside the round_X/ModelY/ folders, EXCEPT 'epoch_40.pth'
-        # This will target latest.pth, merged_X.pth, epoch_1.pth, etc.
-        find "$dir_name" -type f -name "*.pth" ! -name "epoch_40.pth" | while read -r file; do
+        # Identify the latest two round numbers by parsing directory names and sorting numerically
+        round_nums=$(find "$dir_name" -maxdepth 1 -type d -name "round_*" | grep -Eo 'round_[0-9]+$' | grep -Eo '[0-9]+' | sort -n)
+        latest_rounds=($(echo "$round_nums" | tail -n 2))
+
+        # Build 'prune' arguments to instruct the find command to completely skip these directories
+        PRUNE_ARGS=()
+        if [ ${#latest_rounds[@]} -gt 0 ]; then
+            echo "  🛡️ Protecting latest rounds: ${latest_rounds[*]}"
+            PRUNE_ARGS+=("-type" "d" "(")
+            for i in "${!latest_rounds[@]}"; do
+                if [ $i -gt 0 ]; then
+                    PRUNE_ARGS+=("-o")
+                fi
+                PRUNE_ARGS+=("-name" "round_${latest_rounds[$i]}")
+            done
+            PRUNE_ARGS+=(")" "-prune" "-o")
+        fi
+        
+        # Finds all .pth files, strictly skipping the protected rounds, EXCEPT 'epoch_40.pth'
+        # The -print flag at the end ensures we don't output the names of the pruned directories
+        find "$dir_name" "${PRUNE_ARGS[@]}" -type f -name "*.pth" ! -name "epoch_40.pth" -print | while read -r file; do
             echo "  🗑️ [DELETING] $file"
             # UNCOMMENT THE LINE BELOW TO ACTUALLY DELETE
             # rm "$file"
