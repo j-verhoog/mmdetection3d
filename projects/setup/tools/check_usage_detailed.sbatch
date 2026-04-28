@@ -1,45 +1,37 @@
 #!/bin/bash
 #SBATCH --partition=general
 #SBATCH --qos=short
-#SBATCH --job-name=du_scan_part
-#SBATCH --output=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/tools/du_job_%A_%a.out
-#SBATCH --error=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/tools/du_job_%A_%a.err
+#SBATCH --job-name=du_scan_max
+#SBATCH --output=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/tools/du_job_detailed_%j.out
+#SBATCH --error=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/tools/du_job_detailed_%j.err
 #SBATCH --time=04:00:00
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=1
-#SBATCH --mem=4G
-#SBATCH --array=0-13  # <--- UPDATE THIS: If you have 14 subfolders, use 0-13
+#SBATCH --cpus-per-task=64   # Requests 64 physical cores
+#SBATCH --mem=32G            # Bumped memory slightly to support 128 concurrent 'du' processes safely
 
-# 1. Setup Directories
 TARGET_DIR="/tudelft.net/staff-umbrella/MscThesisjverhoog"
-LOG_DIR="/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/tools/parts"
-mkdir -p "$LOG_DIR"
+cd "$TARGET_DIR" || exit 1
 
-# 2. Get the list of top-level subdirectories into an array
-# We use 'find' to get only directories at depth 1
-mapfile -t SUBDIRS < <(find "$TARGET_DIR" -maxdepth 1 -mindepth 1 -type d)
+echo "Starting MAX SPEED parallel disk usage scan at $(date)"
+echo "Requested 64 CPUs. Running xargs with 128 threads."
+echo "------------------------------------------------------"
 
-# 3. Identify the specific folder for THIS array task
-CURRENT_FOLDER="${SUBDIRS[$SLURM_ARRAY_TASK_ID]}"
+# 1. Explicitly list ONLY the folders we want to scan to avoid wasting time
+TARGET_FOLDERS=("datasets" "nusc_datasets" "nuscenes_shadow_root" "nuscenes_subsets_full" "yolo_nuscenes")
 
-# Safety check: if the array index is higher than the number of folders, exit
-if [ -z "$CURRENT_FOLDER" ]; then
-    echo "No folder assigned for index $SLURM_ARRAY_TASK_ID. Exiting."
-    exit 0
-fi
+# 2. Find only the 1st-level subdirectories INSIDE those targets
+# 3. Use -P 128 to utilize both hardware threads per requested CPU core
+# 4. Sort and format into Human-Readable output on the fly
+find "${TARGET_FOLDERS[@]}" -mindepth 1 -maxdepth 1 -type d -print0 2>/dev/null | \
+    xargs -0 -P 128 -n 1 du -sk 2>/dev/null | \
+    sort -nr | \
+    awk '{
+        sum=$1;
+        if (sum >= 1073741824) { printf "%.2f TB\t%s\n", sum/1073741824, $2 }
+        else if (sum >= 1048576) { printf "%.2f GB\t%s\n", sum/1048576, $2 }
+        else if (sum >= 1024) { printf "%.2f MB\t%s\n", sum/1024, $2 }
+        else { printf "%d KB\t%s\n", sum, $2 }
+    }'
 
-FOLDER_NAME=$(basename "$CURRENT_FOLDER")
-PART_REPORT="$LOG_DIR/usage_${FOLDER_NAME}.txt"
-
-echo "Starting scan for: $CURRENT_FOLDER"
-echo "Output will be saved to: $PART_REPORT"
-
-# 4. Run the scan
-# We use -b (bytes) for more accurate sorting later, then convert to human-readable
-du -b --max-depth=2 "$CURRENT_FOLDER" | sort -nr > "$PART_REPORT"
-
-echo "Finished scan for $FOLDER_NAME at $(date)"
-
-
-# combine with: cat /tudelft.net/staff-umbrella/MscThesisjverhoog/logs/tools/parts/usage_*.txt | sort -nr > final_disk_usage.txt
-# readable with: head -n 20 final_disk_usage.txt | numfmt --to=iec --field=1
+echo "------------------------------------------------------"
+echo "Finished scan at $(date)"
