@@ -2,8 +2,8 @@
 #SBATCH --partition=general # request partition
 #SBATCH --qos=short # Quality of service, short default
 #SBATCH --job-name=remove_stuff
-#SBATCH --output=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/tools/remove_stuff_cmt40epoch_%j.out
-#SBATCH --error=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/tools/remove_stuff_cmt40epoch_%j.err
+#SBATCH --output=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/tools/remove_stuff_cmtfedavg_%j.out
+#SBATCH --error=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/tools/remove_stuff_cmtfedavg_%j.err
 #SBATCH --time=4:00:00 # 0:01:00 is one minute, max 4hrs for short QoS, 36hrs for medium
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=2
@@ -13,7 +13,6 @@
 BASE_DIR="/tudelft.net/staff-umbrella/MscThesisjverhoog/projects/cmt_fedavg_all"
 
 # 1. EXCLUDE FOLDERS: Add any folders you want to COMPLETELY ignore here
-# For example: IGNORE_FOLDERS=("PCGrad" "NoComm_40Epochs")
 IGNORE_FOLDERS=()
 
 cd "$BASE_DIR" || { echo "Failed to change directory to $BASE_DIR"; exit 1; }
@@ -36,9 +35,10 @@ for dir in */; do
         continue
     fi
 
-    # 2. CENTRALIZED MODEL LOGIC (Keep 10-25, 40, and latest 2 epochs)
-    if [[ "$dir_name" == "centralized_model" ]]; then
-        echo "📂 Processing $dir_name (Rules: Keep epochs 10-25, 40, & latest 2 epochs)..."
+    # 2. CENTRALIZED MODEL LOGIC (Any folder with 'centralized' in the name)
+    # Rules: Keep 10-25, 40, 50, 60, 70, 80, 90, and latest 2 epochs
+    if [[ "$dir_name" == *"centralized"* ]]; then
+        echo "📂 Processing $dir_name (Rules: Keep epochs 10-25, 40, 50-90 (tens), & latest 2)..."
         
         # Dynamically find the highest two epoch numbers to protect them if the run is active
         latest_epochs=($(find "$dir_name" -maxdepth 1 -type f -name "epoch_*.pth" | grep -Eo 'epoch_[0-9]+\.pth' | grep -Eo '[0-9]+' | sort -n | tail -n 2))
@@ -63,8 +63,12 @@ for dir in */; do
                     fi
                 done
 
-                # Check if epoch is between 10 and 25, exactly 40, OR is one of the latest running epochs
-                if { [ "$epoch" -ge 10 ] && [ "$epoch" -le 25 ]; } || [ "$epoch" -eq 40 ] || [ "$is_latest" = true ]; then
+                # Check against the expanded epoch keeping rules
+                if { [ "$epoch" -ge 10 ] && [ "$epoch" -le 25 ]; } || \
+                   [ "$epoch" -eq 40 ] || [ "$epoch" -eq 50 ] || \
+                   [ "$epoch" -eq 60 ] || [ "$epoch" -eq 70 ] || \
+                   [ "$epoch" -eq 80 ] || [ "$epoch" -eq 90 ] || \
+                   [ "$is_latest" = true ]; then
                     echo "  ✅ [KEEPING] $file"
                 else
                     echo "  🗑️ [DELETING] $file"
@@ -102,7 +106,6 @@ for dir in */; do
         fi
         
         # Finds all .pth files, strictly skipping the protected rounds, EXCEPT 'epoch_40.pth'
-        # The -print flag at the end ensures we don't output the names of the pruned directories
         find "$dir_name" "${PRUNE_ARGS[@]}" -type f -name "*.pth" ! -name "epoch_40.pth" -print | while read -r file; do
             echo "  🗑️ [DELETING] $file"
             # UNCOMMENT THE LINE BELOW TO ACTUALLY DELETE
