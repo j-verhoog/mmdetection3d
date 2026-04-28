@@ -64,7 +64,7 @@ for t_dir in "${TARGET_DIRS[@]}"; do
                 else
                     echo "    🗑️ [DELETING] $file"
                     # UNCOMMENT THE LINE BELOW TO ACTUALLY DELETE
-                    # rm "$file"
+                    rm "$file"
                 fi
             else
                 # Delete files that don't match 'epoch_XX.pth' (like latest.pth, merged.pth, etc.)
