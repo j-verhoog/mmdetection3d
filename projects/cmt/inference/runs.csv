@@ -14,3 +14,5 @@ FedAvg_40e,FedAvg 40 epoch run,/home/nfs/jtverhoog/mmdet/MscThesisjverhoog/proje
 PCGrad,PCgrad,/home/nfs/jtverhoog/mmdet/MscThesisjverhoog/projects/cmt_40_epoch/PCGrad,40,40,,,,,
 FedSelect40p_40E,FedSelect40p_40E,/home/nfs/jtverhoog/mmdet/MscThesisjverhoog/projects/cmt_40_epoch/FS_cka_40epochs,40,40,,,,,
 FedBN40E,FedBN40E,/home/nfs/jtverhoog/mmdet/MscThesisjverhoog/projects/cmt_40_epoch/FedBN_full_40epochs,40,40,,,,,
+FS_cka_dyn075_40epochs,FS cka dyn075 run (40 epochs),/home/nfs/jtverhoog/mmdet/MscThesisjverhoog/projects/cmt_40_epoch/FS_cka_dyn075_40epochs,40,40,,,,,
+FS_cka2_dyn075_40epochs,FS cka dyn05 run (40 epochs),/home/nfs/jtverhoog/mmdet/MscThesisjverhoog/projects/cmt_40_epoch/FS_cka2_dyn075_40epochs,40,40,,,,,
