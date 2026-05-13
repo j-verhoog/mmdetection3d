@@ -1736,10 +1736,27 @@ def fedselect_cka(models, output_paths, norm_weights, client_ids, prev_global_pa
     # Phase 4: Cleanup .pth files older than 2 rounds ago
     # ---------------------------------------------------------
     print("\nPhase 4: Cleaning up old .pth checkpoint files...")
-    # Base directory to search (usually the parent of prev_global_path)
-    base_search_dir = os.path.dirname(prev_global_path)
-    threshold_round = current_round - 2
     
+    # FIX: Step up one extra level to reach the root workspace ($WORK) instead of fedselect_states/
+    base_search_dir = os.path.dirname(os.path.dirname(prev_global_path))
+    
+    # FIX: Independently verify the true highest round directly from the workspace folders
+    # This prevents the cleanup from failing if the script's earlier 'current_round' variable is desynced
+    existing_actual_rounds = []
+    if os.path.exists(base_search_dir):
+        for d in os.listdir(base_search_dir):
+            if d.startswith("round_") and os.path.isdir(os.path.join(base_search_dir, d)):
+                try:
+                    existing_actual_rounds.append(int(d.split("_")[1]))
+                except ValueError:
+                    pass
+                    
+    actual_current_round = max(existing_actual_rounds) if existing_actual_rounds else current_round
+    threshold_round = actual_current_round - 2
+    
+    print(f"Base search dir for cleanup: {base_search_dir}")
+    print(f"Highest detected round: {actual_current_round} | Deleting files older than round: {threshold_round}")
+
     if threshold_round >= 0:
         deleted_count = 0
         for root, dirs, files in os.walk(base_search_dir):
@@ -1749,7 +1766,7 @@ def fedselect_cka(models, output_paths, norm_weights, client_ids, prev_global_pa
             if round_folder:
                 try:
                     r_num = int(round_folder.split("_")[1])
-                    # If the round is older than current_round - 2, clear its .pth files ONLY
+                    # If the round is older than actual_current_round - 2, clear its .pth files ONLY
                     if r_num < threshold_round:
                         for f in files:
                             if f.endswith(".pth"):
@@ -1762,7 +1779,7 @@ def fedselect_cka(models, output_paths, norm_weights, client_ids, prev_global_pa
                     
         print(f"Cleanup complete. Removed {deleted_count} old .pth files.")
     else:
-        print(f"Current round is {current_round}. No cleanup needed yet.")
+        print(f"Current round is {actual_current_round}. Threshold is {threshold_round}. No cleanup needed yet.")
 
 
 def fedmc(models, fisher_paths, output_paths, norm_weights, client_ids, 
