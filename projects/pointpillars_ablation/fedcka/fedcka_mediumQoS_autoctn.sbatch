@@ -52,7 +52,11 @@ export APPTAINER_IMAGE=/tudelft.net/staff-umbrella/MscThesisjverhoog/image/mmdet
 export WORK=/tudelft.net/staff-umbrella/MscThesisjverhoog/projects/$WANDB_PROJECT/$RUN_NAME
 mkdir -p "$WORK"
 
-
+# fix dependencies by linking the _base_ configs to the project folder
+[ -e ~/mmdet/mmdetection3d/projects/pointpillars_ablation/_base_ ] || \
+ln -s ~/mmdet/mmdetection3d/configs/_base_ \
+      ~/mmdet/mmdetection3d/projects/pointpillars_ablation/_base_
+      
 # ==========================================
 # --- AUTO-DETECT RESUME STATE ---
 # ==========================================
