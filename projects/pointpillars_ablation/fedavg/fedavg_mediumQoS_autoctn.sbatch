@@ -242,6 +242,7 @@ if [ "$START_ROUND" -eq 1 ]; then
     apptainer exec --nv --cleanenv \
       --bind "$HOME/mmdet:/workspace/mmdet" \
       --bind "$WORK:/workspace/work_dirs" \
+      --bind "/tudelft.net/staff-umbrella/MscThesisjverhoog:/tudelft.net/staff-umbrella/MscThesisjverhoog" \
       "$APPTAINER_IMAGE" \
       bash -lc "
         cd /workspace/mmdet/mmdetection3d && \

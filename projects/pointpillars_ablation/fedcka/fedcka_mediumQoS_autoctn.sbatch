@@ -233,6 +233,7 @@ export WANDB_ID_C="pp_fedcka_C_40epochs"
 export WANDB_ID_D="pp_fedcka_D_40epochs"
 export WANDB_ID_E="pp_fedcka_E_40epochs"
 
+
 if [ "$START_ROUND" -eq 1 ]; then
     echo "Starting fresh run from Round 1"
     
@@ -245,6 +246,7 @@ if [ "$START_ROUND" -eq 1 ]; then
     apptainer exec --nv --cleanenv \
       --bind "$HOME/mmdet:/workspace/mmdet" \
       --bind "$WORK:/workspace/work_dirs" \
+      --bind "/tudelft.net/staff-umbrella/MscThesisjverhoog:/tudelft.net/staff-umbrella/MscThesisjverhoog" \
       "$APPTAINER_IMAGE" \
       bash -lc "
         cd /workspace/mmdet/mmdetection3d && \
@@ -255,7 +257,7 @@ from mmdet3d.models import build_model
 import torch
 
 # 1. Load your exact config
-cfg = Config.fromfile('projects/pointpillars_ablation/fedcka/hv_pointpillars_fpn_sbn-all_4x8_2x_nus-3d.py')
+cfg = Config.fromfile('projects/pointpillars_ablation/fedavg/hv_pointpillars_fpn_sbn-all_4x8_2x_nus-3d.py')
 
 # 2. Build the model using the older v1.0.0rc5 method
 model = build_model(
@@ -288,7 +290,6 @@ else
     MODEL_D="$WORK/round_${PREV_ROUND}/merged_D.pth"
     MODEL_E="$WORK/round_${PREV_ROUND}/merged_E.pth"
 fi
-
 # CALCULATE GLOBAL TOTAL ONCE
 # This ensures the LR scheduler sees the full picture (e.g., 20 epochs) from Round 1
 GLOBAL_MAX_EPOCHS=$((NUM_ROUNDS * EPOCHS_PER_ROUND))
