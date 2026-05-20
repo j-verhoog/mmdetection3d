@@ -22,7 +22,7 @@ custom_hooks = [
     dict(
         type='FedSelectLocalTrainingHook',
         mask_path=f'work_dirs/fedselect_masks/placeholder_mask.pth',
-        global_lr_scale=0.01,           # The paper's recommended gamma_u scaling
+        global_lr_scale=0.1,           # The paper (FedSelect) recommended gamma_u scaling / 10
         personal_lr_scale=1.0
     ),
 ]
