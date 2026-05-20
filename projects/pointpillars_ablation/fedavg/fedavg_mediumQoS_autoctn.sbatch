@@ -172,7 +172,7 @@ run_training () {
         cd /workspace/mmdet/mmdetection3d && \
         export PYTHONPATH=/workspace/mmdet/mmdetection3d:/workspace/mmdet:\$PYTHONPATH && \
         python -u tools/train.py \
-        configs/pointpillars/hv_pointpillars_fpn_sbn-all_4x8_2x_nus-3d.py \
+        projects/pointpillars_ablation/fedavg/hv_pointpillars_fpn_sbn-all_4x8_2x_nus-3d.py \
           --launcher slurm \
           --work-dir $WORK_DIR \
           $RESUME_ARG \
@@ -248,7 +248,7 @@ from mmdet3d.models import build_model
 import torch
 
 # 1. Load your exact config
-cfg = Config.fromfile('configs/pointpillars/hv_pointpillars_fpn_sbn-all_4x8_2x_nus-3d.py')
+cfg = Config.fromfile('projects/pointpillars_ablation/fedavg/hv_pointpillars_fpn_sbn-all_4x8_2x_nus-3d.py')
 
 # 2. Build the model using the older v1.0.0rc5 method
 model = build_model(
