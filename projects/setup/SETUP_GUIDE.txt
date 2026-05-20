@@ -28,7 +28,12 @@ mv mmdetection3d/projects/CMT/tools /mmdetection/tools_CMT
 
 
 SYMBOLIC LINK NUSCENES.
-ln -s /path/to/v1.0-trainval mmdetection3d/data/nuscenes/v1.0-trainval
+mkdir /home/nfs/jtverhoog/mmdet/mmdetection3d/data/nuscenes
+cd /home/nfs/jtverhoog/mmdet/mmdetection3d/data/nuscenes
+ln -s /tudelft.net/staff-umbrella/IntelligentVehiclesPublicDatasets/nuscenes/maps/
+ln -s /tudelft.net/staff-umbrella/IntelligentVehiclesPublicDatasets/nuscenes/v1.0-trainval/
+ln -s /tudelft.net/staff-umbrella/IntelligentVehiclesPublicDatasets/nuscenes/samples/
+ln -s /tudelft.net/staff-umbrella/IntelligentVehiclesPublicDatasets/nuscenes/sweeps/
 
 CHECK SIF WORKING GOOD:
 apptainer run --nv --bind "$HOME/mmdet:/workspace/mmdet" image/mmdet3d_v1rc5.sif   # should work
@@ -39,11 +44,16 @@ MAKE IT WORK WITHOUT TORCH / WANDB LOGGING CLOG. bind tmp dir and put all caches
 mkdir -p /tmp/mydir/{wandb,torch,xdg}
 apptainer run --nv   \
 --bind "$HOME/mmdet:/workspace/mmdet"   \
---bind "/tmp/mydir:/workspace/tmp"   \
+--bind "/tmp/mydir:/workspace/tmp" \
+--bind "/tudelft.net/staff-umbrella/MscThesisjverhoog/ckpts:/tudelft.net/staff-umbrella-MscThesisjverhoog/ckpts"   \
 --env WANDB_DIR=/workspace/tmp/wandb   \
 --env TORCH_HOME=/workspace/tmp/torch   \
 --env XDG_CACHE_HOME=/workspace/tmp/xdg   \
 image/mmdet3d_v1rc5.sif
+
+
+# test working: (will OOM on interactive)
+python demo/pcd_demo.py   demo/data/kitti/kitti_000008.bin   configs/second/hv_second_secfpn_6x8_80e_kitti-3d-car.py   /tudelft.net/staff-umbrella-MscThesisjverhoog/ckpts/hv_second_secfpn_6x8_80e_kitti-3d-car_20200620_230238-393f000c.pth 
 
 # Wandb smoke test:
 python - <<'PY'
@@ -58,3 +68,6 @@ for i in range(3):
 wandb.finish()
 print("W&B logging OK")
 PY
+
+
+--- Split nuscenes with full_subsets_nuscenes.py

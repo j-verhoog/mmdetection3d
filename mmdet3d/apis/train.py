@@ -259,11 +259,71 @@ def train_detector(model,
     # an ugly workaround to make .log and .log.json filenames the same
     runner.timestamp = timestamp
 
+    # # fp16 setting
+    # fp16_cfg = cfg.get('fp16', None)
+    # if fp16_cfg is not None:
+    #     optimizer_config = Fp16OptimizerHook(
+    #         **cfg.optimizer_config, **fp16_cfg, distributed=distributed)
+    # elif distributed and 'type' not in cfg.optimizer_config:
+    #     optimizer_config = OptimizerHook(**cfg.optimizer_config)
+    # else:
+    #     optimizer_config = cfg.optimizer_config
+
     # fp16 setting
     fp16_cfg = cfg.get('fp16', None)
     if fp16_cfg is not None:
-        optimizer_config = Fp16OptimizerHook(
-            **cfg.optimizer_config, **fp16_cfg, distributed=distributed)
+        # Check if gradient accumulation is requested
+        cumulative_iters = cfg.optimizer_config.get('cumulative_iters', 1)
+        
+        if cumulative_iters > 1:
+            # --- CUSTOM BLOCK: Gradient Accumulation + FP16 ---
+            class GradientCumulativeFp16OptimizerHook(Fp16OptimizerHook):
+                def __init__(self, cumulative_iters=1, **kwargs):
+                    if 'type' in kwargs: kwargs.pop('type')
+                    super(GradientCumulativeFp16OptimizerHook, self).__init__(**kwargs)
+                    self.cumulative_iters = cumulative_iters
+
+                def after_train_iter(self, runner):
+                    # start of a new accumulation window: ensure clean grads
+                    if runner.iter % self.cumulative_iters == 0:
+                        runner.model.zero_grad()
+                        runner.optimizer.zero_grad()
+
+                    runner.outputs['loss'] /= self.cumulative_iters
+                    self.loss_scaler.scale(runner.outputs['loss']).backward()
+
+                    do_step = self.every_n_iters(runner, self.cumulative_iters) or (runner.iter + 1 == runner.max_iters)
+                    if do_step:
+                        self.loss_scaler.unscale_(runner.optimizer)
+                        if self.grad_clip is not None:
+                            grad_norm = self.clip_grads(runner.model.parameters())
+                            if grad_norm is not None:
+                                runner.log_buffer.update({'grad_norm': float(grad_norm)}, runner.outputs.get('num_samples', 1))
+
+                        self.loss_scaler.step(runner.optimizer)
+                        self.loss_scaler.update(getattr(self, "_scale_update_param", None))
+
+                        # important for resume (MMCV does this)
+                        runner.meta.setdefault('fp16', {})['loss_scaler'] = self.loss_scaler.state_dict()
+
+                        runner.optimizer.zero_grad()
+            
+            # Prepare config for custom hook
+            _opt_cfg = cfg.optimizer_config.copy()
+            if 'type' in _opt_cfg: _opt_cfg.pop('type')
+            if 'cumulative_iters' in _opt_cfg: _opt_cfg.pop('cumulative_iters')
+            
+            optimizer_config = GradientCumulativeFp16OptimizerHook(
+                cumulative_iters=cumulative_iters,
+                **_opt_cfg, 
+                **fp16_cfg, 
+                distributed=distributed
+            )
+        else:
+            # --- ORIGINAL BEHAVIOR (Exact Match) ---
+            optimizer_config = Fp16OptimizerHook(
+                **cfg.optimizer_config, **fp16_cfg, distributed=distributed)
+                
     elif distributed and 'type' not in cfg.optimizer_config:
         optimizer_config = OptimizerHook(**cfg.optimizer_config)
     else:

@@ -37,7 +37,9 @@ class UnifiedDataBaseSampler(object):
                      type='LoadPointsFromFile',
                      coord_type='LIDAR',
                      load_dim=4,
-                     use_dim=[0, 1, 2, 3])):
+                     use_dim=[0, 1, 2, 3]),
+                     use_contextual=False,
+                     max_contextual_retries=5):
         super().__init__()
         self.data_root = data_root
         self.info_path = info_path
@@ -47,6 +49,8 @@ class UnifiedDataBaseSampler(object):
         self.cat2label = {name: i for i, name in enumerate(classes)}
         self.label2cat = {i: name for i, name in enumerate(classes)}
         self.points_loader = mmcv.build_from_cfg(points_loader, PIPELINES)
+        self.use_contextual = use_contextual
+        self.max_contextual_retries = max_contextual_retries
 
         db_infos = mmcv.load(info_path)
 
@@ -114,7 +118,7 @@ class UnifiedDataBaseSampler(object):
         """
         for name, min_num in min_gt_points_dict.items():
             min_num = int(min_num)
-            if min_num > 0:
+            if min_num > 0 and name in db_infos:    # add check to avoid key error
                 filtered_infos = []
                 for info in db_infos[name]:
                     if info['num_points_in_gt'] >= min_num:
@@ -122,7 +126,7 @@ class UnifiedDataBaseSampler(object):
                 db_infos[name] = filtered_infos
         return db_infos
 
-    def sample_all(self, gt_bboxes, gt_labels, with_img=False):
+    def sample_all(self, gt_bboxes, gt_labels, with_img=False, context_data=None):
         """Sampling all categories of bboxes.
 
         Args:
@@ -161,7 +165,7 @@ class UnifiedDataBaseSampler(object):
                                            sample_num_per_class):
             if sampled_num > 0:
                 sampled_cls = self.sample_class_v2(class_name, sampled_num,
-                                                avoid_coll_boxes)
+                                                avoid_coll_boxes,context_data=context_data)
 
                 sampled += sampled_cls
                 if len(sampled_cls) > 0:
@@ -228,41 +232,123 @@ class UnifiedDataBaseSampler(object):
 
         return ret
 
-    def sample_class_v2(self, name, num, gt_bboxes):
+    def sample_class_v2(self, name, num, gt_bboxes, context_data=None):
         """Sampling specific categories of bounding boxes.
 
         Args:
             name (str): Class of objects to be sampled.
             num (int): Number of sampled bboxes.
             gt_bboxes (np.ndarray): Ground truth boxes.
+            context_data: Contextual data for sampling.
 
         Returns:
             list[dict]: Valid samples after collision test.
         """
-        sampled = self.sampler_dict[name].sample(num)
-        sampled = copy.deepcopy(sampled)
-        num_gt = gt_bboxes.shape[0]
-        num_sampled = len(sampled)
-        gt_bboxes_bv = box_np_ops.center_to_corner_box2d(
-            gt_bboxes[:, 0:2], gt_bboxes[:, 3:5], gt_bboxes[:, 6])
+        if self.use_contextual and context_data is not None:                ### ADDED THIS FOR CONTEXTUAL GT SAMPLING
+            # Add this check to safely handle missing classes
+            if name not in self.sampler_dict:
+                return []
+            
+            max_retries = self.max_contextual_retries if self.use_contextual else 1
+            valid_samples = []
+            current_num_to_sample = num
+            current_gt_bboxes = gt_bboxes.copy()
 
-        sp_boxes = np.stack([i['box3d_lidar'] for i in sampled], axis=0)
-        boxes = np.concatenate([gt_bboxes, sp_boxes], axis=0).copy()
+            for attempt in range(max_retries):
+                if current_num_to_sample <= 0:
+                    break
+                    
+                sampled = self.sampler_dict[name].sample(current_num_to_sample)
+                sampled = copy.deepcopy(sampled)
+                
+                if len(sampled) == 0:
+                    break
 
-        sp_boxes_new = boxes[gt_bboxes.shape[0]:]
-        sp_boxes_bv = box_np_ops.center_to_corner_box2d(
-            sp_boxes_new[:, 0:2], sp_boxes_new[:, 3:5], sp_boxes_new[:, 6])
+                num_gt = current_gt_bboxes.shape[0]
+                num_sampled = len(sampled)
+                gt_bboxes_bv = box_np_ops.center_to_corner_box2d(
+                    current_gt_bboxes[:, 0:2], current_gt_bboxes[:, 3:5], current_gt_bboxes[:, 6])
 
-        total_bv = np.concatenate([gt_bboxes_bv, sp_boxes_bv], axis=0)
-        coll_mat = data_augment_utils.box_collision_test(total_bv, total_bv)
-        diag = np.arange(total_bv.shape[0])
-        coll_mat[diag, diag] = False
+                sp_boxes = np.stack([i['box3d_lidar'] for i in sampled], axis=0)
+                boxes = np.concatenate([current_gt_bboxes, sp_boxes], axis=0).copy()
 
-        valid_samples = []
-        for i in range(num_gt, num_gt + num_sampled):
-            if coll_mat[i].any():
-                coll_mat[i] = False
-                coll_mat[:, i] = False
-            else:
-                valid_samples.append(sampled[i - num_gt])
-        return valid_samples
+                sp_boxes_new = boxes[current_gt_bboxes.shape[0]:]
+                sp_boxes_bv = box_np_ops.center_to_corner_box2d(
+                    sp_boxes_new[:, 0:2], sp_boxes_new[:, 3:5], sp_boxes_new[:, 6])
+
+                total_bv = np.concatenate([gt_bboxes_bv, sp_boxes_bv], axis=0)
+                coll_mat = data_augment_utils.box_collision_test(total_bv, total_bv)
+                diag = np.arange(total_bv.shape[0])
+                coll_mat[diag, diag] = False
+
+                attempt_valid_samples = []
+                attempt_valid_boxes = []
+                
+                for i in range(num_gt, num_gt + num_sampled):
+                    if coll_mat[i].any():
+                        coll_mat[i] = False
+                        coll_mat[:, i] = False
+                    else:
+                        sample_info = sampled[i - num_gt]
+                        
+                        is_context_valid = True
+                        if self.use_contextual:
+                            is_context_valid = self._check_contextual_validity(sample_info, name, context_data)
+                        
+                        if is_context_valid:
+                            attempt_valid_samples.append(sample_info)
+                            attempt_valid_boxes.append(sample_info['box3d_lidar'])
+                
+                valid_samples.extend(attempt_valid_samples)
+                current_num_to_sample -= len(attempt_valid_samples)
+                
+                # Add successful boxes to GTs so next retry in the loop doesn't collide with them
+                if len(attempt_valid_boxes) > 0:
+                    current_gt_bboxes = np.concatenate([current_gt_bboxes, np.stack(attempt_valid_boxes, axis=0)], axis=0)
+
+            return valid_samples
+        else:
+            # Add this check to safely handle missing classes
+            if name not in self.sampler_dict:
+                return []
+            
+            sampled = self.sampler_dict[name].sample(num)
+            sampled = copy.deepcopy(sampled)
+            num_gt = gt_bboxes.shape[0]
+            num_sampled = len(sampled)
+            gt_bboxes_bv = box_np_ops.center_to_corner_box2d(
+                gt_bboxes[:, 0:2], gt_bboxes[:, 3:5], gt_bboxes[:, 6])
+
+            sp_boxes = np.stack([i['box3d_lidar'] for i in sampled], axis=0)
+            boxes = np.concatenate([gt_bboxes, sp_boxes], axis=0).copy()
+
+            sp_boxes_new = boxes[gt_bboxes.shape[0]:]
+            sp_boxes_bv = box_np_ops.center_to_corner_box2d(
+                sp_boxes_new[:, 0:2], sp_boxes_new[:, 3:5], sp_boxes_new[:, 6])
+
+            total_bv = np.concatenate([gt_bboxes_bv, sp_boxes_bv], axis=0)
+            coll_mat = data_augment_utils.box_collision_test(total_bv, total_bv)
+            diag = np.arange(total_bv.shape[0])
+            coll_mat[diag, diag] = False
+
+            valid_samples = []
+            for i in range(num_gt, num_gt + num_sampled):
+                if coll_mat[i].any():
+                    coll_mat[i] = False
+                    coll_mat[:, i] = False
+                else:
+                    valid_samples.append(sampled[i - num_gt])
+            return valid_samples
+
+
+    def _check_contextual_validity(self, sample_info, class_name, context_data):
+            """
+            Validates if the sampled object is placed in a semantically valid context.
+            """
+            # TODO: Implement your semantic projection logic here using context_data
+            # 1. Project `sample_info['box3d_lidar']` geometric center onto 2D plane / 3D point map.
+            # 2. Look up the semantic class at those coordinates.
+            # 3. Check if it matches allowed labels for `class_name` (e.g. Pedestrian -> Sidewalk).
+            # return True if valid, False otherwise.
+            
+            return True

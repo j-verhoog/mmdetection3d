@@ -1,0 +1,39 @@
+================================================================================
+MODEL COMPARISON REPORT
+================================================================================
+
+Samples processed: 25
+Comparisons: 1
+Metrics: CKA, W2 BN Stats, Effective Scale/Bias, Bhattacharyya Coeff
+
+
+--- Comparison: Night ---
+  Model A: ModelA
+  Model B: ModelB
+
+  CKA:
+    Mean: 0.0084
+    Std:  0.0065
+    Min:  0.0000
+    Max:  0.0273
+
+  W2 BN Stats:
+    Mean: 0.0588
+    Std:  0.0161
+    Min:  0.0305
+    Max:  0.1068
+
+  Effective Scale/Bias:
+    Mean: 0.0139
+    Std:  0.0086
+    Min:  0.0075
+    Max:  0.0511
+
+  Bhattacharyya Coeff:
+    Mean: 0.0009
+    Std:  0.0006
+    Min:  0.0002
+    Max:  0.0028
+
+
+================================================================================

@@ -1,0 +1,1 @@
+removed the dist params field for distr training since it was redundant. set lr to be 10 smaller. val every epoch. and to run from the weights file

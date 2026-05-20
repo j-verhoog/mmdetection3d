@@ -1,0 +1,12 @@
+First start up image. Then:
+# ideally with 5 pth files, like:
+python3 run_cka.py   --config /workspace/mmdet/mmdetection3d/configs/pointpillars/hv_pointpillars_fpn_sbn-all_fp16_2x8_2x_nus-3d.py   --pcd_dir /home/jolle/mmdet/mmdetection3d/data/nuscenes/LIDAR_TOP/   --pt /home/jolle/Desktop/dcB_12E.pth /home/jolle/Desktop/ncS_12E.pth /home/jolle/Desktop/dcS_12E.pth /home/jolle/Desktop/drB_12E.pth /home/jolle/Desktop/hv_pointpillars_fpn_sbn-all_fp16_2x8_2x_nus-3d_20201021_120719-269f9dd6.pth   --labels DayClear_Bost NightClear_Sing DayClear_Sing DayRain_Bost Baseline --max_samples 10
+
+For two:
+python3 run_cka.py   --config /workspace/mmdet/mmdetection3d/configs/pointpillars/hv_pointpillars_fpn_sbn-all_fp16_2x8_2x_nus-3d.py \
+  --pcd_dir /home/jolle/mmdet/mmdetection3d/data/nuscenes/LIDAR_TOP/   \
+  --pt /home/jolle/Desktop/dcB_12E.pth /home/jolle/Desktop/ncS_12E.pth \
+  --labels DayClear_Bost NightClear_Sing  \
+  --max_samples 10
+
+python3 main.py   --config /workspace/mmdet/mmdetection3d/configs/pointpillars/hv_pointpillars_fpn_sbn-all_fp16_2x8_2x_nus-3d.py   --pcd_dir /home/jolle/mmdet/mmdetection3d/data/nuscenes/LIDAR_TOP/     --pt /home/jolle/Desktop/dcB_12E.pth /home/jolle/Desktop/ncS_12E.pth   --labels DayClear_Bost NightClear_Sing    --max_samples 10 --output_dir /home/jolle/mmdet/mmdetection3d/projects/analysis/scripts/outputs

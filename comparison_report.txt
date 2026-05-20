@@ -1,0 +1,16 @@
+================================================================================
+MODEL COMPARISON REPORT
+================================================================================
+
+Samples processed: 10
+Comparisons: 1
+Metrics: CKA, W2 BN Stats, Effective Scale/Bias, Bhattacharyya Coeff
+
+
+--- Comparison: ModelA_vs_ModelB ---
+  Model A: ModelA
+  Model B: ModelB
+
+  CKA:
+    Mean: nan
+    Std:  nan
