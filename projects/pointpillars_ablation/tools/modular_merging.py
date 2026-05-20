@@ -1463,6 +1463,331 @@ def fedselect_fullelastic(models, output_paths, norm_weights, client_ids, prev_g
         torch.save(ckpt, out_path)
         print(f"Saved personalized FedSelect model to {out_path}")
 
+def legacy_fedselect_cka():
+    pass
+    # the version of cmt, but i need faster results with pointpillars with no extensive search:
+    # def fedselect_cka(models, output_paths, norm_weights, client_ids, prev_global_path, mask_dir, select_ratio, max_sparsity, runner_path, config, data_dir, modality, cka_samples, dynamic_sparsity):
+    #     """
+    #     FedSelect CKA implementation.
+    #     Computes CKA between the previous global model and each client model.
+    #     Selects entire layers with the highest CKA scores until the parameter count 
+    #     reaches `select_ratio`, keeping them fully personalized. Caps at `max_sparsity`.
+    #     """
+    #     print(f"Running FedSelect CKA Aggregation (select_ratio={select_ratio}, max_sparsity={max_sparsity})...")
+    #     os.makedirs(mask_dir, exist_ok=True)
+    #     os.makedirs(os.path.dirname(prev_global_path), exist_ok=True)
+
+    #     print(f"Ensured directories exist:")
+    #     print(f"  mask_dir={mask_dir}")
+    #     print(f"  global_dir={os.path.dirname(prev_global_path)}")
+
+    #     if not config or not data_dir:
+    #         raise ValueError("FedSelect CKA requires --config and --data-dir to be provided.")
+
+    #     if not os.path.exists(prev_global_path):
+    #         print(f"No previous global model found at {prev_global_path}. Exiting. Run one round of standard FedAvg first to initialize the global model.")
+    #         exit(1)
+            
+    #     prev_global_ckpt = torch.load(prev_global_path, map_location='cpu')
+    #     prev_state = prev_global_ckpt['state_dict']
+        
+    #     valid_keys = [k for k, v in prev_state.items() if v.is_floating_point() and 'num_batches_tracked' not in k]
+    #     print(f"Valid floating-point keys used for masking/aggregation: {len(valid_keys)}")
+    #     for k in valid_keys[:10]:
+    #         print(f"  {k} | shape={tuple(prev_state[k].shape)} | numel={prev_state[k].numel()}")
+
+    #     total_params = sum(prev_state[k].numel() for k in valid_keys)
+    #     print(f"Total valid parameters: {total_params:,}")
+
+    #     print(f"Max allowed personalized params per client: {int(total_params * max_sparsity):,}")
+    #     print(f"Target params to newly personalize per round: {int(total_params * select_ratio):,}")
+
+    #     # 1. Dynamically import runner.py
+    #     if not os.path.exists(runner_path):
+    #         raise FileNotFoundError(f"CKA runner script not found at {runner_path}")
+        
+    #     spec = importlib.util.spec_from_file_location("cka_runner", runner_path)
+    #     cka_runner = importlib.util.module_from_spec(spec)
+    #     spec.loader.exec_module(cka_runner)
+
+    #     # ---------------------------------------------------------
+    #     # Auto-Detect Current Round Directory for History
+    #     # ---------------------------------------------------------
+    #     existing_rounds = []
+    #     for d in os.listdir(mask_dir):
+    #         if d.startswith("round_") and os.path.isdir(os.path.join(mask_dir, d)):
+    #             try:
+    #                 existing_rounds.append(int(d.split("_")[1]))
+    #             except ValueError:
+    #                 pass
+    #     current_round = max(existing_rounds) + 1 if existing_rounds else 0
+    #     print(f"Detected previous rounds: {sorted(existing_rounds)}")
+    #     print(f"Current round inferred as: {current_round}")
+
+    #     round_mask_dir = os.path.join(mask_dir, f"round_{current_round}")
+    #     os.makedirs(round_mask_dir, exist_ok=True)
+    #     print(f"Saving historical masks for round {current_round} to {round_mask_dir}")
+
+    #     # 2. Phase 1: Client Subnetwork Discovery via CKA
+    #     print("\nPhase 1: Discovering personalized client layers via CKA...")
+    #     for m_path, cid in zip(models, client_ids):
+    #         print(f"\n==================== CLIENT {cid} ====================")
+    #         print(f"Client checkpoint path: {m_path}")
+
+    #         mask_path = os.path.join(mask_dir, f"{cid}_mask.pth")
+            
+    #         # Load existing mask to preserve history across rounds
+    #         if os.path.exists(mask_path):
+    #             client_mask = torch.load(mask_path)
+    #         else:
+    #             client_mask = {k: torch.zeros_like(prev_state[k], dtype=torch.bool) for k in valid_keys}
+
+    #         current_personalized = sum(client_mask[k].sum().item() for k in valid_keys)
+            
+    #         if dynamic_sparsity == 0.0:
+    #             print(f"{cid}: Dynamic sparsity disabled. Masking layers sequentially based on CKA until budget is met.")
+            
+    #             # Calculate parameter budget for this round
+    #             max_allowed = int(total_params * max_sparsity)
+    #             k_to_select = int(total_params * select_ratio)
+    #             k_to_select = min(k_to_select, max_allowed - current_personalized)
+            
+    #             print(f"{cid}: current_personalized={current_personalized:,} / {total_params:,} ({current_personalized / total_params * 100:.2f}%)")
+    #             print(f"{cid}: max_allowed={max_allowed:,}")
+    #             print(f"{cid}: remaining personalization budget={max_allowed - current_personalized:,}")
+    #             print(f"{cid}: final k_to_select={k_to_select:,}")
+
+    #             if k_to_select > 0:
+    #                 print(f"\n--- Computing CKA for {cid} ---")
+    #                 cka_rows = cka_runner.run_cka(
+    #                     config=config,
+    #                     data_dir=data_dir,
+    #                     checkpoints=[prev_global_path, m_path],
+    #                     modality=modality,
+    #                     max_samples=cka_samples,
+    #                     output_dir=os.path.join(mask_dir, "cka_temp")
+    #                 )
+
+    #                 # Filter out NaNs and sort by CKA score DESCENDING (Highest CKA first)
+    #                 valid_cka = [(idx, name, score) for idx, name, score in cka_rows if not math.isnan(score)]
+    #                 print(f"{cid}: CKA returned {len(cka_rows)} rows.")
+    #                 print(f"{cid}: valid CKA rows={len(valid_cka)}, NaN rows filtered out={len(cka_rows) - len(valid_cka)}")
+
+    #                 valid_cka.sort(key=lambda x: x[2], reverse=True)
+    #                 print(f"{cid}: Top 10 layers by CKA:")
+    #                 for idx, name, score in valid_cka[:10]:
+    #                     print(f"  idx={idx} | layer={name} | cka={score:.6f}")
+                    
+    #                 print(f"{cid}: Lowest 10 layers by CKA:")
+    #                 for idx, name, score in valid_cka[-10:]:
+    #                     print(f"  idx={idx} | layer={name} | cka={score:.6f}")
+                        
+    #                 new_personalized = 0
+    #                 layers_masked = 0
+                
+    #                 # Iterate through layers with highest CKA scores
+    #                 for idx, layer_name, score in valid_cka:
+    #                     # Find all parameter keys belonging to this layer
+    #                     layer_keys = [k for k in valid_keys if k.replace('module.', '').startswith(layer_name + '.') or k.replace('module.', '') == layer_name]
+                        
+    #                     # Count parameters in this layer that are NOT YET personalized
+    #                     layer_new_params = sum((~client_mask[k]).sum().item() for k in layer_keys)
+                        
+    #                     if layer_new_params > 0:
+    #                         print(f"{cid}: SELECTING layer {layer_name} with CKA={score:.6f}, adding {layer_new_params:,} new params")
+
+    #                         # Apply mask to the entire layer
+    #                         for k in layer_keys:
+    #                             # Convert 0s to 1s
+    #                             client_mask[k] = torch.ones_like(client_mask[k], dtype=torch.bool)
+                                
+    #                         new_personalized += layer_new_params
+    #                         layers_masked += 1
+                            
+    #                         # Stop if we have met or slightly exceeded our parameter budget for this round
+    #                         if new_personalized >= k_to_select:
+    #                             break
+                                
+    #                 print(f"  {cid}: Masked {layers_masked} entire layers.")
+    #                 print(f"  {cid}: Personalized {new_personalized:,} new params. Total sparsity: {(current_personalized + new_personalized) / total_params * 100:.2f}%")
+    #             else:
+    #                 print(f"  {cid}: Reached max sparsity ({max_sparsity*100}%). Skipping CKA computation. Total sparsity: {current_personalized / total_params * 100:.2f}%")
+
+    #         # dynamic sparsity mode: mask all parameters with CKA scores above the threshold, ignoring the select_ratio budget
+    #         else:
+    #             print(f"\n--- Computing CKA for {cid} ---")
+    #             cka_rows = cka_runner.run_cka(
+    #                 config=config,
+    #                 data_dir=data_dir,
+    #                 checkpoints=[prev_global_path, m_path],
+    #                 modality=modality,
+    #                 max_samples=cka_samples,
+    #                 output_dir=os.path.join(mask_dir, "cka_temp")
+    #             )
+
+    #             # Filter out NaNs and sort by CKA score DESCENDING (Highest CKA first)
+    #             valid_cka = [(idx, name, score) for idx, name, score in cka_rows if not math.isnan(score)]
+    #             print(f"{cid}: CKA returned {len(cka_rows)} rows.")
+    #             print(f"{cid}: valid CKA rows={len(valid_cka)}, NaN rows filtered out={len(cka_rows) - len(valid_cka)}")
+
+    #             valid_cka.sort(key=lambda x: x[2], reverse=True)
+    #             print(f"{cid}: Top 10 layers by CKA:")
+    #             for idx, name, score in valid_cka[:10]:
+    #                 print(f"  idx={idx} | layer={name} | cka={score:.6f}")
+                
+    #             print(f"{cid}: Lowest 10 layers by CKA:")
+    #             for idx, name, score in valid_cka[-10:]:
+    #                 print(f"  idx={idx} | layer={name} | cka={score:.6f}")
+
+    #             new_personalized = 0
+    #             layers_masked = 0
+            
+    #             # Iterate through layers with highest CKA scores
+    #             for idx, layer_name, score in valid_cka:
+                    
+    #                 # Check against the dynamic threshold
+    #                 if score > dynamic_sparsity:
+    #                     # Find all parameter keys belonging to this layer
+    #                     layer_keys = [k for k in valid_keys if k.replace('module.', '').startswith(layer_name + '.') or k.replace('module.', '') == layer_name]
+                        
+    #                     # Count parameters in this layer that are NOT YET personalized
+    #                     layer_new_params = sum((~client_mask[k]).sum().item() for k in layer_keys)
+                        
+    #                     if layer_new_params > 0:
+    #                         print(f"{cid}: SELECTING layer {layer_name} with CKA={score:.6f} > {dynamic_sparsity}, adding {layer_new_params:,} new params")
+
+    #                         # Apply mask to the entire layer
+    #                         for k in layer_keys:
+    #                             # Convert 0s to 1s
+    #                             client_mask[k] = torch.ones_like(client_mask[k], dtype=torch.bool)
+                                
+    #                         new_personalized += layer_new_params
+    #                         layers_masked += 1
+    #                 else:
+    #                     # Since valid_cka is sorted descending, if we hit a score <= threshold, all subsequent layers will be too.
+    #                     print(f"{cid}: CKA score {score:.6f} is below threshold {dynamic_sparsity}. Stopping selection.")
+    #                     break
+                            
+    #             print(f"  {cid}: Masked {layers_masked} entire layers based on threshold.")
+    #             print(f"  {cid}: Personalized {new_personalized:,} new params. Total sparsity: {(current_personalized + new_personalized) / total_params * 100:.2f}%")
+
+
+    #         torch.save(client_mask, mask_path)
+            
+    #         # Save historical visualization mask (0=Global, 1=Personal)
+    #         vis_mask = {k: v.to(torch.int8) for k, v in client_mask.items()}
+    #         hist_mask_path = os.path.join(round_mask_dir, f"{cid}_mask.pt")
+    #         torch.save(vis_mask, hist_mask_path)
+
+    #     # 3. Phase 2: Masked Server Aggregation
+    #     print("\nPhase 2: Aggregating shared parameters on server...")
+    #     running_sum = {k: torch.zeros_like(v) for k, v in prev_state.items() if k in valid_keys}
+    #     presence_weights = {k: torch.zeros_like(v) for k, v in prev_state.items() if k in valid_keys}
+        
+    #     for m_path, cid, w_i in zip(models, client_ids, norm_weights):
+    #         mask_path = os.path.join(mask_dir, f"{cid}_mask.pth")
+    #         client_mask = torch.load(mask_path)
+            
+    #         ckpt_i = torch.load(m_path, map_location='cpu')
+    #         state_i = ckpt_i['state_dict']
+            
+    #         for k in valid_keys:
+    #             if k in state_i:
+    #                 active_mask = (~client_mask[k]).float()
+    #                 running_sum[k] += state_i[k] * active_mask * w_i
+    #                 presence_weights[k] += active_mask * w_i
+                    
+    #         del ckpt_i
+            
+    #     averaged_weights = {}
+    #     for k in valid_keys:
+    #         valid_mask = presence_weights[k] > 0
+    #         averaged_weights[k] = torch.where(
+    #             valid_mask,
+    #             running_sum[k] / presence_weights[k].clamp(min=1e-9),
+    #             prev_state[k] # Fallback to previous global if all clients personalized it
+    #         )
+        
+    #     num_fallback_keys = sum((presence_weights[k] <= 0).all().item() for k in valid_keys)
+    #     print(f"Keys fully falling back to previous global because all clients personalized them: {num_fallback_keys}")
+
+    #     for k in valid_keys:
+    #         prev_global_ckpt['state_dict'][k] = averaged_weights[k]
+    #     torch.save(prev_global_ckpt, prev_global_path)
+    #     del prev_global_ckpt
+
+    #     # 4. Phase 3: Client Subnetwork Injection & Saving
+    #     print("Phase 3: Injecting shared weights into client models...")
+    #     for in_path, out_path, cid in zip(models, output_paths, client_ids):
+    #         ckpt = torch.load(in_path, map_location='cpu')
+    #         state = ckpt['state_dict']
+            
+    #         mask_path = os.path.join(mask_dir, f"{cid}_mask.pth")
+    #         client_mask = torch.load(mask_path)
+            
+    #         for k in valid_keys:
+    #             if k in state:
+    #                 m = client_mask[k].float()
+    #                 state[k] = (m * state[k]) + ((1.0 - m) * averaged_weights[k])
+                    
+    #         os.makedirs(os.path.dirname(out_path), exist_ok=True)
+    #         torch.save(ckpt, out_path)
+    #         print(f"Saved personalized FedSelect CKA model to {out_path}")
+        
+    #     # ---------------------------------------------------------
+    #     # Phase 4: Cleanup .pth files older than 2 rounds ago
+    #     # ---------------------------------------------------------
+    #     print("\nPhase 4: Cleaning up old .pth checkpoint files...")
+        
+    #     # FIX: Step up one extra level to reach the root workspace ($WORK) instead of fedselect_states/
+    #     base_search_dir = os.path.dirname(os.path.dirname(prev_global_path))
+        
+    #     # FIX: Independently verify the true highest round directly from the workspace folders
+    #     # This prevents the cleanup from failing if the script's earlier 'current_round' variable is desynced
+    #     existing_actual_rounds = []
+    #     if os.path.exists(base_search_dir):
+    #         for d in os.listdir(base_search_dir):
+    #             if d.startswith("round_") and os.path.isdir(os.path.join(base_search_dir, d)):
+    #                 try:
+    #                     existing_actual_rounds.append(int(d.split("_")[1]))
+    #                 except ValueError:
+    #                     pass
+                        
+    #     actual_current_round = max(existing_actual_rounds) if existing_actual_rounds else current_round
+    #     threshold_round = actual_current_round - 2
+        
+    #     print(f"Base search dir for cleanup: {base_search_dir}")
+    #     print(f"Highest detected round: {actual_current_round} | Deleting files older than round: {threshold_round}")
+
+    #     if threshold_round >= 0:
+    #         deleted_count = 0
+    #         for root, dirs, files in os.walk(base_search_dir):
+    #             # Check if we are currently inside any folder named 'round_X'
+    #             round_folder = next((p for p in root.split(os.sep) if p.startswith("round_")), None)
+                
+    #             if round_folder:
+    #                 try:
+    #                     r_num = int(round_folder.split("_")[1])
+    #                     # If the round is older than actual_current_round - 2, clear its .pth files ONLY
+    #                     if r_num < threshold_round:
+    #                         for f in files:
+    #                             if f.endswith(".pth"):
+    #                                 target_file = os.path.join(root, f)
+    #                                 os.remove(target_file)
+    #                                 deleted_count += 1
+    #                                 print(f"  🗑️ Deleted old round file: {target_file}")
+    #                 except ValueError:
+    #                     pass # Ignore folders that are named "round_something" but aren't numbers
+                        
+    #         print(f"Cleanup complete. Removed {deleted_count} old .pth files.")
+    #     else:
+    #         print(f"Current round is {actual_current_round}. Threshold is {threshold_round}. No cleanup needed yet.")
+
+
+import os
+import math
+import torch
+import importlib.util
 
 def fedselect_cka(models, output_paths, norm_weights, client_ids, prev_global_path, mask_dir, select_ratio, max_sparsity, runner_path, config, data_dir, modality, cka_samples, dynamic_sparsity):
     """
@@ -1471,7 +1796,8 @@ def fedselect_cka(models, output_paths, norm_weights, client_ids, prev_global_pa
     Selects entire layers with the highest CKA scores until the parameter count 
     reaches `select_ratio`, keeping them fully personalized. Caps at `max_sparsity`.
     """
-    print(f"Running FedSelect CKA Aggregation (select_ratio={select_ratio}, max_sparsity={max_sparsity})...")
+    # --- EDITTED: Clarified print statement to reflect cumulative logic ---
+    print(f"Running FedSelect CKA Aggregation (cumulative select_ratio target={select_ratio}, max_sparsity per client={max_sparsity})...")
     os.makedirs(mask_dir, exist_ok=True)
     os.makedirs(os.path.dirname(prev_global_path), exist_ok=True)
 
@@ -1495,10 +1821,11 @@ def fedselect_cka(models, output_paths, norm_weights, client_ids, prev_global_pa
         print(f"  {k} | shape={tuple(prev_state[k].shape)} | numel={prev_state[k].numel()}")
 
     total_params = sum(prev_state[k].numel() for k in valid_keys)
-    print(f"Total valid parameters: {total_params:,}")
+    print(f"Total valid parameters per model: {total_params:,}")
 
+    # --- EDITTED: Updated print statement logic ---
     print(f"Max allowed personalized params per client: {int(total_params * max_sparsity):,}")
-    print(f"Target params to newly personalize per round: {int(total_params * select_ratio):,}")
+    print(f"Target cumulative sparsity across entire federation: {select_ratio * 100:.2f}%")
 
     # 1. Dynamically import runner.py
     if not os.path.exists(runner_path):
@@ -1527,11 +1854,16 @@ def fedselect_cka(models, output_paths, norm_weights, client_ids, prev_global_pa
     print(f"Saving historical masks for round {current_round} to {round_mask_dir}")
 
     # 2. Phase 1: Client Subnetwork Discovery via CKA
-    print("\nPhase 1: Discovering personalized client layers via CKA...")
+    print("\nPhase 1: Discovering personalized client layers via CKA (Global Cumulative Mode)...")
+    
+    # --- EDITTED: Initialize global structures to hold CKA scores and masks across all clients ---
+    client_masks = {}
+    current_personalized = {}
+    global_cka_list = []
+    
+    # --- EDITTED: Step A - Get CKA scores for ALL 5 models first ---
     for m_path, cid in zip(models, client_ids):
-        print(f"\n==================== CLIENT {cid} ====================")
-        print(f"Client checkpoint path: {m_path}")
-
+        print(f"\n==================== COMPUTING CKA FOR CLIENT {cid} ====================")
         mask_path = os.path.join(mask_dir, f"{cid}_mask.pth")
         
         # Load existing mask to preserve history across rounds
@@ -1540,142 +1872,95 @@ def fedselect_cka(models, output_paths, norm_weights, client_ids, prev_global_pa
         else:
             client_mask = {k: torch.zeros_like(prev_state[k], dtype=torch.bool) for k in valid_keys}
 
-        current_personalized = sum(client_mask[k].sum().item() for k in valid_keys)
+        client_masks[cid] = client_mask
+        current_personalized[cid] = sum(client_mask[k].sum().item() for k in valid_keys)
         
+        print(f"{cid}: current_personalized={current_personalized[cid]:,} / {total_params:,} ({(current_personalized[cid] / total_params * 100):.2f}%)")
+
+        # Compute CKA
+        cka_rows = cka_runner.run_cka(
+            config=config,
+            data_dir=data_dir,
+            checkpoints=[prev_global_path, m_path],
+            modality=modality,
+            max_samples=cka_samples,
+            output_dir=os.path.join(mask_dir, f"cka_temp_{cid}")
+        )
+
+        # Filter out NaNs and add to global list
+        valid_cka = [(cid, idx, name, score) for idx, name, score in cka_rows if not math.isnan(score)]
+        print(f"{cid}: valid CKA rows={len(valid_cka)}, NaN rows filtered out={len(cka_rows) - len(valid_cka)}")
+        global_cka_list.extend(valid_cka)
+
+    # --- EDITTED: Step B - Calculate Cumulative Global Budget ---
+    fed_total_params = total_params * len(models)
+    fed_current_personalized = sum(current_personalized.values())
+    fed_target_personalized = int(fed_total_params * select_ratio)
+    
+    # Budget of NEW parameters we need to mask this round to hit the cumulative target
+    global_k_to_select = max(0, fed_target_personalized - fed_current_personalized)
+    
+    # Personal cap per client remains relative to a single model's size
+    global_max_allowed = int(total_params * max_sparsity) 
+
+    print("\n==================== GLOBAL CKA MASKING ====================")
+    print(f"Federation Total Possible Params: {fed_total_params:,}")
+    print(f"Already Personalized Globally: {fed_current_personalized:,} ({(fed_current_personalized / fed_total_params * 100):.2f}%)")
+    print(f"Target Personalized Globally (select_ratio={select_ratio}): {fed_target_personalized:,}")
+    print(f"Budget for NEW parameters this round: {global_k_to_select:,}")
+    
+    # Sort by score DESCENDING (Highest CKA first) across all models combined
+    global_cka_list.sort(key=lambda x: x[3], reverse=True) 
+    
+    global_new_personalized = 0
+    layers_masked_per_client = {cid: 0 for cid in client_ids}
+
+    for cid, idx, layer_name, score in global_cka_list:
         if dynamic_sparsity == 0.0:
-            print(f"{cid}: Dynamic sparsity disabled. Masking layers sequentially based on CKA until budget is met.")
-        
-            # Calculate parameter budget for this round
-            max_allowed = int(total_params * max_sparsity)
-            k_to_select = int(total_params * select_ratio)
-            k_to_select = min(k_to_select, max_allowed - current_personalized)
-        
-            print(f"{cid}: current_personalized={current_personalized:,} / {total_params:,} ({current_personalized / total_params * 100:.2f}%)")
-            print(f"{cid}: max_allowed={max_allowed:,}")
-            print(f"{cid}: remaining personalization budget={max_allowed - current_personalized:,}")
-            print(f"{cid}: final k_to_select={k_to_select:,}")
-
-            if k_to_select > 0:
-                print(f"\n--- Computing CKA for {cid} ---")
-                cka_rows = cka_runner.run_cka(
-                    config=config,
-                    data_dir=data_dir,
-                    checkpoints=[prev_global_path, m_path],
-                    modality=modality,
-                    max_samples=cka_samples,
-                    output_dir=os.path.join(mask_dir, "cka_temp")
-                )
-
-                # Filter out NaNs and sort by CKA score DESCENDING (Highest CKA first)
-                valid_cka = [(idx, name, score) for idx, name, score in cka_rows if not math.isnan(score)]
-                print(f"{cid}: CKA returned {len(cka_rows)} rows.")
-                print(f"{cid}: valid CKA rows={len(valid_cka)}, NaN rows filtered out={len(cka_rows) - len(valid_cka)}")
-
-                valid_cka.sort(key=lambda x: x[2], reverse=True)
-                print(f"{cid}: Top 10 layers by CKA:")
-                for idx, name, score in valid_cka[:10]:
-                    print(f"  idx={idx} | layer={name} | cka={score:.6f}")
-                
-                print(f"{cid}: Lowest 10 layers by CKA:")
-                for idx, name, score in valid_cka[-10:]:
-                    print(f"  idx={idx} | layer={name} | cka={score:.6f}")
-                    
-                new_personalized = 0
-                layers_masked = 0
-            
-                # Iterate through layers with highest CKA scores
-                for idx, layer_name, score in valid_cka:
-                    # Find all parameter keys belonging to this layer
-                    layer_keys = [k for k in valid_keys if k.replace('module.', '').startswith(layer_name + '.') or k.replace('module.', '') == layer_name]
-                    
-                    # Count parameters in this layer that are NOT YET personalized
-                    layer_new_params = sum((~client_mask[k]).sum().item() for k in layer_keys)
-                    
-                    if layer_new_params > 0:
-                        print(f"{cid}: SELECTING layer {layer_name} with CKA={score:.6f}, adding {layer_new_params:,} new params")
-
-                        # Apply mask to the entire layer
-                        for k in layer_keys:
-                            # Convert 0s to 1s
-                            client_mask[k] = torch.ones_like(client_mask[k], dtype=torch.bool)
-                            
-                        new_personalized += layer_new_params
-                        layers_masked += 1
-                        
-                        # Stop if we have met or slightly exceeded our parameter budget for this round
-                        if new_personalized >= k_to_select:
-                            break
-                            
-                print(f"  {cid}: Masked {layers_masked} entire layers.")
-                print(f"  {cid}: Personalized {new_personalized:,} new params. Total sparsity: {(current_personalized + new_personalized) / total_params * 100:.2f}%")
-            else:
-                print(f"  {cid}: Reached max sparsity ({max_sparsity*100}%). Skipping CKA computation. Total sparsity: {current_personalized / total_params * 100:.2f}%")
-
-        # dynamic sparsity mode: mask all parameters with CKA scores above the threshold, ignoring the select_ratio budget
+            # Budget-based logic using the calculated delta
+            if global_new_personalized >= global_k_to_select:
+                print(f"\nCumulative parameter budget reached ({global_new_personalized:,} >= {global_k_to_select:,}). Stopping selection.")
+                break
         else:
-            print(f"\n--- Computing CKA for {cid} ---")
-            cka_rows = cka_runner.run_cka(
-                config=config,
-                data_dir=data_dir,
-                checkpoints=[prev_global_path, m_path],
-                modality=modality,
-                max_samples=cka_samples,
-                output_dir=os.path.join(mask_dir, "cka_temp")
-            )
+            # Threshold-based logic using dynamic_sparsity
+            if score <= dynamic_sparsity:
+                print(f"\nCKA score {score:.6f} is below dynamic threshold {dynamic_sparsity}. Stopping global selection.")
+                break
 
-            # Filter out NaNs and sort by CKA score DESCENDING (Highest CKA first)
-            valid_cka = [(idx, name, score) for idx, name, score in cka_rows if not math.isnan(score)]
-            print(f"{cid}: CKA returned {len(cka_rows)} rows.")
-            print(f"{cid}: valid CKA rows={len(valid_cka)}, NaN rows filtered out={len(cka_rows) - len(valid_cka)}")
-
-            valid_cka.sort(key=lambda x: x[2], reverse=True)
-            print(f"{cid}: Top 10 layers by CKA:")
-            for idx, name, score in valid_cka[:10]:
-                print(f"  idx={idx} | layer={name} | cka={score:.6f}")
-            
-            print(f"{cid}: Lowest 10 layers by CKA:")
-            for idx, name, score in valid_cka[-10:]:
-                print(f"  idx={idx} | layer={name} | cka={score:.6f}")
-
-            new_personalized = 0
-            layers_masked = 0
+        # Find all parameter keys belonging to this layer
+        layer_keys = [k for k in valid_keys if k.replace('module.', '').startswith(layer_name + '.') or k.replace('module.', '') == layer_name]
         
-            # Iterate through layers with highest CKA scores
-            for idx, layer_name, score in valid_cka:
+        # Count parameters in this layer that are NOT YET personalized
+        layer_new_params = sum((~client_masks[cid][k]).sum().item() for k in layer_keys)
+        
+        if layer_new_params > 0:
+            # Check individual client cap
+            if current_personalized[cid] + layer_new_params > global_max_allowed:
+                continue # Skip this layer, this specific client reached their personal max_sparsity cap
+
+            print(f"GLOBAL SELECT -> {cid}: layer {layer_name} | CKA={score:.6f} | adding {layer_new_params:,} new params")
+
+            # Apply mask to the entire layer
+            for k in layer_keys:
+                client_masks[cid][k] = torch.ones_like(client_masks[cid][k], dtype=torch.bool)
                 
-                # Check against the dynamic threshold
-                if score > dynamic_sparsity:
-                    # Find all parameter keys belonging to this layer
-                    layer_keys = [k for k in valid_keys if k.replace('module.', '').startswith(layer_name + '.') or k.replace('module.', '') == layer_name]
-                    
-                    # Count parameters in this layer that are NOT YET personalized
-                    layer_new_params = sum((~client_mask[k]).sum().item() for k in layer_keys)
-                    
-                    if layer_new_params > 0:
-                        print(f"{cid}: SELECTING layer {layer_name} with CKA={score:.6f} > {dynamic_sparsity}, adding {layer_new_params:,} new params")
+            current_personalized[cid] += layer_new_params
+            global_new_personalized += layer_new_params
+            layers_masked_per_client[cid] += 1
 
-                        # Apply mask to the entire layer
-                        for k in layer_keys:
-                            # Convert 0s to 1s
-                            client_mask[k] = torch.ones_like(client_mask[k], dtype=torch.bool)
-                            
-                        new_personalized += layer_new_params
-                        layers_masked += 1
-                else:
-                    # Since valid_cka is sorted descending, if we hit a score <= threshold, all subsequent layers will be too.
-                    print(f"{cid}: CKA score {score:.6f} is below threshold {dynamic_sparsity}. Stopping selection.")
-                    break
-                        
-            print(f"  {cid}: Masked {layers_masked} entire layers based on threshold.")
-            print(f"  {cid}: Personalized {new_personalized:,} new params. Total sparsity: {(current_personalized + new_personalized) / total_params * 100:.2f}%")
-
-
-        torch.save(client_mask, mask_path)
+    # --- EDITTED: Step C - Save all client masks ---
+    print("\n==================== SAVING MASKS ====================")
+    for cid in client_ids:
+        print(f"  {cid}: Masked {layers_masked_per_client[cid]} entire layers this round.")
+        print(f"  {cid}: Total sparsity: {current_personalized[cid] / total_params * 100:.2f}%")
         
-        # Save historical visualization mask (0=Global, 1=Personal)
-        vis_mask = {k: v.to(torch.int8) for k, v in client_mask.items()}
+        mask_path = os.path.join(mask_dir, f"{cid}_mask.pth")
+        torch.save(client_masks[cid], mask_path)
+        
+        vis_mask = {k: v.to(torch.int8) for k, v in client_masks[cid].items()}
         hist_mask_path = os.path.join(round_mask_dir, f"{cid}_mask.pt")
         torch.save(vis_mask, hist_mask_path)
+
 
     # 3. Phase 2: Masked Server Aggregation
     print("\nPhase 2: Aggregating shared parameters on server...")
@@ -1780,7 +2065,6 @@ def fedselect_cka(models, output_paths, norm_weights, client_ids, prev_global_pa
         print(f"Cleanup complete. Removed {deleted_count} old .pth files.")
     else:
         print(f"Current round is {actual_current_round}. Threshold is {threshold_round}. No cleanup needed yet.")
-
 
 def fedmc(models, fisher_paths, output_paths, norm_weights, client_ids, 
           prev_global_path="/workspace/work_dirs/fedmc_states/global_model.pth", 
@@ -2264,23 +2548,41 @@ def main():
             mask_dir="/workspace/work_dirs/fedselect_masks",
             select_ratio=args.select_ratio
         )
-    elif args.method == 'fedselect_cka':
+    # elif args.method == 'fedselect_cka':
+    #     client_ids = [f"Model{string.ascii_uppercase[i]}" for i in range(len(model_paths))]
+    #     fedselect_cka(
+    #         models=model_paths, 
+    #         output_paths=output_paths, 
+    #         norm_weights=norm_weights, 
+    #         client_ids=client_ids,
+    #         prev_global_path="/workspace/work_dirs/fedselect_states/global_model.pth", 
+    #         mask_dir="/workspace/work_dirs/fedselect_masks",
+    #         select_ratio=args.select_ratio,      # <-- Uses standard argument
+    #         max_sparsity=args.max_sparsity,      # <-- Uses standard argument
+    #         runner_path=args.runner_path,
+    #         config=args.config,
+    #         data_dir=args.data_dir,
+    #         modality=args.modality,
+    #         cka_samples=args.cka_samples,
+    #         dynamic_sparsity=args.dynamic_sparsity
+    #     )
+    if args.method == 'fedselect_cka':
         client_ids = [f"Model{string.ascii_uppercase[i]}" for i in range(len(model_paths))]
         fedselect_cka(
-            models=model_paths, 
-            output_paths=output_paths, 
-            norm_weights=norm_weights, 
+            models=model_paths,
+            output_paths=output_paths,
+            norm_weights=norm_weights,
             client_ids=client_ids,
-            prev_global_path="/workspace/work_dirs/fedselect_states/global_model.pth", 
+            prev_global_path="/workspace/work_dirs/fedselect_states/global_model.pth",
             mask_dir="/workspace/work_dirs/fedselect_masks",
-            select_ratio=args.select_ratio,      # <-- Uses standard argument
-            max_sparsity=args.max_sparsity,      # <-- Uses standard argument
-            runner_path=args.runner_path,
-            config=args.config,
-            data_dir=args.data_dir,
-            modality=args.modality,
-            cka_samples=args.cka_samples,
-            dynamic_sparsity=args.dynamic_sparsity
+            select_ratio=args.select_ratio, 
+            max_sparsity=args.max_sparsity,                
+            runner_path="projects/pointpillars_ablation/tools/scripts_cmt_copy_copy/runner.py",
+            config="configs/pointpillars/hv_pointpillars_fpn_sbn-all_4x8_2x_nus-3d.py",
+            data_dir="data/nuscenes",          
+            modality="lidar",
+            cka_samples=args.cka_samples,                  
+            dynamic_sparsity=args.dynamic_sparsity            
         )
     elif args.method == 'pcgrad':
             client_ids = [f"Model{string.ascii_uppercase[i]}" for i in range(len(model_paths))]
