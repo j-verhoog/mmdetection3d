@@ -15,7 +15,7 @@
 set -e # stop if something fails
 
 # --- FEDERATED SETTINGS ---
-NUM_ROUNDS=40       # approx 2hour per round of 1 Epoch
+NUM_ROUNDS=24       # approx 2hour per round of 1 Epoch
 EPOCHS_PER_ROUND=1 
 SAMPLES_PER_GPU=8
 SIZE_A=265  # A MUST BE BIGGEST for logging
