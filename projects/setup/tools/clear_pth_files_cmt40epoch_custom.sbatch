@@ -67,7 +67,7 @@ for target_dir in "${TARGET_DIRS[@]}"; do
             find "$target_dir/round_$r" -type f -name "*.pth" | while read -r file; do
                 echo "    🗑️ Deleted: $file"
                 # WARNING: rm is active! 
-                # rm "$file"
+                rm "$file"
             done
         fi
     done
