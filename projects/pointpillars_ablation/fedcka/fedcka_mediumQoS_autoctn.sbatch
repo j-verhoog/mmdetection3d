@@ -2,13 +2,13 @@
 #SBATCH --partition=general
 #SBATCH --qos=medium
 #SBATCH --job-name=fedcka
-#SBATCH --output=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/pointpillars_ablation/fedcka_40epochs_%j.out
-#SBATCH --error=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/pointpillars_ablation/fedcka_40epochs_%j.err
+#SBATCH --output=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/pointpillars_ablation/fedcka_24epochs_%j.out
+#SBATCH --error=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/pointpillars_ablation/fedcka_24epochs_%j.err
 #SBATCH --time=36:00:00
-#SBATCH --nodes=1              # Use two machines
+#SBATCH --nodes=1            
 #SBATCH --ntasks=2             # Total tasks (2 per node)
 #SBATCH --ntasks-per-node=2    # Spread them evenly
-#SBATCH --gres=gpu:a40:2       # Request 2 GPUs per node (Total 4)
+#SBATCH --gres=gpu:a40:2       # Request 2 GPUs per node 
 #SBATCH --cpus-per-task=16
 #SBATCH --mem=128G
 
@@ -203,6 +203,7 @@ run_merge () {
     local OUT_D=$9
     local OUT_E=${10}
     local CURRENT_RATIO=${11}
+    local CURRENT_METHOD=${12}
 
     echo "=== Merging Models ==="
     apptainer exec --nv --cleanenv \
@@ -218,7 +219,7 @@ run_merge () {
             --outputs $OUT_A $OUT_B $OUT_C $OUT_D $OUT_E \
             --weight-a $SIZE_A --weight-b $SIZE_B --weight-c $SIZE_C --weight-d $SIZE_D --weight-e $SIZE_E \
             --select-ratio $CURRENT_RATIO \
-            --method fedselect_cka
+            --method $CURRENT_METHOD
       "
 }
 
@@ -325,6 +326,14 @@ for ((i=START_ROUND; i<=NUM_ROUNDS; i++)); do
     echo "       Target Cumulative Sparsity: $CURRENT_RATIO"
     echo "-------------------------------------"
 
+    # --- PHASE merging DETERMINATION ---
+    if [ "$i" -le 6 ]; then
+        CURRENT_METHOD="fedavg"
+    else
+        CURRENT_METHOD="fedselect_cka"
+    fi
+    
+
 
     if [ "$i" -eq 1 ]; then
         IS_RESUME="false"
@@ -382,6 +391,12 @@ for ((i=START_ROUND; i<=NUM_ROUNDS; i++)); do
                 printf "%.4f", ratio 
             }')
 
+            if [ "$PREV_RND" -le 6 ]; then
+                PREV_METHOD="fedavg"
+            else
+                PREV_METHOD="fedselect_cka"
+            fi
+
             CKPT_A="$WORK/round_${PREV_RND}/ModelA/epoch_${PREV_STOP_EPOCH}.pth"
             CKPT_B="$WORK/round_${PREV_RND}/ModelB/epoch_${PREV_STOP_EPOCH}.pth"
             CKPT_C="$WORK/round_${PREV_RND}/ModelC/epoch_${PREV_STOP_EPOCH}.pth"
@@ -396,7 +411,7 @@ for ((i=START_ROUND; i<=NUM_ROUNDS; i++)); do
             MERGED_E="$WORK/round_${PREV_RND}/merged_E.pth"
             
             run_merge "$CKPT_A" "$CKPT_B" "$CKPT_C" "$CKPT_D" "$CKPT_E" \
-                    "$MERGED_A" "$MERGED_B" "$MERGED_C" "$MERGED_D" "$MERGED_E" "$PREV_RATIO"
+                    "$MERGED_A" "$MERGED_B" "$MERGED_C" "$MERGED_D" "$MERGED_E" "$PREV_RATIO" "$PREV_METHOD"
             
             # Now run Round 2 training 
             run_training "ModelA" "$CONFIG_A" "$MODEL_A" "$i" "$GLOBAL_MAX_EPOCHS" "$CURRENT_STOP_EPOCH" "$IS_RESUME" "$WANDB_ID_A"
@@ -413,6 +428,13 @@ for ((i=START_ROUND; i<=NUM_ROUNDS; i++)); do
 
             run_training "ModelE" "$CONFIG_E" "$MODEL_E" "$i" "$GLOBAL_MAX_EPOCHS" "$CURRENT_STOP_EPOCH" "$IS_RESUME" "$WANDB_ID_E"
             CKPT_E="$WORK/round_${i}/ModelE/epoch_${CURRENT_STOP_EPOCH}.pth"
+
+            if [ "$PREV_RND" -eq 6 ]; then
+                echo "Transitioning to FedSelect after resumed Round 6 merge. Saving baseline global model..."
+                mkdir -p "$WORK/fedselect_states"
+                cp "$MERGED_A" "$WORK/fedselect_states/global_model.pth"
+            fi
+
         else
             echo "Invalid START_MODEL specified: $START_MODEL. Must be one of A, B, C, D, E."
             exit 1
@@ -438,14 +460,7 @@ for ((i=START_ROUND; i<=NUM_ROUNDS; i++)); do
 
     fi
 
-    # --- FEDSELECT HANDOVER LOGIC ---
-    # If we just finished Round 10, save Model A (since all are identical after FedAvg) 
-    # as the baseline global model for FedSelect in Round 11
-    if [ "$i" -eq 7 ]; then
-        echo "Transitioning to FedSelect next round. Saving baseline global model..."
-        mkdir -p "$WORK/fedselect_states"
-        cp "$MERGED_A" "$WORK/fedselect_states/global_model.pth"
-    fi
+
 
     # 3. Aggregate and Save 5 Distinct Models
     MERGED_A="$WORK/round_${i}/merged_A.pth"
@@ -455,7 +470,7 @@ for ((i=START_ROUND; i<=NUM_ROUNDS; i++)); do
     MERGED_E="$WORK/round_${i}/merged_E.pth"
     
     run_merge "$CKPT_A" "$CKPT_B" "$CKPT_C" "$CKPT_D" "$CKPT_E" \
-              "$MERGED_A" "$MERGED_B" "$MERGED_C" "$MERGED_D" "$MERGED_E" "$CURRENT_RATIO"
+              "$MERGED_A" "$MERGED_B" "$MERGED_C" "$MERGED_D" "$MERGED_E" "$CURRENT_RATIO" "$CURRENT_METHOD"
     
     # Setup for next round
     MODEL_A="$MERGED_A"
@@ -464,6 +479,15 @@ for ((i=START_ROUND; i<=NUM_ROUNDS; i++)); do
     MODEL_D="$MERGED_D"
     MODEL_E="$MERGED_E"
     
+    # --- FEDSELECT HANDOVER LOGIC ---
+    # If we just finished Round 10, save Model A (since all are identical after FedAvg) 
+    # as the baseline global model for FedSelect in Round 11
+    if [ "$i" -eq 6 ]; then
+        echo "Transitioning to FedSelect next round. Saving baseline global model..."
+        mkdir -p "$WORK/fedselect_states"
+        cp "$MERGED_A" "$WORK/fedselect_states/global_model.pth"
+    fi
+
     echo "Round $i complete. 5 distinct merged models saved."
 done
 
