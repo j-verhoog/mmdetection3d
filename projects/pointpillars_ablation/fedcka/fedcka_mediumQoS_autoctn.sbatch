@@ -5,8 +5,8 @@
 #SBATCH --output=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/pointpillars_ablation/fedcka_40epochs_%j.out
 #SBATCH --error=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/pointpillars_ablation/fedcka_40epochs_%j.err
 #SBATCH --time=36:00:00
-#SBATCH --nodes=2              # Use two machines
-#SBATCH --ntasks=4             # Total tasks (2 per node)
+#SBATCH --nodes=1              # Use two machines
+#SBATCH --ntasks=2             # Total tasks (2 per node)
 #SBATCH --ntasks-per-node=2    # Spread them evenly
 #SBATCH --gres=gpu:a40:2       # Request 2 GPUs per node (Total 4)
 #SBATCH --cpus-per-task=16
@@ -436,6 +436,15 @@ for ((i=START_ROUND; i<=NUM_ROUNDS; i++)); do
         run_training "ModelE" "$CONFIG_E" "$MODEL_E" "$i" "$GLOBAL_MAX_EPOCHS" "$CURRENT_STOP_EPOCH" "$IS_RESUME" "$WANDB_ID_E"
         CKPT_E="$WORK/round_${i}/ModelE/epoch_${CURRENT_STOP_EPOCH}.pth" # Use specific epoch
 
+    fi
+
+    # --- FEDSELECT HANDOVER LOGIC ---
+    # If we just finished Round 10, save Model A (since all are identical after FedAvg) 
+    # as the baseline global model for FedSelect in Round 11
+    if [ "$i" -eq 7 ]; then
+        echo "Transitioning to FedSelect next round. Saving baseline global model..."
+        mkdir -p "$WORK/fedselect_states"
+        cp "$MERGED_A" "$WORK/fedselect_states/global_model.pth"
     fi
 
     # 3. Aggregate and Save 5 Distinct Models

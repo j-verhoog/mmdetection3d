@@ -5,8 +5,8 @@
 #SBATCH --output=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/pointpillars_ablation/fedavg_24epochs_%j.out
 #SBATCH --error=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/pointpillars_ablation/fedavg_24epochs_%j.err
 #SBATCH --time=36:00:00
-#SBATCH --nodes=2              # Use two machines
-#SBATCH --ntasks=4             # Total tasks (2 per node)
+#SBATCH --nodes=1              # Use two machines
+#SBATCH --ntasks=2             # Total tasks (2 per node)
 #SBATCH --ntasks-per-node=2    # Spread them evenly
 #SBATCH --gres=gpu:a40:2       # Request 2 GPUs per node (Total 4)
 #SBATCH --cpus-per-task=16
