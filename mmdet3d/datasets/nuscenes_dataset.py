@@ -396,6 +396,48 @@ class NuScenesDataset(Custom3DDataset):
             'v1.0-mini': 'mini_val',
             'v1.0-trainval': 'val',
         }
+        
+
+        # #### EDIT START: robustly remove invalid None predictions before NuScenesEval
+        # nuScenes accepts an empty prediction list [] for a sample, but crashes on [None].
+        # This block only rewrites the result file when such invalid entries are actually found.
+        try:
+            import json  # #### EDIT
+            with open(result_path, 'r') as f:
+                result_data = json.load(f)
+
+            results = result_data.get('results', None)
+            num_removed = 0
+
+            if isinstance(results, dict):
+                for sample_token, boxes in results.items():
+                    if not isinstance(boxes, list):
+                        continue
+
+                    has_none_box = any(box is None for box in boxes)
+                    if not has_none_box:
+                        continue
+
+                    clean_boxes = [box for box in boxes if box is not None]
+                    num_removed += len(boxes) - len(clean_boxes)
+                    results[sample_token] = clean_boxes
+
+                if num_removed > 0:
+                    with open(result_path, 'w') as f:
+                        json.dump(result_data, f)
+
+                    print(
+                        f'[NuScenesEvalFix] Removed {num_removed} None prediction boxes '
+                        f'from {result_path}. This only changes invalid [None] entries to [].'
+                    )
+
+        except Exception as e:
+            print(
+                f'[NuScenesEvalFix] Warning: pre-evaluation None-box cleanup failed for '
+                f'{result_path}: {e}. Continuing with normal NuScenesEval.'
+            )
+        # #### EDIT END
+
         nusc_eval = NuScenesEval(
             nusc,
             config=self.eval_detection_configs,
