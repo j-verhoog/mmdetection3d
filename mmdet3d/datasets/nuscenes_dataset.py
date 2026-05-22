@@ -386,9 +386,73 @@ class NuScenesDataset(Custom3DDataset):
         Returns:
             dict: Dictionary of evaluation details.
         """
-        from nuscenes import NuScenes
-        from nuscenes.eval.detection.evaluate import NuScenesEval
+        # from nuscenes import NuScenes
+        # from nuscenes.eval.detection.evaluate import NuScenesEval
 
+        # output_dir = osp.join(*osp.split(result_path)[:-1])
+        # nusc = NuScenes(
+        #     version=self.version, dataroot=self.data_root, verbose=False)
+        # eval_set_map = {
+        #     'v1.0-mini': 'mini_val',
+        #     'v1.0-trainval': 'val',
+        # }
+        
+
+        # #### EDIT START: robustly remove invalid None predictions before NuScenesEval
+        from nuscenes import NuScenes
+        from nuscenes.eval.detection import evaluate as nuscenes_eval_module
+        from nuscenes.eval.common import loaders as nuscenes_loaders_module
+
+        NuScenesEval = nuscenes_eval_module.NuScenesEval
+
+        if not hasattr(nuscenes_eval_module, '_mmdet_none_box_safe_patch_applied'):
+            _original_filter_eval_boxes = nuscenes_eval_module.filter_eval_boxes
+
+            def _mmdet_safe_filter_eval_boxes(nusc, eval_boxes, max_dist, verbose=False):
+                num_removed = 0
+                num_valid = 0
+
+                for sample_token in list(eval_boxes.sample_tokens):
+                    boxes = eval_boxes.boxes.get(sample_token, [])
+
+                    if not isinstance(boxes, list):
+                        continue
+
+                    clean_boxes = []
+                    for box in boxes:
+                        if box is None:
+                            num_removed += 1
+                        else:
+                            clean_boxes.append(box)
+                            num_valid += 1
+
+                    if len(clean_boxes) != len(boxes):
+                        eval_boxes.boxes[sample_token] = clean_boxes
+
+                if num_removed > 0:
+                    print(
+                        '[NuScenesEvalFix] Removed {} invalid None boxes before nuScenes filtering.'.format(
+                            num_removed
+                        ),
+                        flush=True
+                    )
+
+                if num_valid == 0:
+                    print(
+                        '[NuScenesEvalFix] No valid boxes remain after None cleanup; '
+                        'skipping nuScenes box filtering for this EvalBoxes object.',
+                        flush=True
+                    )
+                    return eval_boxes
+
+                return _original_filter_eval_boxes(
+                    nusc, eval_boxes, max_dist, verbose=verbose
+                )
+
+            nuscenes_eval_module.filter_eval_boxes = _mmdet_safe_filter_eval_boxes
+            nuscenes_loaders_module.filter_eval_boxes = _mmdet_safe_filter_eval_boxes
+            nuscenes_eval_module._mmdet_none_box_safe_patch_applied = True
+                            
         output_dir = osp.join(*osp.split(result_path)[:-1])
         nusc = NuScenes(
             version=self.version, dataroot=self.data_root, verbose=False)
@@ -396,46 +460,7 @@ class NuScenesDataset(Custom3DDataset):
             'v1.0-mini': 'mini_val',
             'v1.0-trainval': 'val',
         }
-        
 
-        # #### EDIT START: robustly remove invalid None predictions before NuScenesEval
-        # nuScenes accepts an empty prediction list [] for a sample, but crashes on [None].
-        # This block only rewrites the result file when such invalid entries are actually found.
-        try:
-            import json  # #### EDIT
-            with open(result_path, 'r') as f:
-                result_data = json.load(f)
-
-            results = result_data.get('results', None)
-            num_removed = 0
-
-            if isinstance(results, dict):
-                for sample_token, boxes in results.items():
-                    if not isinstance(boxes, list):
-                        continue
-
-                    has_none_box = any(box is None for box in boxes)
-                    if not has_none_box:
-                        continue
-
-                    clean_boxes = [box for box in boxes if box is not None]
-                    num_removed += len(boxes) - len(clean_boxes)
-                    results[sample_token] = clean_boxes
-
-                if num_removed > 0:
-                    with open(result_path, 'w') as f:
-                        json.dump(result_data, f)
-
-                    print(
-                        f'[NuScenesEvalFix] Removed {num_removed} None prediction boxes '
-                        f'from {result_path}. This only changes invalid [None] entries to [].'
-                    )
-
-        except Exception as e:
-            print(
-                f'[NuScenesEvalFix] Warning: pre-evaluation None-box cleanup failed for '
-                f'{result_path}: {e}. Continuing with normal NuScenesEval.'
-            )
         # #### EDIT END
 
         nusc_eval = NuScenesEval(
