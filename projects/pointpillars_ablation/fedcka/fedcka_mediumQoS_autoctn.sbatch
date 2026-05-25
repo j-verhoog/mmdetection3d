@@ -210,6 +210,7 @@ run_merge () {
       --bind "$HOME/mmdet:/workspace/mmdet" \
       --bind "$WORK:/workspace/work_dirs" \
       --bind "/tudelft.net/staff-umbrella/MscThesisjverhoog:/tudelft.net/staff-umbrella/MscThesisjverhoog" \
+      --bind "/tudelft.net/staff-umbrella/IntelligentVehiclesPublicDatasets:/tudelft.net/staff-umbrella/IntelligentVehiclesPublicDatasets" \
       "$APPTAINER_IMAGE" \
       bash -lc "
         cd /workspace/mmdet/mmdetection3d && \
