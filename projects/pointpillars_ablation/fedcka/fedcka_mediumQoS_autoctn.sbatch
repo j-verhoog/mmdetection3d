@@ -205,7 +205,24 @@ run_merge () {
     local CURRENT_RATIO=${11}
     local CURRENT_METHOD=${12}
 
-    echo "=== Merging Models ==="
+    echo "=== Merging Models using $CURRENT_METHOD ==="
+    
+    # Base command string
+    local MERGE_CMD="python projects/pointpillars_ablation/tools/modular_merging.py \
+            --inputs $CKPT_A $CKPT_B $CKPT_C $CKPT_D $CKPT_E \
+            --outputs $OUT_A $OUT_B $OUT_C $OUT_D $OUT_E \
+            --weight-a $SIZE_A --weight-b $SIZE_B --weight-c $SIZE_C --weight-d $SIZE_D --weight-e $SIZE_E \
+            --select-ratio $CURRENT_RATIO \
+            --method $CURRENT_METHOD"
+            
+    # Append CKA specific arguments if the method is fedselect_cka
+    if [ "$CURRENT_METHOD" = "fedselect_cka" ]; then
+        MERGE_CMD="$MERGE_CMD \
+            --runner-path projects/pointpillars_ablation/tools/scripts_cmt_copy_copy/runner.py \
+            --data-dir /tudelft.net/staff-umbrella/IntelligentVehiclesPublicDatasets/nuscenes \
+            --modality lidar"
+    fi
+
     apptainer exec --nv --cleanenv \
       --bind "$HOME/mmdet:/workspace/mmdet" \
       --bind "$WORK:/workspace/work_dirs" \
@@ -215,12 +232,7 @@ run_merge () {
       bash -lc "
         cd /workspace/mmdet/mmdetection3d && \
         export PYTHONPATH=/workspace/mmdet/mmdetection3d:/workspace/mmdet:\$PYTHONPATH && \
-        python projects/pointpillars_ablation/tools/modular_merging.py \
-            --inputs $CKPT_A $CKPT_B $CKPT_C $CKPT_D $CKPT_E \
-            --outputs $OUT_A $OUT_B $OUT_C $OUT_D $OUT_E \
-            --weight-a $SIZE_A --weight-b $SIZE_B --weight-c $SIZE_C --weight-d $SIZE_D --weight-e $SIZE_E \
-            --select-ratio $CURRENT_RATIO \
-            --method $CURRENT_METHOD
+        $MERGE_CMD
       "
 }
 
