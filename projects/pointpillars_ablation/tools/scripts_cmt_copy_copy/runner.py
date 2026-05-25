@@ -134,8 +134,16 @@ def _collect_samples(data_dir: str, modality: str, max_samples: int) -> List[Any
 
     if modality == "lidar":
         pcd_files = sorted(glob.glob(os.path.join(data_dir, "*.bin")))
+
         if len(pcd_files) == 0:
-            raise ValueError(f"No .bin files found in {data_dir}")
+            nuscenes_lidar_dir = os.path.join(data_dir, "samples", "LIDAR_TOP")
+            pcd_files = sorted(glob.glob(os.path.join(nuscenes_lidar_dir, "*.bin")))
+
+        if len(pcd_files) == 0:
+            raise ValueError(
+                f"No .bin files found in {data_dir} or {os.path.join(data_dir, 'samples', 'LIDAR_TOP')}"
+            )
+
         return pcd_files[:max_samples] if max_samples > 0 else pcd_files
 
     raise ValueError("Modality must be 'lidar', 'camera', or 'lidar_camera'")
