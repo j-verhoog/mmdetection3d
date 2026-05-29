@@ -1,110 +1,3 @@
-#!/bin/bash
-#SBATCH --partition=general
-#SBATCH --qos=medium
-#SBATCH --job-name=feddyn40
-#SBATCH --output=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/cmt/feddyn40_job%j.out
-#SBATCH --error=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/cmt/feddyn40_job%j.err
-#SBATCH --time=36:00:00
-#SBATCH --nodes=1
-#SBATCH --ntasks=2
-#SBATCH --ntasks-per-node=2
-#SBATCH --gres=gpu:a40:2
-#SBATCH --cpus-per-task=8
-#SBATCH --mem=64G
-
-set -e # stop if something fails
-echo "=== Starting Job ID: $SLURM_JOB_ID ==="
-
-# --- FEDERATED SETTINGS ---
-NUM_ROUNDS=40           # approx 2hour per round of 1 Epoch
-EPOCHS_PER_ROUND=1 
-SAMPLES_PER_GPU=16
-SIZE_A=265              # A MUST BE BIGGEST for logging
-SIZE_B=125
-SIZE_C=226
-SIZE_D=71
-SIZE_E=13
-
-START_ROUND=1 
-START_MODEL="A"         # If set, runs from that model for the start round, then continues normally. 'A' does nothing. 'merge' does fedavg of previous round
-
-# Paths
-DATASET_A="/tudelft.net/staff-umbrella/MscThesisjverhoog/datasets/cmt_subsets/Default_NoFair_SingleClient/boston_day_clear"
-DATASET_B="/tudelft.net/staff-umbrella/MscThesisjverhoog/datasets/cmt_subsets/Default_NoFair_SingleClient/boston_day_rain"
-DATASET_C="/tudelft.net/staff-umbrella/MscThesisjverhoog/datasets/cmt_subsets/Default_NoFair_SingleClient/singapore_day_clear"
-DATASET_D="/tudelft.net/staff-umbrella/MscThesisjverhoog/datasets/cmt_subsets/Default_NoFair_SingleClient/singapore_night_clear"
-DATASET_E="/tudelft.net/staff-umbrella/MscThesisjverhoog/datasets/cmt_subsets/Default_NoFair_SingleClient/singapore_night_rain"
-
-# Initial backbone weights (only used in Round 1), this is the correct one for the R50 backbone
-PRETRAINED_BACKBONE="ckpts/nuim_r50.pth"
-
-# --- STANDARD SETUP ---
-export SRUN_CPUS_PER_TASK=${SLURM_CPUS_PER_TASK:-1}
-export WANDB_PROJECT="cmt_40_epoch"
-export RUN_NAME="FedDyn_40epochs"
-CONTINUE_WANDB_RUN=true
-
-# Gets API key robustly
-export WANDB_API_KEY=$(awk '$1=="machine" && $2=="api.wandb.ai" {found=1}found && $1=="password" {print $2; exit}' "$HOME/.netrc")
-
-export APPTAINER_IMAGE=/tudelft.net/staff-umbrella/MscThesisjverhoog/image/mmdet3d_v1rc5.sif
-export WORK=/tudelft.net/staff-umbrella/MscThesisjverhoog/projects/$WANDB_PROJECT/$RUN_NAME
-mkdir -p "$WORK"
-
-
-# ==========================================
-# --- AUTO-DETECT RESUME STATE ---
-# ==========================================
-LATEST_ROUND=0
-for (( i=1; i<=NUM_ROUNDS; i++ )); do
-    if [ -d "$WORK/round_$i" ]; then
-        LATEST_ROUND=$i
-    fi
-done
-
-if [ "$LATEST_ROUND" -gt 0 ]; then
-    STOP_EPOCH=$((LATEST_ROUND * EPOCHS_PER_ROUND))
-    
-    if [ -f "$WORK/round_${LATEST_ROUND}/merged_E.pth" ]; then
-        # The round completely finished merging
-        START_ROUND=$((LATEST_ROUND + 1))
-        START_MODEL="A"
-    elif [ -f "$WORK/round_${LATEST_ROUND}/ModelE/epoch_${STOP_EPOCH}.pth" ]; then
-        # Model E finished, but merging timed out. 
-        # Setting START_MODEL="merge" and bumping the round forces runner.sh to merge the previous round first.
-        START_ROUND=$((LATEST_ROUND + 1))
-        START_MODEL="merge"
-    elif [ -f "$WORK/round_${LATEST_ROUND}/ModelD/epoch_${STOP_EPOCH}.pth" ]; then
-        START_ROUND=$LATEST_ROUND
-        START_MODEL="E"
-    elif [ -f "$WORK/round_${LATEST_ROUND}/ModelC/epoch_${STOP_EPOCH}.pth" ]; then
-        START_ROUND=$LATEST_ROUND
-        START_MODEL="D"
-    elif [ -f "$WORK/round_${LATEST_ROUND}/ModelB/epoch_${STOP_EPOCH}.pth" ]; then
-        START_ROUND=$LATEST_ROUND
-        START_MODEL="C"
-    elif [ -f "$WORK/round_${LATEST_ROUND}/ModelA/epoch_${STOP_EPOCH}.pth" ]; then
-        START_ROUND=$LATEST_ROUND
-        START_MODEL="B"
-    else
-        START_ROUND=$LATEST_ROUND
-        START_MODEL="A"
-    fi
-fi
-
-echo "=== Auto-detected resume state: START_ROUND=$START_ROUND | START_MODEL=$START_MODEL ==="
-# ==========================================
-
-TMP_BASE="/tmp/jtverhoog_${SLURM_JOB_ID}"
-
-# --- NODE SETUP ---
-srun --nodes=$SLURM_NNODES --ntasks-per-node=1 mkdir -p "$TMP_BASE"/{wandb,torch,xdg,tmp,home}
-module use /opt/insy/modulefiles
-module load cuda
-
-# master port queries for free ports and uses that per training run, ensuring all processes can communicate properly
-export MASTER_ADDR=$(scontrol show hostnames "$SLURM_JOB_NODELIST" | head -n 1)
-
 # --- TRAINING FUNCTION ---
 run_training () {
     local MODEL_NAME=$1
@@ -169,7 +62,7 @@ run_training () {
         cd /workspace/mmdet/mmdetection3d && \
         export PYTHONPATH=/workspace/mmdet/mmdetection3d:/workspace/mmdet:\$PYTHONPATH && \
         python -u tools/train.py \
-        projects/cmt/fed/feddyn/improved_lightweight_cmt_iterated.py \
+        projects/cmt/fed/fedSelect/improved_lightweight_cmt_iterated_FedSelect.py \
           --launcher slurm \
           --work-dir $WORK_DIR \
           $RESUME_ARG \
@@ -177,12 +70,10 @@ run_training () {
             data.samples_per_gpu=$SAMPLES_PER_GPU \
             total_epochs=$GLOBAL_EPOCHS \
             custom_hooks.1.stop_epoch=$STOP_EPOCH \
-            custom_hooks.2.client_id=\"${MODEL_NAME}\" \
-            custom_hooks.2.work_dir=\"$WORK/feddyn_states\"
+            custom_hooks.2.mask_path=\"/workspace/work_dirs/fedselect_masks/${MODEL_NAME}_mask.pth\"
       '
     "
 }
-
 # --- MERGE FUNCTION ---
 run_merge () {
     local CKPT_A=$1
@@ -197,20 +88,36 @@ run_merge () {
     local OUT_E=${10}
     local METHOD=${11}
     
-    echo "=== Merging Models ==="
+    echo "=== Merging Models using $METHOD ==="
+    
+    # Base command string
+    local MERGE_CMD="python projects/cmt_40_epoch/tools/modular_merging.py \
+            --inputs $CKPT_A $CKPT_B $CKPT_C $CKPT_D $CKPT_E \
+            --outputs $OUT_A $OUT_B $OUT_C $OUT_D $OUT_E \
+            --weight-a $SIZE_A --weight-b $SIZE_B --weight-c $SIZE_C --weight-d $SIZE_D --weight-e $SIZE_E \
+            --method $METHOD \
+            --config projects/cmt/fed/fedSelect/improved_lightweight_cmt_iterated_FedSelect.py \
+            --select-ratio 0.0005 \
+            --max-sparsity 0.01"
+            
+    # Append CKA specific arguments if the method is fedselect_cka
+    if [ "$METHOD" = "fedselect_cka" ]; then
+        MERGE_CMD="$MERGE_CMD \
+            --runner-path projects/cmt_40_epoch/fedcka/scripts_cmt_copy/runner.py \
+            --data-dir /tudelft.net/staff-umbrella/IntelligentVehiclesPublicDatasets/nuscenes \
+            --modality lidar_camera"
+    fi
+
     apptainer exec --nv --cleanenv \
       --bind "$HOME/mmdet:/workspace/mmdet" \
-      --bind "$WORK:/workspace/mmdet/mmdetection3d/work_dirs" \
+      --bind "$WORK:/workspace/work_dirs" \
       --bind "/tudelft.net/staff-umbrella/MscThesisjverhoog:/tudelft.net/staff-umbrella/MscThesisjverhoog" \
+      --bind "/tudelft.net/staff-umbrella/IntelligentVehiclesPublicDatasets:/tudelft.net/staff-umbrella/IntelligentVehiclesPublicDatasets" \
       "$APPTAINER_IMAGE" \
       bash -lc "
         cd /workspace/mmdet/mmdetection3d && \
         export PYTHONPATH=/workspace/mmdet/mmdetection3d:/workspace/mmdet:\$PYTHONPATH && \
-        python projects/cmt/fed/tools/modular_merging.py \
-            --inputs $CKPT_A $CKPT_B $CKPT_C $CKPT_D $CKPT_E \
-            --outputs $OUT_A $OUT_B $OUT_C $OUT_D $OUT_E \
-            --weight-a $SIZE_A --weight-b $SIZE_B --weight-c $SIZE_C --weight-d $SIZE_D --weight-e $SIZE_E \
-            --method $METHOD
+        $MERGE_CMD
       "
 }
 
@@ -260,13 +167,13 @@ for ((i=START_ROUND; i<=NUM_ROUNDS; i++)); do
     
     # --- PHASE merging DETERMINATION ---
     if [ "$i" -le 10 ]; then
-        MERGE_METHOD="fedavg"
+        CURRENT_METHOD="fedavg"
     else
-        MERGE_METHOD="feddyn"
+        CURRENT_METHOD="fedselect_cka"
     fi
     
     echo "-------------------------------------"
-    echo "       STARTING $MERGE_METHOD ROUND $i      "
+    echo "       STARTING $CURRENT_METHOD ROUND $i      "
     echo "       Scheduler Horizon: $GLOBAL_MAX_EPOCHS epochs"
     echo "       Stop Training At:  $CURRENT_STOP_EPOCH epochs"
     echo "-------------------------------------"
@@ -322,7 +229,7 @@ for ((i=START_ROUND; i<=NUM_ROUNDS; i++)); do
             if [ "$PREV_RND" -le 10 ]; then
                 PREV_METHOD="fedavg"
             else
-                PREV_METHOD="feddyn"
+                PREV_METHOD="fedselect_cka"
             fi
             # ----------------------------------------------------------------
             
@@ -392,8 +299,16 @@ for ((i=START_ROUND; i<=NUM_ROUNDS; i++)); do
     MERGED_E="$WORK/round_${i}/merged_E.pth"
     
     run_merge "$CKPT_A" "$CKPT_B" "$CKPT_C" "$CKPT_D" "$CKPT_E" \
-              "$MERGED_A" "$MERGED_B" "$MERGED_C" "$MERGED_D" "$MERGED_E" "$MERGE_METHOD"
-
+              "$MERGED_A" "$MERGED_B" "$MERGED_C" "$MERGED_D" "$MERGED_E" "$CURRENT_METHOD"
+    
+    # --- FEDSELECT HANDOVER LOGIC ---
+    # If we just finished Round 10, save Model A (since all are identical after FedAvg) 
+    # as the baseline global model for FedSelect in Round 11
+    if [ "$i" -eq 10 ]; then
+        echo "Transitioning to FedSelect next round. Saving baseline global model..."
+        mkdir -p "$WORK/fedselect_states"
+        cp "$MERGED_A" "$WORK/fedselect_states/global_model.pth"
+    fi
 
     # Setup for next round
     MODEL_A="$MERGED_A"

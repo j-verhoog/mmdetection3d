@@ -1,21 +1,21 @@
 #!/bin/bash
 #SBATCH --partition=general
 #SBATCH --qos=medium
-#SBATCH --job-name=fedcka
-#SBATCH --output=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/pointpillars_ablation/fedcka_24epochs_%j.out
-#SBATCH --error=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/pointpillars_ablation/fedcka_24epochs_%j.err
+#SBATCH --job-name=2x_fedavg
+#SBATCH --output=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/pointpillars_ablation/fedavg_48epochs_%j.out
+#SBATCH --error=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/pointpillars_ablation/fedavg_48epochs_%j.err
 #SBATCH --time=36:00:00
-#SBATCH --nodes=1            
+#SBATCH --nodes=1              # Use two machines
 #SBATCH --ntasks=2             # Total tasks (2 per node)
 #SBATCH --ntasks-per-node=2    # Spread them evenly
-#SBATCH --gres=gpu:a40:2       # Request 2 GPUs per node 
+#SBATCH --gres=gpu:a40:2       # Request 2 GPUs per node (Total 4)
 #SBATCH --cpus-per-task=16
 #SBATCH --mem=128G
 
 set -e # stop if something fails
 
 # --- FEDERATED SETTINGS ---
-NUM_ROUNDS=24       # approx 2hour per round of 1 Epoch
+NUM_ROUNDS=48       # approx 2hour per round of 1 Epoch
 EPOCHS_PER_ROUND=1 
 SAMPLES_PER_GPU=8
 SIZE_A=265  # A MUST BE BIGGEST for logging
@@ -43,7 +43,7 @@ CONFIG_E=$NIGHT_RAIN_DATAROOT
 # --- STANDARD SETUP ---
 export SRUN_CPUS_PER_TASK=${SLURM_CPUS_PER_TASK:-1}
 export WANDB_PROJECT="pointpillars_ablation"
-export RUN_NAME="FedCKA"
+export RUN_NAME="FedAvg_48epochs"
 
 # Gets API key robustly
 export WANDB_API_KEY=$(awk '$1=="machine" && $2=="api.wandb.ai" {found=1}found && $1=="password" {print $2; exit}' "$HOME/.netrc")
@@ -56,7 +56,7 @@ mkdir -p "$WORK"
 [ -e ~/mmdet/mmdetection3d/projects/pointpillars_ablation/_base_ ] || \
 ln -s ~/mmdet/mmdetection3d/configs/_base_ \
       ~/mmdet/mmdetection3d/projects/pointpillars_ablation/_base_
-      
+
 # ==========================================
 # --- AUTO-DETECT RESUME STATE ---
 # ==========================================
@@ -176,16 +176,20 @@ run_training () {
         cd /workspace/mmdet/mmdetection3d && \
         export PYTHONPATH=/workspace/mmdet/mmdetection3d:/workspace/mmdet:\$PYTHONPATH && \
         python -u tools/train.py \
-        projects/pointpillars_ablation/fedcka/hv_pointpillars_fpn_sbn-all_4x8_2x_nus-3d.py \
+        projects/pointpillars_ablation/fedavg/hv_pointpillars_fpn_sbn-all_4x8_2x_nus-3d.py \
           --launcher slurm \
           --work-dir $WORK_DIR \
           $RESUME_ARG \
           --cfg-options ${CFG_LOAD_ARG} dist_params.port=$MASTER_PORT \
             data.samples_per_gpu=$SAMPLES_PER_GPU \
             evaluation.interval=1 \
+            lr_config.warmup_iters=2000 \
+            lr_config.warmup_ratio=0.0005 \
+            lr_config.step=[40,46] \
+            runner.max_epochs=$GLOBAL_EPOCHS \
             total_epochs=$GLOBAL_EPOCHS \
-            custom_hooks.1.stop_epoch=$STOP_EPOCH \
-            custom_hooks.2.mask_path=\"/workspace/work_dirs/fedselect_masks/${MODEL_NAME}_mask.pth\"
+            custom_hooks.1.stop_epoch=$STOP_EPOCH
+            
       '
     "
 }
@@ -202,37 +206,21 @@ run_merge () {
     local OUT_C=$8
     local OUT_D=$9
     local OUT_E=${10}
-    local CURRENT_RATIO=${11}
-    local CURRENT_METHOD=${12}
-
-    echo "=== Merging Models using $CURRENT_METHOD ==="
     
-    # Base command string
-    local MERGE_CMD="python projects/pointpillars_ablation/tools/modular_merging.py \
-            --inputs $CKPT_A $CKPT_B $CKPT_C $CKPT_D $CKPT_E \
-            --outputs $OUT_A $OUT_B $OUT_C $OUT_D $OUT_E \
-            --weight-a $SIZE_A --weight-b $SIZE_B --weight-c $SIZE_C --weight-d $SIZE_D --weight-e $SIZE_E \
-            --select-ratio $CURRENT_RATIO \
-            --method $CURRENT_METHOD"
-            
-    # Append CKA specific arguments if the method is fedselect_cka
-    if [ "$CURRENT_METHOD" = "fedselect_cka" ]; then
-        MERGE_CMD="$MERGE_CMD \
-            --runner-path projects/pointpillars_ablation/tools/scripts_cmt_copy_copy/runner.py \
-            --data-dir /tudelft.net/staff-umbrella/IntelligentVehiclesPublicDatasets/nuscenes \
-            --modality lidar"
-    fi
-
+    echo "=== Merging Models ==="
     apptainer exec --nv --cleanenv \
       --bind "$HOME/mmdet:/workspace/mmdet" \
       --bind "$WORK:/workspace/work_dirs" \
       --bind "/tudelft.net/staff-umbrella/MscThesisjverhoog:/tudelft.net/staff-umbrella/MscThesisjverhoog" \
-      --bind "/tudelft.net/staff-umbrella/IntelligentVehiclesPublicDatasets:/tudelft.net/staff-umbrella/IntelligentVehiclesPublicDatasets" \
       "$APPTAINER_IMAGE" \
       bash -lc "
         cd /workspace/mmdet/mmdetection3d && \
         export PYTHONPATH=/workspace/mmdet/mmdetection3d:/workspace/mmdet:\$PYTHONPATH && \
-        $MERGE_CMD
+        python projects/pointpillars_ablation/tools/modular_merging.py \
+            --inputs $CKPT_A $CKPT_B $CKPT_C $CKPT_D $CKPT_E \
+            --outputs $OUT_A $OUT_B $OUT_C $OUT_D $OUT_E \
+            --weight-a $SIZE_A --weight-b $SIZE_B --weight-c $SIZE_C --weight-d $SIZE_D --weight-e $SIZE_E \
+            --method fedavg
       "
 }
 
@@ -241,12 +229,11 @@ run_merge () {
 # ==========================================
 
 # Create persistent WandB Run IDs so each model logs to the same run across rounds
-export WANDB_ID_A="pp_fedcka_A_40epochs"
-export WANDB_ID_B="pp_fedcka_B_40epochs"
-export WANDB_ID_C="pp_fedcka_C_40epochs"
-export WANDB_ID_D="pp_fedcka_D_40epochs"
-export WANDB_ID_E="pp_fedcka_E_40epochs"
-
+export WANDB_ID_A="pp_fedavg_A_48epochs"
+export WANDB_ID_B="pp_fedavg_B_48epochs"
+export WANDB_ID_C="pp_fedavg_C_48epochs"
+export WANDB_ID_D="pp_fedavg_D_48epochs"
+export WANDB_ID_E="pp_fedavg_E_48epochs"
 
 if [ "$START_ROUND" -eq 1 ]; then
     echo "Starting fresh run from Round 1"
@@ -304,6 +291,7 @@ else
     MODEL_D="$WORK/round_${PREV_ROUND}/merged_D.pth"
     MODEL_E="$WORK/round_${PREV_ROUND}/merged_E.pth"
 fi
+
 # CALCULATE GLOBAL TOTAL ONCE
 # This ensures the LR scheduler sees the full picture (e.g., 20 epochs) from Round 1
 GLOBAL_MAX_EPOCHS=$((NUM_ROUNDS * EPOCHS_PER_ROUND))
@@ -313,40 +301,10 @@ for ((i=START_ROUND; i<=NUM_ROUNDS; i++)); do
     CURRENT_STOP_EPOCH=$((i * EPOCHS_PER_ROUND))
     
     echo "-------------------------------------"
-    echo "       STARTING FEDCKA ROUND $i      "
+    echo "       STARTING FEDAVG ROUND $i      "
     echo "       Scheduler Horizon: $GLOBAL_MAX_EPOCHS epochs"
     echo "       Stop Training At:  $CURRENT_STOP_EPOCH epochs"
     echo "-------------------------------------"
-
-    # Calculate the dynamic select_ratio for THIS round
-    # Rounds 1-6: 0.00 (Pure FedAvg)
-    # Rounds 7-18: Incrementally grows from >0.00 up to 0.40
-    # Rounds >19: Capped at 0.40
-    CURRENT_RATIO=$(awk -v r="$i" -v max_s="0.40" 'BEGIN { 
-        if (r <= 6) {
-            ratio = 0.0;
-        } else if (r >= 19) {
-            ratio = max_s;
-        } else {
-            # Calculate linear growth over the 12 active rounds (18 - 6 = 12)
-            ratio = ((r - 6) / 12.0) * max_s;
-        }
-        printf "%.4f", ratio 
-    }')
-
-    echo "-------------------------------------"
-    echo "       STARTING ROUND $i      "
-    echo "       Target Cumulative Sparsity: $CURRENT_RATIO"
-    echo "-------------------------------------"
-
-    # --- PHASE merging DETERMINATION ---
-    if [ "$i" -le 6 ]; then
-        CURRENT_METHOD="fedavg"
-    else
-        CURRENT_METHOD="fedselect_cka"
-    fi
-    
-
 
     if [ "$i" -eq 1 ]; then
         IS_RESUME="false"
@@ -355,7 +313,7 @@ for ((i=START_ROUND; i<=NUM_ROUNDS; i++)); do
     fi
 
 
-    if [ "$START_MODEL" != "A" ]; then
+if [ "$START_MODEL" != "A" ]; then
         echo "Starting Round $i from Model $START_MODEL , then resuming normal training after that."
         if [ "$START_MODEL" = "B" ]; then
             CKPT_A="$WORK/round_${i}/ModelA/epoch_${CURRENT_STOP_EPOCH}.pth"
@@ -396,20 +354,6 @@ for ((i=START_ROUND; i<=NUM_ROUNDS; i++)); do
             PREV_RND=$((i - 1))
             PREV_STOP_EPOCH=$((CURRENT_STOP_EPOCH - EPOCHS_PER_ROUND))
             
-            # --- ADDED: Calculate the ratio for the PREVIOUS round ---
-            PREV_RATIO=$(awk -v r="$PREV_RND" -v max_s="0.40" 'BEGIN { 
-                if (r <= 6) { ratio = 0.0; } 
-                else if (r >= 19) { ratio = max_s; } 
-                else { ratio = ((r - 6) / 12.0) * max_s; }
-                printf "%.4f", ratio 
-            }')
-
-            if [ "$PREV_RND" -le 6 ]; then
-                PREV_METHOD="fedavg"
-            else
-                PREV_METHOD="fedselect_cka"
-            fi
-
             CKPT_A="$WORK/round_${PREV_RND}/ModelA/epoch_${PREV_STOP_EPOCH}.pth"
             CKPT_B="$WORK/round_${PREV_RND}/ModelB/epoch_${PREV_STOP_EPOCH}.pth"
             CKPT_C="$WORK/round_${PREV_RND}/ModelC/epoch_${PREV_STOP_EPOCH}.pth"
@@ -424,7 +368,7 @@ for ((i=START_ROUND; i<=NUM_ROUNDS; i++)); do
             MERGED_E="$WORK/round_${PREV_RND}/merged_E.pth"
             
             run_merge "$CKPT_A" "$CKPT_B" "$CKPT_C" "$CKPT_D" "$CKPT_E" \
-                    "$MERGED_A" "$MERGED_B" "$MERGED_C" "$MERGED_D" "$MERGED_E" "$PREV_RATIO" "$PREV_METHOD"
+                    "$MERGED_A" "$MERGED_B" "$MERGED_C" "$MERGED_D" "$MERGED_E"
             
             # Now run Round 2 training 
             run_training "ModelA" "$CONFIG_A" "$MODEL_A" "$i" "$GLOBAL_MAX_EPOCHS" "$CURRENT_STOP_EPOCH" "$IS_RESUME" "$WANDB_ID_A"
@@ -441,13 +385,6 @@ for ((i=START_ROUND; i<=NUM_ROUNDS; i++)); do
 
             run_training "ModelE" "$CONFIG_E" "$MODEL_E" "$i" "$GLOBAL_MAX_EPOCHS" "$CURRENT_STOP_EPOCH" "$IS_RESUME" "$WANDB_ID_E"
             CKPT_E="$WORK/round_${i}/ModelE/epoch_${CURRENT_STOP_EPOCH}.pth"
-
-            if [ "$PREV_RND" -eq 6 ]; then
-                echo "Transitioning to FedSelect after resumed Round 6 merge. Saving baseline global model..."
-                mkdir -p "$WORK/fedselect_states"
-                cp "$MERGED_A" "$WORK/fedselect_states/global_model.pth"
-            fi
-
         else
             echo "Invalid START_MODEL specified: $START_MODEL. Must be one of A, B, C, D, E."
             exit 1
@@ -473,8 +410,6 @@ for ((i=START_ROUND; i<=NUM_ROUNDS; i++)); do
 
     fi
 
-
-
     # 3. Aggregate and Save 5 Distinct Models
     MERGED_A="$WORK/round_${i}/merged_A.pth"
     MERGED_B="$WORK/round_${i}/merged_B.pth"
@@ -483,7 +418,7 @@ for ((i=START_ROUND; i<=NUM_ROUNDS; i++)); do
     MERGED_E="$WORK/round_${i}/merged_E.pth"
     
     run_merge "$CKPT_A" "$CKPT_B" "$CKPT_C" "$CKPT_D" "$CKPT_E" \
-              "$MERGED_A" "$MERGED_B" "$MERGED_C" "$MERGED_D" "$MERGED_E" "$CURRENT_RATIO" "$CURRENT_METHOD"
+              "$MERGED_A" "$MERGED_B" "$MERGED_C" "$MERGED_D" "$MERGED_E"
     
     # Setup for next round
     MODEL_A="$MERGED_A"
@@ -492,15 +427,6 @@ for ((i=START_ROUND; i<=NUM_ROUNDS; i++)); do
     MODEL_D="$MERGED_D"
     MODEL_E="$MERGED_E"
     
-    # --- FEDSELECT HANDOVER LOGIC ---
-    # If we just finished Round 10, save Model A (since all are identical after FedAvg) 
-    # as the baseline global model for FedSelect in Round 11
-    if [ "$i" -eq 6 ]; then
-        echo "Transitioning to FedSelect next round. Saving baseline global model..."
-        mkdir -p "$WORK/fedselect_states"
-        cp "$MERGED_A" "$WORK/fedselect_states/global_model.pth"
-    fi
-
     echo "Round $i complete. 5 distinct merged models saved."
 done
 

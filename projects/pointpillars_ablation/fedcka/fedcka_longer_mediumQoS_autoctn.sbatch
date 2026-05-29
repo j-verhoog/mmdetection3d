@@ -1,9 +1,9 @@
 #!/bin/bash
 #SBATCH --partition=general
 #SBATCH --qos=medium
-#SBATCH --job-name=fedcka
-#SBATCH --output=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/pointpillars_ablation/fedcka_24epochs_%j.out
-#SBATCH --error=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/pointpillars_ablation/fedcka_24epochs_%j.err
+#SBATCH --job-name=2x_fedcka
+#SBATCH --output=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/pointpillars_ablation/fedcka_48epochs_%j.out
+#SBATCH --error=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/pointpillars_ablation/fedcka_48epochs_%j.err
 #SBATCH --time=36:00:00
 #SBATCH --nodes=1            
 #SBATCH --ntasks=2             # Total tasks (2 per node)
@@ -15,7 +15,7 @@
 set -e # stop if something fails
 
 # --- FEDERATED SETTINGS ---
-NUM_ROUNDS=24       # approx 2hour per round of 1 Epoch
+NUM_ROUNDS=48       # approx 2hour per round of 1 Epoch
 EPOCHS_PER_ROUND=1 
 SAMPLES_PER_GPU=8
 SIZE_A=265  # A MUST BE BIGGEST for logging
@@ -43,7 +43,7 @@ CONFIG_E=$NIGHT_RAIN_DATAROOT
 # --- STANDARD SETUP ---
 export SRUN_CPUS_PER_TASK=${SLURM_CPUS_PER_TASK:-1}
 export WANDB_PROJECT="pointpillars_ablation"
-export RUN_NAME="FedCKA"
+export RUN_NAME="FedCKA_48epochs"
 
 # Gets API key robustly
 export WANDB_API_KEY=$(awk '$1=="machine" && $2=="api.wandb.ai" {found=1}found && $1=="password" {print $2; exit}' "$HOME/.netrc")
@@ -183,6 +183,10 @@ run_training () {
           --cfg-options ${CFG_LOAD_ARG} dist_params.port=$MASTER_PORT \
             data.samples_per_gpu=$SAMPLES_PER_GPU \
             evaluation.interval=1 \
+            lr_config.warmup_iters=2000 \
+            lr_config.warmup_ratio=0.0005 \
+            lr_config.step=[40,46] \
+            runner.max_epochs=$GLOBAL_EPOCHS \
             total_epochs=$GLOBAL_EPOCHS \
             custom_hooks.1.stop_epoch=$STOP_EPOCH \
             custom_hooks.2.mask_path=\"/workspace/work_dirs/fedselect_masks/${MODEL_NAME}_mask.pth\"
@@ -241,11 +245,11 @@ run_merge () {
 # ==========================================
 
 # Create persistent WandB Run IDs so each model logs to the same run across rounds
-export WANDB_ID_A="pp_fedcka_A_40epochs"
-export WANDB_ID_B="pp_fedcka_B_40epochs"
-export WANDB_ID_C="pp_fedcka_C_40epochs"
-export WANDB_ID_D="pp_fedcka_D_40epochs"
-export WANDB_ID_E="pp_fedcka_E_40epochs"
+export WANDB_ID_A="pp_fedcka_A_48epochs"
+export WANDB_ID_B="pp_fedcka_B_48epochs"
+export WANDB_ID_C="pp_fedcka_C_48epochs"
+export WANDB_ID_D="pp_fedcka_D_48epochs"
+export WANDB_ID_E="pp_fedcka_E_48epochs"
 
 
 if [ "$START_ROUND" -eq 1 ]; then
@@ -319,17 +323,17 @@ for ((i=START_ROUND; i<=NUM_ROUNDS; i++)); do
     echo "-------------------------------------"
 
     # Calculate the dynamic select_ratio for THIS round
-    # Rounds 1-6: 0.00 (Pure FedAvg)
-    # Rounds 7-18: Incrementally grows from >0.00 up to 0.40
-    # Rounds >19: Capped at 0.40
+    # Rounds 1-12: 0.00 (Pure FedAvg)
+    # Rounds 13-36: Incrementally grows from >0.00 up to 0.40
+    # Rounds >36: Capped at 0.40
     CURRENT_RATIO=$(awk -v r="$i" -v max_s="0.40" 'BEGIN { 
-        if (r <= 6) {
+        if (r <= 12) {
             ratio = 0.0;
-        } else if (r >= 19) {
+        } else if (r >= 37) {
             ratio = max_s;
         } else {
-            # Calculate linear growth over the 12 active rounds (18 - 6 = 12)
-            ratio = ((r - 6) / 12.0) * max_s;
+            # Calculate linear growth over the 24 active rounds (36 - 12 = 24)
+            ratio = ((r - 12) / 24.0) * max_s;
         }
         printf "%.4f", ratio 
     }')
@@ -340,7 +344,7 @@ for ((i=START_ROUND; i<=NUM_ROUNDS; i++)); do
     echo "-------------------------------------"
 
     # --- PHASE merging DETERMINATION ---
-    if [ "$i" -le 6 ]; then
+    if [ "$i" -le 12 ]; then
         CURRENT_METHOD="fedavg"
     else
         CURRENT_METHOD="fedselect_cka"
@@ -398,13 +402,13 @@ for ((i=START_ROUND; i<=NUM_ROUNDS; i++)); do
             
             # --- ADDED: Calculate the ratio for the PREVIOUS round ---
             PREV_RATIO=$(awk -v r="$PREV_RND" -v max_s="0.40" 'BEGIN { 
-                if (r <= 6) { ratio = 0.0; } 
-                else if (r >= 19) { ratio = max_s; } 
-                else { ratio = ((r - 6) / 12.0) * max_s; }
+                if (r <= 12) { ratio = 0.0; } 
+                else if (r >= 37) { ratio = max_s; } 
+                else { ratio = ((r - 12) / 24.0) * max_s; }
                 printf "%.4f", ratio 
             }')
 
-            if [ "$PREV_RND" -le 6 ]; then
+            if [ "$PREV_RND" -le 12 ]; then
                 PREV_METHOD="fedavg"
             else
                 PREV_METHOD="fedselect_cka"
@@ -442,8 +446,8 @@ for ((i=START_ROUND; i<=NUM_ROUNDS; i++)); do
             run_training "ModelE" "$CONFIG_E" "$MODEL_E" "$i" "$GLOBAL_MAX_EPOCHS" "$CURRENT_STOP_EPOCH" "$IS_RESUME" "$WANDB_ID_E"
             CKPT_E="$WORK/round_${i}/ModelE/epoch_${CURRENT_STOP_EPOCH}.pth"
 
-            if [ "$PREV_RND" -eq 6 ]; then
-                echo "Transitioning to FedSelect after resumed Round 6 merge. Saving baseline global model..."
+            if [ "$PREV_RND" -eq 12 ]; then
+                echo "Transitioning to FedSelect after resumed Round 12 merge. Saving baseline global model..."
                 mkdir -p "$WORK/fedselect_states"
                 cp "$MERGED_A" "$WORK/fedselect_states/global_model.pth"
             fi
@@ -493,9 +497,9 @@ for ((i=START_ROUND; i<=NUM_ROUNDS; i++)); do
     MODEL_E="$MERGED_E"
     
     # --- FEDSELECT HANDOVER LOGIC ---
-    # If we just finished Round 10, save Model A (since all are identical after FedAvg) 
-    # as the baseline global model for FedSelect in Round 11
-    if [ "$i" -eq 6 ]; then
+    # If we just finished Round 12, save Model A (since all are identical after FedAvg) 
+    # as the baseline global model for FedSelect in Round 13
+    if [ "$i" -eq 12 ]; then
         echo "Transitioning to FedSelect next round. Saving baseline global model..."
         mkdir -p "$WORK/fedselect_states"
         cp "$MERGED_A" "$WORK/fedselect_states/global_model.pth"

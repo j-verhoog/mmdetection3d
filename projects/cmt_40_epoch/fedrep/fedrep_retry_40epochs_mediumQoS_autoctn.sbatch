@@ -1,9 +1,9 @@
 #!/bin/bash
 #SBATCH --partition=general
 #SBATCH --qos=medium
-#SBATCH --job-name=feddyn40
-#SBATCH --output=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/cmt/feddyn40_job%j.out
-#SBATCH --error=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/cmt/feddyn40_job%j.err
+#SBATCH --job-name=fedRep
+#SBATCH --output=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/cmt/Fedrep_40E_retry_job%j_rank%t.out
+#SBATCH --error=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/cmt/Fedrep_40E_retry_job%j_rank%t.err
 #SBATCH --time=36:00:00
 #SBATCH --nodes=1
 #SBATCH --ntasks=2
@@ -41,7 +41,7 @@ PRETRAINED_BACKBONE="ckpts/nuim_r50.pth"
 # --- STANDARD SETUP ---
 export SRUN_CPUS_PER_TASK=${SLURM_CPUS_PER_TASK:-1}
 export WANDB_PROJECT="cmt_40_epoch"
-export RUN_NAME="FedDyn_40epochs"
+export RUN_NAME="FedRep_retry"
 CONTINUE_WANDB_RUN=true
 
 # Gets API key robustly
@@ -169,20 +169,17 @@ run_training () {
         cd /workspace/mmdet/mmdetection3d && \
         export PYTHONPATH=/workspace/mmdet/mmdetection3d:/workspace/mmdet:\$PYTHONPATH && \
         python -u tools/train.py \
-        projects/cmt/fed/feddyn/improved_lightweight_cmt_iterated.py \
+        projects/cmt/fed/all_domains/improved_lightweight_cmt_iterated.py \
           --launcher slurm \
           --work-dir $WORK_DIR \
           $RESUME_ARG \
           --cfg-options ${CFG_LOAD_ARG} dist_params.port=$CURRENT_MASTER_PORT \
             data.samples_per_gpu=$SAMPLES_PER_GPU \
             total_epochs=$GLOBAL_EPOCHS \
-            custom_hooks.1.stop_epoch=$STOP_EPOCH \
-            custom_hooks.2.client_id=\"${MODEL_NAME}\" \
-            custom_hooks.2.work_dir=\"$WORK/feddyn_states\"
-      '
+            custom_hooks.1.stop_epoch=$STOP_EPOCH 
+        '
     "
 }
-
 # --- MERGE FUNCTION ---
 run_merge () {
     local CKPT_A=$1
@@ -200,7 +197,7 @@ run_merge () {
     echo "=== Merging Models ==="
     apptainer exec --nv --cleanenv \
       --bind "$HOME/mmdet:/workspace/mmdet" \
-      --bind "$WORK:/workspace/mmdet/mmdetection3d/work_dirs" \
+      --bind "$WORK:/workspace/work_dirs" \
       --bind "/tudelft.net/staff-umbrella/MscThesisjverhoog:/tudelft.net/staff-umbrella/MscThesisjverhoog" \
       "$APPTAINER_IMAGE" \
       bash -lc "
@@ -210,7 +207,8 @@ run_merge () {
             --inputs $CKPT_A $CKPT_B $CKPT_C $CKPT_D $CKPT_E \
             --outputs $OUT_A $OUT_B $OUT_C $OUT_D $OUT_E \
             --weight-a $SIZE_A --weight-b $SIZE_B --weight-c $SIZE_C --weight-d $SIZE_D --weight-e $SIZE_E \
-            --method $METHOD
+            --method fedper \
+            --config projects/cmt/fed/all_domains/improved_lightweight_cmt_iterated.py
       "
 }
 
@@ -258,15 +256,11 @@ for ((i=START_ROUND; i<=NUM_ROUNDS; i++)); do
     # This is where we want to STOP in this specific round
     CURRENT_STOP_EPOCH=$((i * EPOCHS_PER_ROUND))
     
-    # --- PHASE merging DETERMINATION ---
-    if [ "$i" -le 10 ]; then
-        MERGE_METHOD="fedavg"
-    else
-        MERGE_METHOD="feddyn"
-    fi
+
+    CURRENT_METHOD="FedRep"
     
     echo "-------------------------------------"
-    echo "       STARTING $MERGE_METHOD ROUND $i      "
+    echo "       STARTING $CURRENT_METHOD ROUND $i      "
     echo "       Scheduler Horizon: $GLOBAL_MAX_EPOCHS epochs"
     echo "       Stop Training At:  $CURRENT_STOP_EPOCH epochs"
     echo "-------------------------------------"
@@ -317,14 +311,7 @@ for ((i=START_ROUND; i<=NUM_ROUNDS; i++)); do
             # Calculate correct previous round and its stop epoch
             PREV_RND=$((i - 1))
             PREV_STOP_EPOCH=$((CURRENT_STOP_EPOCH - EPOCHS_PER_ROUND))
-            
-            # --- NEW: Determine the correct method for the previous round ---
-            if [ "$PREV_RND" -le 10 ]; then
-                PREV_METHOD="fedavg"
-            else
-                PREV_METHOD="feddyn"
-            fi
-            # ----------------------------------------------------------------
+            PREV_METHOD="FedRep"
             
             CKPT_A="$WORK/round_${PREV_RND}/ModelA/epoch_${PREV_STOP_EPOCH}.pth"
             CKPT_B="$WORK/round_${PREV_RND}/ModelB/epoch_${PREV_STOP_EPOCH}.pth"
@@ -392,8 +379,8 @@ for ((i=START_ROUND; i<=NUM_ROUNDS; i++)); do
     MERGED_E="$WORK/round_${i}/merged_E.pth"
     
     run_merge "$CKPT_A" "$CKPT_B" "$CKPT_C" "$CKPT_D" "$CKPT_E" \
-              "$MERGED_A" "$MERGED_B" "$MERGED_C" "$MERGED_D" "$MERGED_E" "$MERGE_METHOD"
-
+              "$MERGED_A" "$MERGED_B" "$MERGED_C" "$MERGED_D" "$MERGED_E" "$CURRENT_METHOD"
+    
 
     # Setup for next round
     MODEL_A="$MERGED_A"

@@ -2,11 +2,11 @@
 #SBATCH --partition=general
 #SBATCH --qos=medium
 #SBATCH --job-name=fedavg
-#SBATCH --output=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/pointpillars_ablation/fedavg_40epochs_%j.out
-#SBATCH --error=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/pointpillars_ablation/fedavg_40epochs_%j.err
+#SBATCH --output=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/pointpillars_ablation/fedavg_24epochs_%j.out
+#SBATCH --error=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/pointpillars_ablation/fedavg_24epochs_%j.err
 #SBATCH --time=36:00:00
-#SBATCH --nodes=2              # Use two machines
-#SBATCH --ntasks=4             # Total tasks (2 per node)
+#SBATCH --nodes=1              # Use two machines
+#SBATCH --ntasks=2             # Total tasks (2 per node)
 #SBATCH --ntasks-per-node=2    # Spread them evenly
 #SBATCH --gres=gpu:a40:2       # Request 2 GPUs per node (Total 4)
 #SBATCH --cpus-per-task=16
@@ -15,7 +15,7 @@
 set -e # stop if something fails
 
 # --- FEDERATED SETTINGS ---
-NUM_ROUNDS=40       # approx 2hour per round of 1 Epoch
+NUM_ROUNDS=24       # approx 2hour per round of 1 Epoch
 EPOCHS_PER_ROUND=1 
 SAMPLES_PER_GPU=8
 SIZE_A=265  # A MUST BE BIGGEST for logging
@@ -52,6 +52,10 @@ export APPTAINER_IMAGE=/tudelft.net/staff-umbrella/MscThesisjverhoog/image/mmdet
 export WORK=/tudelft.net/staff-umbrella/MscThesisjverhoog/projects/$WANDB_PROJECT/$RUN_NAME
 mkdir -p "$WORK"
 
+# fix dependencies by linking the _base_ configs to the project folder
+[ -e ~/mmdet/mmdetection3d/projects/pointpillars_ablation/_base_ ] || \
+ln -s ~/mmdet/mmdetection3d/configs/_base_ \
+      ~/mmdet/mmdetection3d/projects/pointpillars_ablation/_base_
 
 # ==========================================
 # --- AUTO-DETECT RESUME STATE ---
@@ -172,7 +176,7 @@ run_training () {
         cd /workspace/mmdet/mmdetection3d && \
         export PYTHONPATH=/workspace/mmdet/mmdetection3d:/workspace/mmdet:\$PYTHONPATH && \
         python -u tools/train.py \
-        configs/pointpillars/hv_pointpillars_fpn_sbn-all_4x8_2x_nus-3d.py \
+        projects/pointpillars_ablation/fedavg/hv_pointpillars_fpn_sbn-all_4x8_2x_nus-3d.py \
           --launcher slurm \
           --work-dir $WORK_DIR \
           $RESUME_ARG \
@@ -238,6 +242,7 @@ if [ "$START_ROUND" -eq 1 ]; then
     apptainer exec --nv --cleanenv \
       --bind "$HOME/mmdet:/workspace/mmdet" \
       --bind "$WORK:/workspace/work_dirs" \
+      --bind "/tudelft.net/staff-umbrella/MscThesisjverhoog:/tudelft.net/staff-umbrella/MscThesisjverhoog" \
       "$APPTAINER_IMAGE" \
       bash -lc "
         cd /workspace/mmdet/mmdetection3d && \
@@ -248,7 +253,7 @@ from mmdet3d.models import build_model
 import torch
 
 # 1. Load your exact config
-cfg = Config.fromfile('configs/pointpillars/hv_pointpillars_fpn_sbn-all_4x8_2x_nus-3d.py')
+cfg = Config.fromfile('projects/pointpillars_ablation/fedavg/hv_pointpillars_fpn_sbn-all_4x8_2x_nus-3d.py')
 
 # 2. Build the model using the older v1.0.0rc5 method
 model = build_model(

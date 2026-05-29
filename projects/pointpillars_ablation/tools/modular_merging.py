@@ -1819,7 +1819,11 @@ def fedselect_cka(models, output_paths, norm_weights, client_ids, prev_global_pa
     print(f"Valid floating-point keys used for masking/aggregation: {len(valid_keys)}")
     for k in valid_keys[:10]:
         print(f"  {k} | shape={tuple(prev_state[k].shape)} | numel={prev_state[k].numel()}")
-
+    
+    print("\nExample checkpoint keys used for FedCKA layer matching:")
+    for k in valid_keys[:5]:
+        print(f"  {k}")
+    
     total_params = sum(prev_state[k].numel() for k in valid_keys)
     print(f"Total valid parameters per model: {total_params:,}")
 
@@ -1887,6 +1891,10 @@ def fedselect_cka(models, output_paths, norm_weights, client_ids, prev_global_pa
             output_dir=os.path.join(mask_dir, f"cka_temp_{cid}")
         )
 
+        print(f"\nExample CKA layer names for client {cid}:")
+        for row in cka_rows[:5]:
+            print(f"  idx={row[0]} | layer={row[1]} | cka={row[2]}")
+        
         # Filter out NaNs and add to global list
         valid_cka = [(cid, idx, name, score) for idx, name, score in cka_rows if not math.isnan(score)]
         print(f"{cid}: valid CKA rows={len(valid_cka)}, NaN rows filtered out={len(cka_rows) - len(valid_cka)}")
@@ -1927,12 +1935,25 @@ def fedselect_cka(models, output_paths, norm_weights, client_ids, prev_global_pa
                 print(f"\nCKA score {score:.6f} is below dynamic threshold {dynamic_sparsity}. Stopping global selection.")
                 break
 
-        # Find all parameter keys belonging to this layer
-        layer_keys = [k for k in valid_keys if k.replace('module.', '').startswith(layer_name + '.') or k.replace('module.', '') == layer_name]
+        # # Find all parameter keys belonging to this layer
+        # layer_keys = [k for k in valid_keys if k.replace('module.', '').startswith(layer_name + '.') or k.replace('module.', '') == layer_name]
         
+        # # Count parameters in this layer that are NOT YET personalized
+        # layer_new_params = sum((~client_masks[cid][k]).sum().item() for k in layer_keys)
+        # Find all parameter keys belonging to this layer
+        layer_keys = [
+            k for k in valid_keys
+            if k.replace('module.', '').startswith(layer_name + '.')
+            or k.replace('module.', '') == layer_name
+        ]
+
+        if len(layer_keys) == 0:
+            print(f"WARNING: CKA layer matched no checkpoint keys: {layer_name}")
+            continue
+
         # Count parameters in this layer that are NOT YET personalized
         layer_new_params = sum((~client_masks[cid][k]).sum().item() for k in layer_keys)
-        
+
         if layer_new_params > 0:
             # Check individual client cap
             if current_personalized[cid] + layer_new_params > global_max_allowed:
