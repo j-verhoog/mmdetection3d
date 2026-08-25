@@ -116,6 +116,19 @@ def parse_args():
         help="Draw class names on bounding boxes in camera images.",
     )
 
+    parser.add_argument(
+        "--save-bev-overlay",
+        action="store_true",
+        default=True,
+        help="Save a single-image BEV overlay combining Model A and Model B (default: off).",
+    )
+
+    parser.add_argument(
+        "--bev-overlay-out",
+        default=None,
+        help="Output path for the overlay BEV image. If omitted, uses base out path with '_bev_overlay.jpg' suffix.",
+    )
+
     return parser.parse_args()
 
 
@@ -973,13 +986,15 @@ def visualize_bev(img_meta, data, gt_boxes, boxes_a, boxes_b, scores_a, scores_b
         ax.set_ylim(-lidar_range, lidar_range)
     
     # Plot GT
-    plot_bev(axes[0], lidar_points, gt_boxes_filtered, gt_label, color='red')
+    plot_bev(axes[0], lidar_points, gt_boxes_filtered, gt_label, color='orange')
     
     # Plot Model A
-    plot_bev(axes[1], lidar_points, boxes_a_filtered, model_a_label, color='green')
+    plot_bev(axes[1], lidar_points, boxes_a_filtered, model_a_label, color='cyan')
+    # plot_bev(axes[1], lidar_points, boxes_a_filtered, model_a_label, color='green')
     
     # Plot Model B
-    plot_bev(axes[2], lidar_points, boxes_b_filtered, model_b_label, color='blue')
+    # plot_bev(axes[2], lidar_points, boxes_b_filtered, model_b_label, color='blue')
+    plot_bev(axes[2], lidar_points, boxes_b_filtered, model_b_label, color='magenta')
     
     plt.tight_layout()
     
@@ -987,6 +1002,84 @@ def visualize_bev(img_meta, data, gt_boxes, boxes_a, boxes_b, scores_a, scores_b
     plt.savefig(output_path, dpi=100, bbox_inches='tight')
     print(f"[INFO] BEV visualization saved to {output_path}")
     plt.close()
+
+
+import matplotlib.pyplot as plt
+from matplotlib.lines import Line2D
+
+def visualize_overlay_bev(img_meta, data, gt_boxes, boxes_a, boxes_b, scores_a, scores_b,
+                          score_thr, output_path, lidar_range=50.0):
+    """Create a single BEV with visually distinct color/opacity blending for overlaps."""
+    lidar_points = load_lidar_points(data)
+
+    if lidar_points is None:
+        print("[WARN] Could not extract LiDAR points for BEV overlay.")
+
+    gt_boxes_filtered, _ = filter_boxes_by_score(gt_boxes, None, score_thr)
+    boxes_a_filtered, _ = filter_boxes_by_score(boxes_a, scores_a, score_thr)
+    boxes_b_filtered, _ = filter_boxes_by_score(boxes_b, scores_b, score_thr)
+
+    fig, ax = plt.subplots(1, 1, figsize=(10, 10))
+
+    if lidar_points is not None and len(lidar_points) > 0:
+        ax.scatter(lidar_points[:, 0], lidar_points[:, 1], c='gray', s=0.75, alpha=0.15, zorder=1, label='LiDAR')
+        
+    # --- HELPER FUNCTION FOR INTERCEPTION ---
+    def apply_styles_to_new_elements(ax, lines_start, patches_start, colls_start, zorder):
+        """Retroactively applies z-orders to ensure correct color blending layers."""
+        for item in ax.lines[lines_start:]:
+            item.set_zorder(zorder)
+            item.set_linestyle('-') # Force solid lines for smooth alpha blending
+        for item in ax.patches[patches_start:]:
+            item.set_zorder(zorder)
+            item.set_linestyle('-')
+        for item in ax.collections[colls_start:]:
+            item.set_zorder(zorder)
+            item.set_linestyle('-')
+
+    # 1. GT: Light Orange, VERY thick, highly translucent base (Acts as a highlighter)
+    l, p, c = len(ax.lines), len(ax.patches), len(ax.collections)
+    n_gt = draw_boxes_on_bev(ax, gt_boxes_filtered, color='orange', alpha=0.35, linewidth=4.5)
+    apply_styles_to_new_elements(ax, l, p, c, zorder=2)
+
+    # 2. Model A: Cyan, thin, semi-transparent
+    l, p, c = len(ax.lines), len(ax.patches), len(ax.collections)
+    n_a = draw_boxes_on_bev(ax, boxes_a_filtered, color='cyan', alpha=0.6, linewidth=1.5)
+    apply_styles_to_new_elements(ax, l, p, c, zorder=3)
+
+    # 3. Model B: Magenta, thin, semi-transparent
+    l, p, c = len(ax.lines), len(ax.patches), len(ax.collections)
+    n_b = draw_boxes_on_bev(ax, boxes_b_filtered, color='magenta', alpha=0.6, linewidth=1.5)
+    apply_styles_to_new_elements(ax, l, p, c, zorder=4)
+
+    ax.set_xlabel('X (m)')
+    ax.set_ylabel('Y (m)')
+    ax.set_title('Overlay BEV: Color Blending Mode')
+    ax.axis('equal')
+    ax.grid(True, alpha=0.15, linestyle='--')
+    ax.set_xlim(-lidar_range, lidar_range)
+    ax.set_ylim(-lidar_range, lidar_range)
+
+    # Legend visually explains the blending to the viewer
+    legend_lines = []
+    if n_gt > 0:
+        legend_lines.append(Line2D([0], [0], color='orange', lw=4.5, alpha=0.4, label=f'GT Base ({n_gt})'))
+    if n_a > 0:
+        legend_lines.append(Line2D([0], [0], color='cyan', lw=1.5, alpha=0.8, label=f'FedAvg Only ({n_a})'))
+    if n_b > 0:
+        legend_lines.append(Line2D([0], [0], color='magenta', lw=1.5, alpha=0.8, label=f'FedCKA Only ({n_b})'))
+    
+    # Add a dummy line to show what the blended overlap looks like
+    if n_a > 0 and n_b > 0:
+        legend_lines.append(Line2D([0], [0], color='mediumpurple', lw=1.5, label='FedAvg + FedCKA Overlap (Blend)'))
+        
+    if legend_lines:
+        ax.legend(handles=legend_lines, loc='upper right', framealpha=1.0)
+
+    plt.tight_layout()
+    plt.savefig(output_path, dpi=200, bbox_inches='tight')
+    plt.close()
+    print(f"[INFO] Overlay BEV saved to {output_path}")
 
 
 def print_model_output_debug(name, result):
@@ -1087,7 +1180,7 @@ def main():
         gt_boxes,
         None,
         img_gt,
-        color=(255, 0, 0),
+        color=(0, 165, 255),  # Light orange in BGR
         img_meta=img_meta,
         cam_idx=cam_idx,
         score_thr=args.score_thr,
@@ -1106,7 +1199,7 @@ def main():
         boxes_a,
         scores_a,
         img_model_a,
-        color=(0, 255, 0),
+        color=(255, 255, 0),  # Cyan in BGR
         img_meta=img_meta,
         cam_idx=cam_idx,
         score_thr=args.score_thr,
@@ -1125,7 +1218,7 @@ def main():
         boxes_b,
         scores_b,
         img_model_b,
-        color=(0, 0, 255),
+        color=(255, 0, 255),  # Magenta in BGR
         img_meta=img_meta,
         cam_idx=cam_idx,
         score_thr=args.score_thr,
@@ -1168,6 +1261,13 @@ def main():
         gt_label=args.bev_gt_label, model_a_label=args.bev_model_a_label,
         model_b_label=args.bev_model_b_label
     )
+
+    if args.save_bev_overlay:
+        overlay_out = args.bev_overlay_out if args.bev_overlay_out else f"{base_out}_bev_overlay.jpg"
+        visualize_overlay_bev(
+            img_meta, data, gt_boxes, boxes_a, boxes_b, scores_a, scores_b,
+            args.score_thr, overlay_out, lidar_range=args.lidar_range,
+        )
 
 
 if __name__ == "__main__":
