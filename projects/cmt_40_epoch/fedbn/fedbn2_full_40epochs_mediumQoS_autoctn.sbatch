@@ -100,10 +100,6 @@ fi
 echo "=== Auto-detected resume state: START_ROUND=$START_ROUND | START_MODEL=$START_MODEL ==="
 # ==========================================
 
-START_ROUND=38
-START_MODEL='D'
-echo "=== Overriding START_ROUND AND START_MODEL with: $START_ROUND and $START_MODEL ==="
-
 TMP_BASE="/tmp/jtverhoog_${SLURM_JOB_ID}"
 
 # --- NODE SETUP ---
