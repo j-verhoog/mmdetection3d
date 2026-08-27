@@ -2219,12 +2219,16 @@ def fedselect_cka_elastic(models, output_paths, norm_weights, client_ids, prev_g
         print(f"Client checkpoint path: {m_path}")
 
         mask_path = os.path.join(mask_dir, f"{cid}_mask.pth")
-        
+        valid_cka = []
+
         # Load existing mask to preserve history across rounds
         if os.path.exists(mask_path):
             client_mask = torch.load(mask_path)
         else:
             client_mask = {k: torch.zeros_like(prev_state[k], dtype=torch.bool) for k in valid_keys}
+
+        # Snapshot mask before this round so elastic reversions can be detected afterwards
+        mask_before_round = {k: client_mask[k].clone() for k in valid_keys}
 
         current_personalized = sum(client_mask[k].sum().item() for k in valid_keys)
         previous_personalized = current_personalized
@@ -2415,6 +2419,93 @@ def fedselect_cka_elastic(models, output_paths, norm_weights, client_ids, prev_g
             print(f"  {cid}: Masked {layers_masked} entire layers based on threshold.")
             print(f"  {cid}: Personalized {new_personalized:,} new params. Total sparsity: {(current_personalized + new_personalized) / total_params * 100:.2f}%")
 
+
+        # ---------------------------------------------------------
+        # Elastic Reversion Logging
+        # ---------------------------------------------------------
+        reversion_log_path = os.path.join(mask_dir, "elastic_reversion_log.txt")
+
+        reverted_layers = []
+
+        # Use the CKA layer names from this pass, because personalization/reversion
+        # is performed at exactly this layer granularity.
+        if valid_cka:
+            seen_layers = set()
+
+            for _, layer_name, _ in valid_cka:
+                if layer_name in seen_layers:
+                    continue
+                seen_layers.add(layer_name)
+
+                layer_keys = [
+                    k for k in valid_keys
+                    if k.replace('module.', '').startswith(layer_name + '.')
+                    or k.replace('module.', '') == layer_name
+                ]
+
+                if not layer_keys:
+                    continue
+
+                # A layer counts as reverted only if:
+                #   1. it had personalized parameters before this pass, and
+                #   2. it is now completely global.
+                was_personalized = any(
+                    mask_before_round[k].any().item()
+                    for k in layer_keys
+                )
+
+                is_now_global = all(
+                    not client_mask[k].any().item()
+                    for k in layer_keys
+                )
+
+                if was_personalized and is_now_global:
+                    reverted_layers.append(layer_name)
+
+        reverted_this_round = len(reverted_layers)
+
+        # Recover cumulative number of previous reversions for this client
+        # from the existing text log. This survives process restarts.
+        previous_total_reverted = 0
+
+        if os.path.exists(reversion_log_path):
+            try:
+                with open(reversion_log_path, "r", encoding="utf-8") as f:
+                    for line in f:
+                        if f"model={cid} |" not in line:
+                            continue
+
+                        try:
+                            total_part = line.split("total_reverted=")[1].split("|")[0].strip()
+                            previous_total_reverted = int(total_part)
+                        except (IndexError, ValueError):
+                            # Ignore malformed/incomplete historical lines
+                            continue
+
+            except OSError as e:
+                print(f"WARNING: Could not read elastic reversion log: {e}")
+
+        total_reverted = previous_total_reverted + reverted_this_round
+
+        reverted_names = ", ".join(reverted_layers) if reverted_layers else "None"
+
+        reversion_log_line = (
+            f"round={current_round} | "
+            f"model={cid} | "
+            f"reverted_this_round={reverted_this_round} | "
+            f"total_reverted={total_reverted} | "
+            f"reverted_layers=[{reverted_names}]"
+        )
+
+        print(reversion_log_line)
+
+        try:
+            with open(reversion_log_path, "a", encoding="utf-8") as f:
+                f.write(reversion_log_line + "\n")
+                f.flush()
+                os.fsync(f.fileno())
+        except OSError as e:
+            print(f"WARNING: Could not write elastic reversion log: {e}")
 
         torch.save(client_mask, mask_path)
         
