@@ -1541,8 +1541,8 @@ def fedselect_cka(models, output_paths, norm_weights, client_ids, prev_global_pa
     reaches `select_ratio`, keeping them fully personalized. Caps at `max_sparsity`.
     """
     print(f"Running FedSelect CKA Aggregation (select_ratio={select_ratio}, max_sparsity={max_sparsity})...")
-    start_time = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
-    print('Starting time: ', start_time)
+    start_time = time.time()
+    print('Starting FedSelect CKA time: ', time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(start_time)))
     os.makedirs(mask_dir, exist_ok=True)
     os.makedirs(os.path.dirname(prev_global_path), exist_ok=True)
 
@@ -1599,6 +1599,8 @@ def fedselect_cka(models, output_paths, norm_weights, client_ids, prev_global_pa
 
     # 2. Phase 1: Client Subnetwork Discovery via CKA
     print("\nPhase 1: Discovering personalized client layers via CKA...")
+    start_time_cka = time.time()
+    print('Starting CKA time: ', time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(start_time_cka)))
     for m_path, cid in zip(models, client_ids):
         print(f"\n==================== CLIENT {cid} ====================")
         print(f"Client checkpoint path: {m_path}")
@@ -1747,6 +1749,10 @@ def fedselect_cka(models, output_paths, norm_weights, client_ids, prev_global_pa
         vis_mask = {k: v.to(torch.int8) for k, v in client_mask.items()}
         hist_mask_path = os.path.join(round_mask_dir, f"{cid}_mask.pt")
         torch.save(vis_mask, hist_mask_path)
+    end_time_cka = time.time()
+    print('CKA completed in {:.2f} seconds'.format(end_time_cka - start_time_cka))
+    print('FedSelect CKA Phase 1 completed in {:.2f} seconds'.format(end_time_cka - start_time))
+
 
     # 3. Phase 2: Masked Server Aggregation
     print("\nPhase 2: Aggregating shared parameters on server...")
@@ -1785,6 +1791,10 @@ def fedselect_cka(models, output_paths, norm_weights, client_ids, prev_global_pa
     torch.save(prev_global_ckpt, prev_global_path)
     del prev_global_ckpt
 
+    end_time_agg = time.time()
+    print('FedSelect CKA Phase 2 completed in {:.2f} seconds'.format(end_time_agg - end_time_cka))
+    print('FedSelect CKA Phase 1+2 completed in {:.2f} seconds'.format(end_time_agg - start_time))
+
     # 4. Phase 3: Client Subnetwork Injection & Saving
     print("Phase 3: Injecting shared weights into client models...")
     for in_path, out_path, cid in zip(models, output_paths, client_ids):
@@ -1803,9 +1813,11 @@ def fedselect_cka(models, output_paths, norm_weights, client_ids, prev_global_pa
         torch.save(ckpt, out_path)
         print(f"Saved personalized FedSelect CKA model to {out_path}")
 
-    end_time = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
-    print('Ending time: ', end_time)
-    print(f"Total time elapsed: {end_time} - {start_time}")
+    end_time = time.time()
+    print('FedSelect CKA completed in {:.2f} seconds'.format(end_time - start_time))
+    end_time_subnet = time.time()
+    print('FedSelect CKA Phase 3 completed in {:.2f} seconds'.format(end_time_subnet - end_time_agg))
+    print('FedSelect CKA Phase 1+2+3 completed in {:.2f} seconds'.format(end_time_subnet - start_time))
     
     # ---------------------------------------------------------
     # Phase 4: Cleanup .pth files older than 2 rounds ago
@@ -1855,6 +1867,7 @@ def fedselect_cka(models, output_paths, norm_weights, client_ids, prev_global_pa
         print(f"Cleanup complete. Removed {deleted_count} old .pth files.")
     else:
         print(f"Current round is {actual_current_round}. Threshold is {threshold_round}. No cleanup needed yet.")
+    
 
 
 def fedmc(models, fisher_paths, output_paths, norm_weights, client_ids, 
