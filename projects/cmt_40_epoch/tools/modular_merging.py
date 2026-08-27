@@ -1866,11 +1866,88 @@ def fedmc(models, fisher_paths, output_paths, norm_weights, client_ids,
     if not fisher_paths:
         raise ValueError("Error: 'fisher_paths' must be provided when running FedMC. Check your argparse inputs.")
 
+    # # 1. Load Pre-Training Global Weights
+    # if not os.path.exists(prev_global_path):
+    #     print(f"No previous global model found at {prev_global_path}. Exiting FedMC since we need a baseline for aggregation. Please run one round of standard FedAvg first.")
+    #     exit(1)
+
     # 1. Load Pre-Training Global Weights
     if not os.path.exists(prev_global_path):
-        print(f"No previous global model found at {prev_global_path}. Exiting FedMC since we need a baseline for aggregation. Please run one round of standard FedAvg first.")
-        exit(1)
-        
+        print(f"No previous global model found at {prev_global_path}. Attempting reconstruction from merged client models and masks...")
+
+        # Check that all previous merged client models and masks exist
+        missing_files = []
+
+        for merged_path, cid in zip(output_paths, client_ids):
+            mask_path = os.path.join(mask_dir, f"{cid}_mask.pth")
+
+            if not os.path.exists(merged_path):
+                missing_files.append(merged_path)
+
+            if not os.path.exists(mask_path):
+                missing_files.append(mask_path)
+
+        if missing_files:
+            print("Cannot reconstruct global model. Missing required files:")
+            for f in missing_files:
+                print(f"  - {f}")
+            print("Exiting FedMC.")
+            exit(1)
+
+        print("All required merged models and masks found. Reconstructing global model...")
+
+        # Use first merged client checkpoint as checkpoint template
+        recovered_ckpt = torch.load(output_paths[0], map_location='cpu')
+        recovered_state = recovered_ckpt['state_dict']
+
+        valid_keys_recovery = [
+            k for k, v in recovered_state.items()
+            if v.is_floating_point() and 'num_batches_tracked' not in k
+        ]
+
+        fully_personalized_params = 0
+        total_valid_params = 0
+
+        for k in valid_keys_recovery:
+            recovered_sum = torch.zeros_like(recovered_state[k])
+            recovered_count = torch.zeros_like(recovered_state[k])
+
+            for merged_path, cid in zip(output_paths, client_ids):
+                ckpt_i = torch.load(merged_path, map_location='cpu')
+                state_i = ckpt_i['state_dict']
+
+                mask_path = os.path.join(mask_dir, f"{cid}_mask.pth")
+                client_mask = torch.load(mask_path, map_location='cpu')
+
+                # Wherever mask == 0, merged model contains the global parameter
+                active_mask = (~client_mask[k]).float()
+
+                recovered_sum += state_i[k] * active_mask
+                recovered_count += active_mask
+
+                del ckpt_i
+
+            recoverable = recovered_count > 0
+
+            fully_personalized_params += (~recoverable).sum().item()
+            total_valid_params += recoverable.numel()
+
+            recovered_state[k] = torch.where(
+                recoverable,
+                recovered_sum / recovered_count.clamp(min=1),
+                recovered_state[k]
+            )
+
+        os.makedirs(os.path.dirname(prev_global_path), exist_ok=True)
+        torch.save(recovered_ckpt, prev_global_path)
+
+        print(f"Successfully reconstructed global model at {prev_global_path}")
+        print(
+            f"Fully personalized parameters that could not be reconstructed: "
+            f"{fully_personalized_params:,}/{total_valid_params:,} "
+            f"({100.0 * fully_personalized_params / total_valid_params:.2f}%)"
+        )
+
     prev_global_ckpt = torch.load(prev_global_path, map_location='cpu')
     prev_state = prev_global_ckpt['state_dict']
     
