@@ -1,4 +1,5 @@
 import argparse
+import time
 import torch
 import os
 import string
@@ -1540,6 +1541,8 @@ def fedselect_cka(models, output_paths, norm_weights, client_ids, prev_global_pa
     reaches `select_ratio`, keeping them fully personalized. Caps at `max_sparsity`.
     """
     print(f"Running FedSelect CKA Aggregation (select_ratio={select_ratio}, max_sparsity={max_sparsity})...")
+    start_time = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
+    print('Starting time: ', start_time)
     os.makedirs(mask_dir, exist_ok=True)
     os.makedirs(os.path.dirname(prev_global_path), exist_ok=True)
 
@@ -1799,6 +1802,10 @@ def fedselect_cka(models, output_paths, norm_weights, client_ids, prev_global_pa
         os.makedirs(os.path.dirname(out_path), exist_ok=True)
         torch.save(ckpt, out_path)
         print(f"Saved personalized FedSelect CKA model to {out_path}")
+
+    end_time = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
+    print('Ending time: ', end_time)
+    print(f"Total time elapsed: {end_time} - {start_time}")
     
     # ---------------------------------------------------------
     # Phase 4: Cleanup .pth files older than 2 rounds ago
