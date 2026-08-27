@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --partition=general
 #SBATCH --qos=medium
-#SBATCH --job-name=6fs-cka
+#SBATCH --job-name=7-fs-cka
 #SBATCH --output=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/cmt/fs_2cka_dyn075_job%j_rank%t.out
 #SBATCH --error=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/cmt/fs_2cka_dyn075_job%j_rank%t.err
 #SBATCH --time=36:00:00
