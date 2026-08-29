@@ -1891,85 +1891,336 @@ def fedmc(models, fisher_paths, output_paths, norm_weights, client_ids,
     #     print(f"No previous global model found at {prev_global_path}. Exiting FedMC since we need a baseline for aggregation. Please run one round of standard FedAvg first.")
     #     exit(1)
 
-    # 1. Load Pre-Training Global Weights
+    # 1. Load / Recover Previous Global Weights
     if not os.path.exists(prev_global_path):
-        print(f"No previous global model found at {prev_global_path}. Attempting reconstruction from merged client models and masks...")
+        import re
 
-        # Check that all previous merged client models and masks exist
-        missing_files = []
+        print(
+            f"No previous global model found at {prev_global_path}. "
+            "Attempting reconstruction from previous round merged models and masks..."
+        )
 
-        for merged_path, cid in zip(output_paths, client_ids):
-            mask_path = os.path.join(mask_dir, f"{cid}_mask.pth")
+        # ---------------------------------------------------------
+        # Determine current round from current output/model paths
+        # ---------------------------------------------------------
+        round_match = None
 
-            if not os.path.exists(merged_path):
-                missing_files.append(merged_path)
+        for path in list(output_paths) + list(models):
+            match = re.search(r'/round_(\d+)(?:/|$)', path)
+            if match:
+                round_match = match
+                break
 
-            if not os.path.exists(mask_path):
-                missing_files.append(mask_path)
+        if round_match is None:
+            print("ERROR: Could not determine current round from paths:")
+            for p in list(output_paths) + list(models):
+                print(f"  - {p}")
+            print("Expected a path containing '/round_X/'.")
+            exit(1)
 
-        if missing_files:
-            print("Cannot reconstruct global model. Missing required files:")
-            for f in missing_files:
-                print(f"  - {f}")
+        current_round = int(round_match.group(1))
+        previous_round = current_round - 1
+
+        if previous_round < 1:
+            print(
+                f"ERROR: Current round is {current_round}; "
+                "there is no previous round to recover."
+            )
+            exit(1)
+
+        print(f"Current round: {current_round}")
+        print(f"Trying to reconstruct global model from round {previous_round}.")
+
+        # ---------------------------------------------------------
+        # Get work directory from the current round path
+        #
+        # Example:
+        # /workspace/work_dirs/round_11/merged_A.pth
+        # ->
+        # /workspace/work_dirs
+        # ---------------------------------------------------------
+        current_round_dir = None
+
+        for path in list(output_paths) + list(models):
+            if f"/round_{current_round}/" in path:
+                prefix = path.split(f"/round_{current_round}/")[0]
+                current_round_dir = os.path.join(
+                    prefix,
+                    f"round_{current_round}"
+                )
+                break
+
+        if current_round_dir is None:
+            print("ERROR: Could not determine current round directory.")
+            exit(1)
+
+        work_dir = os.path.dirname(current_round_dir)
+
+        # ---------------------------------------------------------
+        # Previous merged model paths
+        # ModelA -> merged_A.pth
+        # ---------------------------------------------------------
+        previous_merged_paths = []
+
+        for cid in client_ids:
+            letter = cid.replace("Model", "")
+
+            previous_merged_paths.append(
+                os.path.join(
+                    work_dir,
+                    f"round_{previous_round}",
+                    f"merged_{letter}.pth"
+                )
+            )
+
+        # ---------------------------------------------------------
+        # Check previous merged models exist
+        # ---------------------------------------------------------
+        missing_merged = [
+            p for p in previous_merged_paths
+            if not os.path.exists(p)
+        ]
+
+        if missing_merged:
+            print(
+                f"ERROR: Cannot reconstruct global model. "
+                f"Missing merged checkpoints from round {previous_round}:"
+            )
+
+            for p in missing_merged:
+                print(f"  - {p}")
+
             print("Exiting FedMC.")
             exit(1)
 
-        print("All required merged models and masks found. Reconstructing global model...")
-
-        # Use first merged client checkpoint as checkpoint template
-        recovered_ckpt = torch.load(output_paths[0], map_location='cpu')
-        recovered_state = recovered_ckpt['state_dict']
-
-        valid_keys_recovery = [
-            k for k, v in recovered_state.items()
-            if v.is_floating_point() and 'num_batches_tracked' not in k
-        ]
-
-        fully_personalized_params = 0
-        total_valid_params = 0
-
-        for k in valid_keys_recovery:
-            recovered_sum = torch.zeros_like(recovered_state[k])
-            recovered_count = torch.zeros_like(recovered_state[k])
-
-            for merged_path, cid in zip(output_paths, client_ids):
-                ckpt_i = torch.load(merged_path, map_location='cpu')
-                state_i = ckpt_i['state_dict']
-
-                mask_path = os.path.join(mask_dir, f"{cid}_mask.pth")
-                client_mask = torch.load(mask_path, map_location='cpu')
-
-                # Wherever mask == 0, merged model contains the global parameter
-                active_mask = (~client_mask[k]).float()
-
-                recovered_sum += state_i[k] * active_mask
-                recovered_count += active_mask
-
-                del ckpt_i
-
-            recoverable = recovered_count > 0
-
-            fully_personalized_params += (~recoverable).sum().item()
-            total_valid_params += recoverable.numel()
-
-            recovered_state[k] = torch.where(
-                recoverable,
-                recovered_sum / recovered_count.clamp(min=1),
-                recovered_state[k]
-            )
-
-        os.makedirs(os.path.dirname(prev_global_path), exist_ok=True)
-        torch.save(recovered_ckpt, prev_global_path)
-
-        print(f"Successfully reconstructed global model at {prev_global_path}")
         print(
-            f"Fully personalized parameters that could not be reconstructed: "
-            f"{fully_personalized_params:,}/{total_valid_params:,} "
-            f"({100.0 * fully_personalized_params / total_valid_params:.2f}%)"
+            f"Found all {len(previous_merged_paths)} merged models "
+            f"from round {previous_round}."
         )
 
-    prev_global_ckpt = torch.load(prev_global_path, map_location='cpu')
-    prev_state = prev_global_ckpt['state_dict']
+        # ---------------------------------------------------------
+        # Check masks exist
+        # ---------------------------------------------------------
+        mask_paths = [
+            os.path.join(mask_dir, f"{cid}_mask.pth")
+            for cid in client_ids
+        ]
+
+        missing_masks = [
+            p for p in mask_paths
+            if not os.path.exists(p)
+        ]
+
+        # Special case:
+        # If masks don't exist yet (e.g. recovering round 10 FedAvg
+        # before the first FedMC round), all merged models should be
+        # identical and any one of them is the global model.
+        if missing_masks:
+
+            print(
+                "FedMC masks are missing. Checking whether previous "
+                "merged models are identical (e.g. previous round was FedAvg)..."
+            )
+
+            ckpts = [
+                torch.load(p, map_location="cpu")
+                for p in previous_merged_paths
+            ]
+
+            states = [
+                ckpt["state_dict"]
+                for ckpt in ckpts
+            ]
+
+            identical = True
+
+            for k in states[0]:
+                if not states[0][k].is_floating_point():
+                    continue
+
+                for state_i in states[1:]:
+                    if k not in state_i or not torch.equal(
+                        states[0][k],
+                        state_i[k]
+                    ):
+                        identical = False
+                        break
+
+                if not identical:
+                    break
+
+            if not identical:
+                print(
+                    "ERROR: Previous merged models differ, but the required "
+                    "FedMC masks are missing:"
+                )
+
+                for p in missing_masks:
+                    print(f"  - {p}")
+
+                print(
+                    "Cannot determine which parameters are global "
+                    "and which are personalized."
+                )
+                print("Exiting FedMC.")
+                exit(1)
+
+            # Previous round was effectively a global/FedAvg round
+            recovered_ckpt = ckpts[0]
+
+            os.makedirs(
+                os.path.dirname(prev_global_path),
+                exist_ok=True
+            )
+
+            torch.save(
+                recovered_ckpt,
+                prev_global_path
+            )
+
+            print(
+                f"Previous merged models are identical. "
+                f"Successfully restored global model from round "
+                f"{previous_round}:\n  {prev_global_path}"
+            )
+
+        else:
+            # ---------------------------------------------------------
+            # FedMC recovery using previous merged models + masks
+            # ---------------------------------------------------------
+            print(
+                "All previous merged models and masks found. "
+                "Reconstructing global model..."
+            )
+
+            previous_ckpts = [
+                torch.load(p, map_location="cpu")
+                for p in previous_merged_paths
+            ]
+
+            previous_states = [
+                ckpt["state_dict"]
+                for ckpt in previous_ckpts
+            ]
+
+            client_masks = [
+                torch.load(p, map_location="cpu")
+                for p in mask_paths
+            ]
+
+            # First previous merged checkpoint = checkpoint template
+            recovered_ckpt = previous_ckpts[0]
+            recovered_state = recovered_ckpt["state_dict"]
+
+            valid_keys_recovery = [
+                k for k, v in recovered_state.items()
+                if v.is_floating_point()
+                and "num_batches_tracked" not in k
+            ]
+
+            fully_personalized_params = 0
+            total_valid_params = 0
+
+            for k in valid_keys_recovery:
+
+                recovered_sum = torch.zeros_like(
+                    recovered_state[k]
+                )
+
+                recovered_count = torch.zeros_like(
+                    recovered_state[k],
+                    dtype=torch.float32
+                )
+
+                for state_i, client_mask, cid in zip(
+                    previous_states,
+                    client_masks,
+                    client_ids
+                ):
+                    if k not in state_i:
+                        print(
+                            f"ERROR: '{k}' missing from previous "
+                            f"merged checkpoint for {cid}."
+                        )
+                        exit(1)
+
+                    if k not in client_mask:
+                        print(
+                            f"ERROR: '{k}' missing from mask for {cid}."
+                        )
+                        exit(1)
+
+                    # mask == False -> this parameter was shared/global.
+                    # Therefore merged_X contains the global value here.
+                    active_mask = (~client_mask[k]).float()
+
+                    recovered_sum += (
+                        state_i[k] * active_mask
+                    )
+
+                    recovered_count += active_mask
+
+                recoverable = recovered_count > 0
+                unrecoverable = ~recoverable
+
+                fully_personalized_params += (
+                    unrecoverable.sum().item()
+                )
+
+                total_valid_params += recoverable.numel()
+
+                # Recover global values wherever at least one client
+                # still had that parameter globally shared.
+                #
+                # If ALL clients personalized the parameter, its global
+                # value is irrelevant for future FedMC aggregation because
+                # the masks are cumulative. Fill it with zero.
+                recovered_state[k] = torch.where(
+                    recoverable,
+                    recovered_sum / recovered_count.clamp(min=1),
+                    torch.zeros_like(recovered_state[k])
+                )
+
+            # ---------------------------------------------------------
+            # Save reconstructed global model
+            # ---------------------------------------------------------
+            os.makedirs(
+                os.path.dirname(prev_global_path),
+                exist_ok=True
+            )
+
+            torch.save(
+                recovered_ckpt,
+                prev_global_path
+            )
+
+            pct = (
+                100.0
+                * fully_personalized_params
+                / total_valid_params
+                if total_valid_params > 0
+                else 0.0
+            )
+
+            print(
+                f"Successfully reconstructed global model from "
+                f"round {previous_round}:\n"
+                f"  {prev_global_path}"
+            )
+
+            print(
+                f"Fully personalized parameters filled with zeros: "
+                f"{fully_personalized_params:,}/{total_valid_params:,} "
+                f"({pct:.4f}%)"
+            )
+
+
+    # Load recovered/existing global model normally
+    prev_global_ckpt = torch.load(
+        prev_global_path,
+        map_location="cpu"
+    )
+    prev_state = prev_global_ckpt["state_dict"]
     
     # Identify valid floating-point keys
     valid_keys = [k for k, v in prev_state.items() if v.is_floating_point() and 'num_batches_tracked' not in k]
@@ -2437,15 +2688,20 @@ def fedselect_cka_elastic(models, output_paths, norm_weights, client_ids, prev_g
         # Elastic Reversion Logging
         # ---------------------------------------------------------
         reversion_log_path = os.path.join(mask_dir, "elastic_reversion_log.txt")
+        cka_layer_log_path = os.path.join(mask_dir, "cka_layer_log.txt")
+        mask_history_log_path = os.path.join(mask_dir, "cka_mask_history.txt")
 
-        reverted_layers = []
+        newly_personalized_layers = []
+        newly_reglobalized_layers = []
+        current_personalized_layers = []
+        layer_log_lines = []
 
         # Use the CKA layer names from this pass, because personalization/reversion
         # is performed at exactly this layer granularity.
         if valid_cka:
             seen_layers = set()
 
-            for _, layer_name, _ in valid_cka:
+            for _, layer_name, score in valid_cka:
                 if layer_name in seen_layers:
                     continue
                 seen_layers.add(layer_name)
@@ -2459,22 +2715,76 @@ def fedselect_cka_elastic(models, output_paths, norm_weights, client_ids, prev_g
                 if not layer_keys:
                     continue
 
-                # A layer counts as reverted only if:
-                #   1. it had personalized parameters before this pass, and
-                #   2. it is now completely global.
-                was_personalized = any(
-                    mask_before_round[k].any().item()
+                # Count personalized parameters before and after this pass.
+                # This is slightly more robust than just using any(), because it
+                # also exposes an unexpected partial layer mask if one ever occurs.
+                layer_total_params = sum(mask_before_round[k].numel() for k in layer_keys)
+
+                personalized_before = sum(
+                    mask_before_round[k].sum().item()
                     for k in layer_keys
                 )
 
-                is_now_global = all(
-                    not client_mask[k].any().item()
+                personalized_after = sum(
+                    client_mask[k].sum().item()
                     for k in layer_keys
                 )
 
-                if was_personalized and is_now_global:
-                    reverted_layers.append(layer_name)
+                was_personalized = personalized_before > 0
+                is_personalized = personalized_after > 0
 
+                # Determine readable current mask status.
+                if personalized_after == 0:
+                    mask_status = "GLOBAL"
+                elif personalized_after == layer_total_params:
+                    mask_status = "PERSONALIZED"
+                else:
+                    mask_status = (
+                        f"PARTIAL({personalized_after}/{layer_total_params})"
+                    )
+
+                if is_personalized:
+                    current_personalized_layers.append(layer_name)
+
+                # Global -> Personal
+                if not was_personalized and is_personalized:
+                    newly_personalized_layers.append(layer_name)
+
+                # Personal -> Global
+                if was_personalized and not is_personalized:
+                    newly_reglobalized_layers.append(layer_name)
+
+                # Log CKA score + resulting current mask for EVERY CKA layer.
+                layer_log_line = (
+                    f"round={current_round} | "
+                    f"model={cid} | "
+                    f"layer={layer_name} | "
+                    f"cka={score:.6f} | "
+                    f"mask={mask_status}"
+                )
+
+                layer_log_lines.append(layer_log_line)
+
+        # ---------------------------------------------------------
+        # Print + save per-layer CKA and mask information
+        # ---------------------------------------------------------
+        for line in layer_log_lines:
+            print(line)
+
+        if layer_log_lines:
+            try:
+                with open(cka_layer_log_path, "a", encoding="utf-8") as f:
+                    for line in layer_log_lines:
+                        f.write(line + "\n")
+                    f.flush()
+                    os.fsync(f.fileno())
+            except OSError as e:
+                print(f"WARNING: Could not write CKA layer log: {e}")
+
+        # ---------------------------------------------------------
+        # Reversion statistics
+        # ---------------------------------------------------------
+        reverted_layers = newly_reglobalized_layers
         reverted_this_round = len(reverted_layers)
 
         # Recover cumulative number of previous reversions for this client
@@ -2489,8 +2799,25 @@ def fedselect_cka_elastic(models, output_paths, norm_weights, client_ids, prev_g
                             continue
 
                         try:
-                            total_part = line.split("total_reverted=")[1].split("|")[0].strip()
-                            previous_total_reverted = int(total_part)
+                            logged_round = int(
+                                line.split("round=")[1].split("|")[0].strip()
+                            )
+
+                            logged_total = int(
+                                line.split("total_reverted=")[1]
+                                .split("|")[0]
+                                .strip()
+                            )
+
+                            # Only use genuinely previous rounds.
+                            # This prevents accidentally double-counting if
+                            # the same client/round is logged twice after a restart.
+                            if logged_round < current_round:
+                                previous_total_reverted = max(
+                                    previous_total_reverted,
+                                    logged_total
+                                )
+
                         except (IndexError, ValueError):
                             # Ignore malformed/incomplete historical lines
                             continue
@@ -2500,8 +2827,24 @@ def fedselect_cka_elastic(models, output_paths, norm_weights, client_ids, prev_g
 
         total_reverted = previous_total_reverted + reverted_this_round
 
-        reverted_names = ", ".join(reverted_layers) if reverted_layers else "None"
+        reverted_names = (
+            ", ".join(reverted_layers)
+            if reverted_layers else "None"
+        )
 
+        newly_personalized_names = (
+            ", ".join(newly_personalized_layers)
+            if newly_personalized_layers else "None"
+        )
+
+        current_personalized_names = (
+            ", ".join(current_personalized_layers)
+            if current_personalized_layers else "None"
+        )
+
+        # ---------------------------------------------------------
+        # Reversion summary
+        # ---------------------------------------------------------
         reversion_log_line = (
             f"round={current_round} | "
             f"model={cid} | "
@@ -2519,6 +2862,27 @@ def fedselect_cka_elastic(models, output_paths, norm_weights, client_ids, prev_g
                 os.fsync(f.fileno())
         except OSError as e:
             print(f"WARNING: Could not write elastic reversion log: {e}")
+
+        # ---------------------------------------------------------
+        # Complete mask-change summary
+        # ---------------------------------------------------------
+        mask_history_line = (
+            f"round={current_round} | "
+            f"model={cid} | "
+            f"current_personalized=[{current_personalized_names}] | "
+            f"newly_personalized=[{newly_personalized_names}] | "
+            f"newly_reglobalized=[{reverted_names}]"
+        )
+
+        print(mask_history_line)
+
+        try:
+            with open(mask_history_log_path, "a", encoding="utf-8") as f:
+                f.write(mask_history_line + "\n")
+                f.flush()
+                os.fsync(f.fileno())
+        except OSError as e:
+            print(f"WARNING: Could not write CKA mask history log: {e}")
 
         torch.save(client_mask, mask_path)
         
