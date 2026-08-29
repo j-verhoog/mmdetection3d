@@ -914,72 +914,284 @@ def fedselect(models, output_paths, norm_weights, client_ids, prev_global_path="
     #     print(f"No previous global model found at {prev_global_path}. Exiting FedSelect since we need a baseline for difference calculation. Please run one round of standard FedAvg first to initialize the global model.")
     #     exit(1)
 
-    # 1. Load Pre-Training Global Weights
+    # 1. Load / Recover Pre-Training Global Weights
     if not os.path.exists(prev_global_path):
-        print(f"No previous global model found at {prev_global_path}. Attempting reconstruction from merged client models and masks...")
+        import re
 
-        # Check that all previous merged client models and masks exist
-        missing_files = []
+        print(
+            f"No previous global model found at {prev_global_path}. "
+            "Attempting reconstruction from previous-round merged client models..."
+        )
 
-        for merged_path, cid in zip(output_paths, client_ids):
-            mask_path = os.path.join(mask_dir, f"{cid}_mask.pth")
+        # ---------------------------------------------------------
+        # Determine current round from output path.
+        # Example:
+        #   /workspace/work_dirs/round_11/merged_A.pth
+        # -> current_round = 11
+        # ---------------------------------------------------------
+        round_match = re.search(r'/round_(\d+)(?:/|$)', output_paths[0])
 
-            if not os.path.exists(merged_path):
-                missing_files.append(merged_path)
+        if round_match is None:
+            print(
+                "ERROR: Could not determine current round from output path:\n"
+                f"  {output_paths[0]}"
+            )
+            print("Expected a path containing '/round_X/'.")
+            exit(1)
 
-            if not os.path.exists(mask_path):
-                missing_files.append(mask_path)
+        current_round = int(round_match.group(1))
+        previous_round = current_round - 1
 
-        if missing_files:
-            print("Cannot reconstruct global model. Missing required files:")
-            for f in missing_files:
-                print(f"  - {f}")
+        if previous_round < 1:
+            print(
+                f"ERROR: Current round is {current_round}, so there is no "
+                "previous round from which to reconstruct the global model."
+            )
+            exit(1)
+
+        print(f"Current round: {current_round}")
+        print(f"Recovering global model from round {previous_round}.")
+
+        # ---------------------------------------------------------
+        # Construct previous-round merged paths by replacing
+        # /round_CURRENT/ with /round_PREVIOUS/.
+        # ---------------------------------------------------------
+        previous_merged_paths = []
+
+        for output_path in output_paths:
+            previous_path = output_path.replace(
+                f"/round_{current_round}/",
+                f"/round_{previous_round}/"
+            )
+            previous_merged_paths.append(previous_path)
+
+        # ---------------------------------------------------------
+        # Check that all previous merged models exist
+        # ---------------------------------------------------------
+        missing_merged = [
+            path for path in previous_merged_paths
+            if not os.path.exists(path)
+        ]
+
+        if missing_merged:
+            print(
+                f"ERROR: Cannot reconstruct global model. "
+                f"Missing merged checkpoints from round {previous_round}:"
+            )
+
+            for path in missing_merged:
+                print(f"  - {path}")
+
             print("Exiting FedSelect.")
             exit(1)
 
-        print("All required merged models and masks found. Reconstructing global model...")
+        print(
+            f"Found all {len(previous_merged_paths)} merged client models "
+            f"from round {previous_round}."
+        )
 
-        # Use first merged client checkpoint as checkpoint template
-        recovered_ckpt = torch.load(output_paths[0], map_location='cpu')
+        # ---------------------------------------------------------
+        # Load previous merged models once
+        # ---------------------------------------------------------
+        previous_ckpts = [
+            torch.load(path, map_location='cpu')
+            for path in previous_merged_paths
+        ]
+
+        previous_states = [
+            ckpt['state_dict']
+            for ckpt in previous_ckpts
+        ]
+
+        # Use first checkpoint as template
+        recovered_ckpt = previous_ckpts[0]
         recovered_state = recovered_ckpt['state_dict']
 
         valid_keys_recovery = [
             k for k, v in recovered_state.items()
-            if v.is_floating_point() and 'num_batches_tracked' not in k
+            if v.is_floating_point()
+            and 'num_batches_tracked' not in k
         ]
 
-        for k in valid_keys_recovery:
-            recovered_sum = torch.zeros_like(recovered_state[k])
-            recovered_count = torch.zeros_like(recovered_state[k])
+        # ---------------------------------------------------------
+        # Check for cumulative FedSelect masks
+        # ---------------------------------------------------------
+        mask_paths = [
+            os.path.join(mask_dir, f"{cid}_mask.pth")
+            for cid in client_ids
+        ]
 
-            for merged_path, cid in zip(output_paths, client_ids):
-                ckpt_i = torch.load(merged_path, map_location='cpu')
-                state_i = ckpt_i['state_dict']
+        missing_masks = [
+            path for path in mask_paths
+            if not os.path.exists(path)
+        ]
 
-                mask_path = os.path.join(mask_dir, f"{cid}_mask.pth")
-                client_mask = torch.load(mask_path, map_location='cpu')
+        # =========================================================
+        # CASE 1:
+        # No masks exist yet.
+        #
+        # This is expected when recovering the FedAvg global model
+        # immediately before the first FedSelect round.
+        #
+        # All previous merged models must therefore be identical.
+        # =========================================================
+        if missing_masks:
 
-                # Wherever mask == 0, merged model contains the global parameter
-                active_mask = (~client_mask[k]).float()
-
-                recovered_sum += state_i[k] * active_mask
-                recovered_count += active_mask
-
-                del ckpt_i
-
-            # Any parameter shared by at least one client can be recovered exactly.
-            # Fully personalized parameters are irrelevant for future FedSelect
-            # because masks are cumulative and they will never become global again.
-            recoverable = recovered_count > 0
-            recovered_state[k] = torch.where(
-                recoverable,
-                recovered_sum / recovered_count.clamp(min=1),
-                recovered_state[k]
+            print(
+                "FedSelect masks are not available. "
+                "Checking whether previous-round merged models are identical..."
             )
 
-        os.makedirs(os.path.dirname(prev_global_path), exist_ok=True)
-        torch.save(recovered_ckpt, prev_global_path)
-        print(f"Successfully reconstructed global model at {prev_global_path}")
+            models_identical = True
+
+            for k in valid_keys_recovery:
+                reference = previous_states[0][k]
+
+                for state_i in previous_states[1:]:
+                    if (
+                        k not in state_i
+                        or not torch.equal(reference, state_i[k])
+                    ):
+                        models_identical = False
+                        break
+
+                if not models_identical:
+                    break
+
+            if not models_identical:
+                print(
+                    "ERROR: Previous merged models are not identical, "
+                    "but the required FedSelect masks are missing."
+                )
+
+                print("Missing masks:")
+                for path in missing_masks:
+                    print(f"  - {path}")
+
+                print(
+                    "Cannot determine which parameters are global versus "
+                    "personalized. Exiting FedSelect."
+                )
+                exit(1)
+
+            # All merged models are identical -> exact global model
+            print(
+                f"All merged models from round {previous_round} are identical. "
+                "Using merged_A as the exact global model."
+            )
+
+        # =========================================================
+        # CASE 2:
+        # Masks exist -> reconstruct global model parameter-wise
+        # =========================================================
+        else:
+
+            print(
+                "All required masks found. "
+                "Reconstructing global parameters..."
+            )
+
+            client_masks = [
+                torch.load(path, map_location='cpu')
+                for path in mask_paths
+            ]
+
+            fully_personalized_params = 0
+            total_valid_params = 0
+
+            for k in valid_keys_recovery:
+
+                recovered_sum = torch.zeros_like(
+                    recovered_state[k]
+                )
+
+                recovered_count = torch.zeros_like(
+                    recovered_state[k],
+                    dtype=torch.float32
+                )
+
+                for state_i, client_mask, cid in zip(
+                    previous_states,
+                    client_masks,
+                    client_ids
+                ):
+                    if k not in state_i:
+                        print(
+                            f"ERROR: Parameter '{k}' is missing from "
+                            f"the previous merged model for {cid}."
+                        )
+                        exit(1)
+
+                    if k not in client_mask:
+                        print(
+                            f"ERROR: Parameter '{k}' is missing from "
+                            f"the FedSelect mask for {cid}."
+                        )
+                        exit(1)
+
+                    # mask == False -> parameter is global/shared.
+                    # Therefore this client's merged model contains
+                    # the global parameter value here.
+                    active_mask = (~client_mask[k]).float()
+
+                    recovered_sum += (
+                        state_i[k] * active_mask
+                    )
+
+                    recovered_count += active_mask
+
+                # At least one client still has this parameter shared
+                recoverable = recovered_count > 0
+
+                fully_personalized_params += (
+                    (~recoverable).sum().item()
+                )
+
+                total_valid_params += recoverable.numel()
+
+                # Recover shared parameters exactly.
+                #
+                # If every client has permanently personalized a
+                # parameter, its global value will never be used again
+                # because FedSelect masks are cumulative. Fill with 0.
+                recovered_state[k] = torch.where(
+                    recoverable,
+                    recovered_sum / recovered_count.clamp(min=1),
+                    torch.zeros_like(recovered_state[k])
+                )
+
+            pct_fully_personalized = (
+                100.0 * fully_personalized_params / total_valid_params
+                if total_valid_params > 0
+                else 0.0
+            )
+
+            print(
+                f"Fully personalized parameters filled with zeros: "
+                f"{fully_personalized_params:,}/{total_valid_params:,} "
+                f"({pct_fully_personalized:.4f}%)"
+            )
+
+        # ---------------------------------------------------------
+        # Save reconstructed global model
+        # ---------------------------------------------------------
+        os.makedirs(
+            os.path.dirname(prev_global_path),
+            exist_ok=True
+        )
+
+        torch.save(
+            recovered_ckpt,
+            prev_global_path
+        )
+
+        print(
+            f"Successfully reconstructed global model from "
+            f"round {previous_round} at:\n"
+            f"  {prev_global_path}"
+        )
+
+
 
 
     prev_global_ckpt = torch.load(prev_global_path, map_location='cpu')
