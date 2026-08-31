@@ -135,7 +135,7 @@ run_training () {
     local MASTER_PORT=$(apptainer exec --cleanenv "$APPTAINER_IMAGE" python3 -c 'import socket; s=socket.socket(); s.bind(("", 0)); print(s.getsockname()[1]); s.close()')
     echo "Using Master Port: $MASTER_PORT"
     
-    srun --ntasks=2 --gpus-per-task=1 bash -lc "
+    srun --ntasks=2 --gpus-per-node=2 bash -lc "
       apptainer exec --nv --cleanenv \
       --bind \"$HOME/mmdet:/workspace/mmdet\" \
       --bind \"$TMP_BASE:/workspace/tmp\" \
