@@ -2,8 +2,8 @@
 #SBATCH --partition=general
 #SBATCH --qos=medium
 #SBATCH --job-name=NW-fs-cka
-#SBATCH --output=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/cmt/fs_cka_nowarm_up_dyn075_job%j_rank%t.out
-#SBATCH --error=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/cmt/fs_cka_nowarm_up_dyn075_job%j_rank%t.err
+#SBATCH --output=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/cmt/fs_cka_nowarm_up_dyn075_corrected_job%j_rank%t.out
+#SBATCH --error=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/cmt/fs_cka_nowarm_up_dyn075_corrected_job%j_rank%t.err
 #SBATCH --time=36:00:00
 #SBATCH --nodes=1
 #SBATCH --ntasks=2
@@ -41,7 +41,7 @@ PRETRAINED_BACKBONE="ckpts/nuim_r50.pth"
 # --- STANDARD SETUP ---
 export SRUN_CPUS_PER_TASK=${SLURM_CPUS_PER_TASK:-1}
 export WANDB_PROJECT="cmt_40_epoch"
-export RUN_NAME="FS_cka_nowarm_up_dyn075_40epochs"
+export RUN_NAME="FS_cka_nowarm_up_dyn075_40epochs_corrected"
 CONTINUE_WANDB_RUN=true
 
 # Gets API key robustly
@@ -332,7 +332,7 @@ for ((i=START_ROUND; i<=NUM_ROUNDS; i++)); do
             PREV_STOP_EPOCH=$((CURRENT_STOP_EPOCH - EPOCHS_PER_ROUND))
             
             # --- NEW: Determine the correct method for the previous round ---
-            if [ "$PREV_RND" -le 10 ]; then
+            if [ "$PREV_RND" -le 1 ]; then
                 PREV_METHOD="fedavg"
             else
                 PREV_METHOD="fedselect_cka"
@@ -408,9 +408,9 @@ for ((i=START_ROUND; i<=NUM_ROUNDS; i++)); do
               "$MERGED_A" "$MERGED_B" "$MERGED_C" "$MERGED_D" "$MERGED_E" "$CURRENT_METHOD"
     
     # --- FEDSELECT HANDOVER LOGIC ---
-    # If we just finished Round 10, save Model A (since all are identical after FedAvg) 
-    # as the baseline global model for FedSelect in Round 11
-    if [ "$i" -eq 10 ]; then
+    # If we just finished Round 1, save Model A (since all are identical after FedAvg) 
+    # as the baseline global model for FedSelect in Round 2
+    if [ "$i" -eq 1 ]; then
         echo "Transitioning to FedSelect next round. Saving baseline global model..."
         mkdir -p "$WORK/fedselect_states"
         cp "$MERGED_A" "$WORK/fedselect_states/global_model.pth"
