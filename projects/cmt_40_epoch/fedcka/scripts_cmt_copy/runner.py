@@ -44,6 +44,7 @@ import json
 import math
 import os
 import sys
+import time
 from typing import Any, List, Sequence, Tuple
 
 
@@ -191,6 +192,8 @@ def run_cka(
             f"Original error: {exc}"
         ) from exc
 
+    start_time = time.time()
+    print(f"Starting at {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(start_time))}")
     comparator = ModelComparator(
         config_path=config,
         sample_files=sample_files,
@@ -198,12 +201,14 @@ def run_cka(
         verbose=verbose,
     )
 
+    print(f"ModelComparator initialized in {time.time() - start_time:.2f} seconds.")
     cka_scores = comparator.compare_activation_metric(
         model_a_path=normalized_checkpoints[0],
         model_b_path=normalized_checkpoints[1],
         metric=CKAMetric(),
         hook_filter=default_hook_filter,
     )
+    print(f"CKA comparison completed in {time.time() - start_time:.2f} seconds.")
 
     if len(cka_scores) == 0:
         raise RuntimeError("CKA comparison produced no layer scores.")

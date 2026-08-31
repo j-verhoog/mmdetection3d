@@ -5,6 +5,7 @@ Handles the workflow of comparing two models across multiple metrics.
 
 import os
 import shutil
+import time
 import torch
 import torch.nn as nn
 from typing import Dict, List, Optional, Callable
@@ -95,7 +96,9 @@ class ModelComparator:
             hook_filter = default_hook_filter
         
         self._setup_temp_dir()
-        
+
+        start_time = time.time()
+        print(f"Starting activation metric comparison at {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(start_time))}")
         try:
             # Phase 1: Cache Model A activations
             self._log(f"  [Phase 1] Caching activations for Model A ({len(self.sample_files)} samples)...")
@@ -122,6 +125,8 @@ class ModelComparator:
                 h.remove()
             del model_a
             torch.cuda.empty_cache()
+
+            print(f"Phase 1 completed in {time.time() - start_time:.2f} seconds.")
             
             # Phase 2: Stream Model B and compute metric
             self._log(f"  [Phase 2] Computing {metric.get_name()} with Model B...")
@@ -177,6 +182,7 @@ class ModelComparator:
             
             # Average the scores
             avg_scores = {k: v / counts[k] for k, v in cumulative_scores.items()}
+            print(f"Phase 2 completed in {time.time() - start_time:.2f} seconds.")
             return avg_scores
         
         finally:
