@@ -335,7 +335,7 @@ for ((i=START_ROUND; i<=NUM_ROUNDS; i++)); do
             if [ "$PREV_RND" -le 10 ]; then
                 PREV_METHOD="fedavg"
             else
-                PREV_METHOD="fedselect_cka"
+                PREV_METHOD="fedselect_cka_elastic"
             fi
             # ----------------------------------------------------------------
             
