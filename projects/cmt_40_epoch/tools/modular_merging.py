@@ -2213,10 +2213,16 @@ def fedmc(models, fisher_paths, output_paths, norm_weights, client_ids,
         # ---------------------------------------------------------
         # Check masks exist
         # ---------------------------------------------------------
-        mask_paths = [
-            os.path.join(mask_dir, f"{cid}_mask.pth")
-            for cid in client_ids
-        ]
+        mask_paths = []
+        for cid in client_ids:
+            default_path = os.path.join(mask_dir, f"{cid}_mask.pth")
+            round_0_path = os.path.join(mask_dir, "round_0", f"{cid}_mask.pt")
+            
+            # Use the .pt file in round_0 if it exists and the default doesn't
+            if os.path.exists(round_0_path) and not os.path.exists(default_path):
+                mask_paths.append(round_0_path)
+            else:
+                mask_paths.append(default_path)
 
         missing_masks = [
             p for p in mask_paths
