@@ -159,10 +159,12 @@ run_training () {
       --env NCCL_DEBUG=INFO \
       --env NCCL_ASYNC_ERROR_HANDLING=1 \
       --env NCCL_BLOCKING_WAIT=1 \
+      --env NCCL_P2P_DISABLE=1 \
       --env TORCH_DISTRIBUTED_DEBUG=DETAIL \
       --env MASTER_ADDR=\"127.0.0.1\" \
       --env MASTER_PORT=\"$MASTER_PORT\" \
-      --env NCCL_SOCKET_IFNAME=\"campus\" \
+      --env NCCL_SOCKET_IFNAME=\"lo\" \
+      --env GLOO_SOCKET_IFNAME=\"lo\" \
       --env WANDB_RUN_ID=\"$WANDB_RUN_ID\" \
       --env WANDB_RESUME=\"allow\" \
       --env WANDB_INIT_TIMEOUT=\"300\" \
