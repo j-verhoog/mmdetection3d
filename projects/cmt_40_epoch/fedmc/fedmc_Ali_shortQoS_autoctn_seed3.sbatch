@@ -1,14 +1,13 @@
 #!/bin/bash
 #SBATCH --partition=general
-#SBATCH --qos=medium
+#SBATCH --qos=short
 #SBATCH --job-name=fedMC-40
-#SBATCH --output=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/cmt/fedmc3_40epochs_%j.out
-#SBATCH --error=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/cmt/fedmc3_40epochs_%j.err
-#SBATCH --time=36:00:00
+#SBATCH --output=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/cmt/fedmc3_short_40epochs_%j.out
+#SBATCH --error=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/cmt/fedmc3_short_40epochs_%j.err
+#SBATCH --time=04:00:00
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --ntasks-per-node=1
-#SBATCH --gpus-per-node=2
 #SBATCH --gres=gpu:a40:2
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=64G
@@ -41,11 +40,15 @@ CONFIG_E=$NIGHT_RAIN_DATAROOT
 # Initial backbone weights (only used in Round 1)
 PRETRAINED_BACKBONE="ckpts/nuim_r50.pth"
 
+# fake homedir to impersonate me
+export FAKE_HOME="/tudelft.net/staff-umbrella/MscThesisjverhoog/jolle_home"
+export WANDB_API_KEY=$(awk '$1=="machine" && $2=="api.wandb.ai" {found=1}found && $1=="password" {print $2; exit}' "$FAKE_HOME/.netrc")
+
+
 # --- STANDARD SETUP ---
 export SRUN_CPUS_PER_TASK=${SLURM_CPUS_PER_TASK:-1}
 export WANDB_PROJECT="cmt_40_epoch"
 export RUN_NAME="FedMC3_40p_40epoch"
-export WANDB_API_KEY=$(awk '$1=="machine" && $2=="api.wandb.ai" {found=1}found && $1=="password" {print $2; exit}' "$HOME/.netrc")
 export APPTAINER_IMAGE=/tudelft.net/staff-umbrella/MscThesisjverhoog/image/mmdet3d_v1rc5.sif
 export WORK=/tudelft.net/staff-umbrella/MscThesisjverhoog/projects/$WANDB_PROJECT/$RUN_NAME
 mkdir -p "$WORK"
@@ -136,9 +139,10 @@ run_training () {
     local MASTER_PORT=$(apptainer exec --cleanenv "$APPTAINER_IMAGE" python3 -c 'import socket; s=socket.socket(); s.bind(("", 0)); print(s.getsockname()[1]); s.close()')
     echo "Using Master Port: $MASTER_PORT"
 
-    srun --ntasks=1 --gpus-per-node=2 bash -lc "
+    srun --ntasks=1 bash -lc "
       apptainer exec --nv --cleanenv \
-      --bind \"$HOME/mmdet:/workspace/mmdet\" \
+      --home \"$FAKE_HOME\" \
+      --bind "$FAKE_HOME/mmdet:/workspace/mmdet" \
       --bind \"$TMP_BASE:/workspace/tmp\" \
       --bind \"$WORK:/workspace/work_dirs\" \
       --bind \"/tudelft.net/staff-umbrella/MscThesisjverhoog:/tudelft.net/staff-umbrella/MscThesisjverhoog\" \
@@ -177,7 +181,7 @@ run_training () {
           --launcher pytorch \
           --work-dir $WORK_DIR \
           $RESUME_ARG \
-          --cfg-options ${CFG_LOAD_ARG} \
+          --cfg-options ${CFG_LOAD_ARG} dist_params.port=$MASTER_PORT \
             data.samples_per_gpu=$SAMPLES_PER_GPU \
             total_epochs=$GLOBAL_EPOCHS \
             custom_hooks.1.stop_epoch=$STOP_EPOCH \
@@ -219,8 +223,9 @@ run_merge () {
     fi
 
     echo "=== Merging Models ==="
-    apptainer exec --nv --cleanenv \
-      --bind "$HOME/mmdet:/workspace/mmdet" \
+      apptainer exec --nv --cleanenv \
+      --home \"$FAKE_HOME\" \
+      --bind "$FAKE_HOME/mmdet:/workspace/mmdet" \
       --bind "$WORK:/workspace/work_dirs" \
       --bind "/tudelft.net/staff-umbrella/MscThesisjverhoog:/tudelft.net/staff-umbrella/MscThesisjverhoog" \
       "$APPTAINER_IMAGE" \
@@ -420,55 +425,3 @@ done
 srun --nodes=$SLURM_NNODES --ntasks-per-node=1 rm -rf "$TMP_BASE"
 
 
-
-
-
-# old backup
-    # srun --ntasks=2 --gpus-per-node=2 bash -lc "
-    #   apptainer exec --nv --cleanenv \
-    #   --bind \"$HOME/mmdet:/workspace/mmdet\" \
-    #   --bind \"$TMP_BASE:/workspace/tmp\" \
-    #   --bind \"$WORK:/workspace/work_dirs\" \
-    #   --bind \"/tudelft.net/staff-umbrella/MscThesisjverhoog:/tudelft.net/staff-umbrella/MscThesisjverhoog\" \
-    #   --bind \"/tudelft.net/staff-umbrella/IntelligentVehiclesPublicDatasets:/tudelft.net/staff-umbrella/IntelligentVehiclesPublicDatasets\" \
-    #   --bind \"$DATASET_PATH:/workspace/mmdet/mmdetection3d/data/nuscenes\" \
-    #   --env SLURM_PROCID=\"\$SLURM_PROCID\" \
-    #   --env SLURM_NTASKS=\"\$SLURM_NTASKS\" \
-    #   --env SLURM_NODELIST=\"\$SLURM_NODELIST\" \
-    #   --env SLURM_JOB_ID=\"\$SLURM_JOB_ID\" \
-    #   --env TORCH_HOME=\"/workspace/tmp/torch/\$SLURM_PROCID\" \
-    #   --env XDG_CACHE_HOME=\"/workspace/tmp/xdg/\$SLURM_PROCID\" \
-    #   --env WANDB_DIR=\"/workspace/tmp/wandb/\$SLURM_PROCID\" \
-    #   --env TMPDIR=\"/workspace/tmp/tmp/\$SLURM_PROCID\" \
-    #   --env WANDB_PROJECT=\"$WANDB_PROJECT\" \
-    #   --env WANDB_NAME=\"FedMC3_${MODEL_NAME}\" \
-    #   --env WANDB_API_KEY=\"$WANDB_API_KEY\" \
-    #   --env OMP_NUM_THREADS=1 \
-    #   --env MKL_NUM_THREADS=1 \
-    #   --env NCCL_DEBUG=INFO \
-    #   --env NCCL_ASYNC_ERROR_HANDLING=1 \
-    #   --env NCCL_BLOCKING_WAIT=1 \
-    #   --env TORCH_DISTRIBUTED_DEBUG=DETAIL \
-    #   --env MASTER_ADDR=\"$MASTER_ADDR\" \
-    #   --env MASTER_PORT=\"$MASTER_PORT\" \
-    #   --env NCCL_SOCKET_IFNAME=\"campus\" \
-    #   --env WANDB_RUN_ID=\"$WANDB_RUN_ID\" \
-    #   --env WANDB_RESUME=\"allow\" \
-    #   --env WANDB_INIT_TIMEOUT=\"300\" \
-    #   \"$APPTAINER_IMAGE\" \
-#       bash -lc '
-#         cd /workspace/mmdet/mmdetection3d && \
-#         export PYTHONPATH=/workspace/mmdet/mmdetection3d:/workspace/mmdet:\$PYTHONPATH && \
-#         python -u tools/train.py \
-#         projects/cmt/fed/fedmc/improved_lightweight_cmt_iterated.py \
-#           --launcher slurm \
-#           --work-dir $WORK_DIR \
-#           $RESUME_ARG \
-#           --cfg-options ${CFG_LOAD_ARG} dist_params.port=$MASTER_PORT \
-#             data.samples_per_gpu=$SAMPLES_PER_GPU \
-#             total_epochs=$GLOBAL_EPOCHS \
-#             custom_hooks.1.stop_epoch=$STOP_EPOCH \
-#             custom_hooks.2.save_path=$WORK_DIR/fisher_matrix.pth
-#       '
-#     "
-# }

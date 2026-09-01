@@ -176,7 +176,7 @@ run_training () {
           --launcher pytorch \
           --work-dir $WORK_DIR \
           $RESUME_ARG \
-          --cfg-options ${CFG_LOAD_ARG} dist_params.port=$MASTER_PORT \
+          --cfg-options ${CFG_LOAD_ARG} \
             data.samples_per_gpu=$SAMPLES_PER_GPU \
             total_epochs=$GLOBAL_EPOCHS \
             custom_hooks.1.stop_epoch=$STOP_EPOCH \
