@@ -1,9 +1,9 @@
 #!/bin/bash
 #SBATCH --partition=general
 #SBATCH --qos=medium
-#SBATCH --job-name=fedMC-40
-#SBATCH --output=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/cmt/fedmc3_40epochs_%j.out
-#SBATCH --error=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/cmt/fedmc3_40epochs_%j.err
+#SBATCH --job-name=Et-fs-cka
+#SBATCH --output=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/cmt/fs_cka_elasticTest_dyn075_job%j_rank%t.out
+#SBATCH --error=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/cmt/fs_cka_elasticTest_dyn075_job%j_rank%t.err
 #SBATCH --time=36:00:00
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
@@ -13,47 +13,48 @@
 #SBATCH --mem=64G
 
 set -e # stop if something fails
+echo "=== Starting Job ID: $SLURM_JOB_ID ==="
 
 # --- FEDERATED SETTINGS ---
-NUM_ROUNDS=40       # approx 2hour per round of 1 Epoch
+NUM_ROUNDS=40           # approx 2hour per round of 1 Epoch
 EPOCHS_PER_ROUND=1 
 SAMPLES_PER_GPU=16
-SIZE_A=265  # A MUST BE BIGGEST for logging
+SIZE_A=265              # A MUST BE BIGGEST for logging
 SIZE_B=125
 SIZE_C=226
 SIZE_D=71
 SIZE_E=13
 
+START_ROUND=1 
+START_MODEL="A"         # If set, runs from that model for the start round, then continues normally. 'A' does nothing. 'merge' does fedavg of previous round
+
 # Paths
-DAY_CLEAR_DATAROOT="/tudelft.net/staff-umbrella/MscThesisjverhoog/datasets/cmt_subsets/Default_NoFair_SingleClient/boston_day_clear"
-DAY_RAIN_DATAROOT="/tudelft.net/staff-umbrella/MscThesisjverhoog/datasets/cmt_subsets/Default_NoFair_SingleClient/boston_day_rain"
-DAY_CLEAR_DATAROOT_SING="/tudelft.net/staff-umbrella/MscThesisjverhoog/datasets/cmt_subsets/Default_NoFair_SingleClient/singapore_day_clear"
-NIGHT_CLEAR_DATAROOT="/tudelft.net/staff-umbrella/MscThesisjverhoog/datasets/cmt_subsets/Default_NoFair_SingleClient/singapore_night_clear"
-NIGHT_RAIN_DATAROOT="/tudelft.net/staff-umbrella/MscThesisjverhoog/datasets/cmt_subsets/Default_NoFair_SingleClient/singapore_night_rain"
+DATASET_A="/tudelft.net/staff-umbrella/MscThesisjverhoog/datasets/cmt_subsets/Default_NoFair_SingleClient/boston_day_clear"
+DATASET_B="/tudelft.net/staff-umbrella/MscThesisjverhoog/datasets/cmt_subsets/Default_NoFair_SingleClient/boston_day_rain"
+DATASET_C="/tudelft.net/staff-umbrella/MscThesisjverhoog/datasets/cmt_subsets/Default_NoFair_SingleClient/singapore_day_clear"
+DATASET_D="/tudelft.net/staff-umbrella/MscThesisjverhoog/datasets/cmt_subsets/Default_NoFair_SingleClient/singapore_night_clear"
+DATASET_E="/tudelft.net/staff-umbrella/MscThesisjverhoog/datasets/cmt_subsets/Default_NoFair_SingleClient/singapore_night_rain"
 
-CONFIG_A=$DAY_CLEAR_DATAROOT
-CONFIG_B=$DAY_RAIN_DATAROOT
-CONFIG_C=$DAY_CLEAR_DATAROOT_SING
-CONFIG_D=$NIGHT_CLEAR_DATAROOT
-CONFIG_E=$NIGHT_RAIN_DATAROOT
-
-# Initial backbone weights (only used in Round 1)
+# Initial backbone weights (only used in Round 1), this is the correct one for the R50 backbone
 PRETRAINED_BACKBONE="ckpts/nuim_r50.pth"
 
 # --- STANDARD SETUP ---
 export SRUN_CPUS_PER_TASK=${SLURM_CPUS_PER_TASK:-1}
 export WANDB_PROJECT="cmt_40_epoch"
-export RUN_NAME="FedMC3_40p_40epoch"
+export RUN_NAME="FS_cka_elastic_dyn075_40epochs"
+CONTINUE_WANDB_RUN=true
+
+# Gets API key robustly
 export WANDB_API_KEY=$(awk '$1=="machine" && $2=="api.wandb.ai" {found=1}found && $1=="password" {print $2; exit}' "$HOME/.netrc")
+
 export APPTAINER_IMAGE=/tudelft.net/staff-umbrella/MscThesisjverhoog/image/mmdet3d_v1rc5.sif
 export WORK=/tudelft.net/staff-umbrella/MscThesisjverhoog/projects/$WANDB_PROJECT/$RUN_NAME
 mkdir -p "$WORK"
 
+
 # ==========================================
 # --- AUTO-DETECT RESUME STATE ---
 # ==========================================
-START_ROUND=1
-START_MODEL='A'
 LATEST_ROUND=0
 for (( i=1; i<=NUM_ROUNDS; i++ )); do
     if [ -d "$WORK/round_$i" ]; then
@@ -100,11 +101,9 @@ TMP_BASE="/tmp/jtverhoog_${SLURM_JOB_ID}"
 srun --nodes=$SLURM_NNODES --ntasks-per-node=1 mkdir -p "$TMP_BASE"/{wandb,torch,xdg,tmp,home}
 module use /opt/insy/modulefiles
 module load cuda
+
+# master port queries for free ports and uses that per training run, ensuring all processes can communicate properly
 export MASTER_ADDR=$(scontrol show hostnames "$SLURM_JOB_NODELIST" | head -n 1)
-
-
-# Measure GPU usage of your job (initialization)
-previous=$(/usr/bin/nvidia-smi --query-accounted-apps='gpu_instance_id,gpu_utilization,mem_utilization,max_memory_usage,time' --format='csv' 2>/dev/null || true)
 
 # --- TRAINING FUNCTION ---
 run_training () {
@@ -112,14 +111,12 @@ run_training () {
     local DATASET_PATH=$2
     local CHECKPOINT=$3
     local ROUND=$4
-    local GLOBAL_EPOCHS=$5    # Changed from TARGET_EPOCHS
-    local STOP_EPOCH=$6       # NEW ARGUMENT
+    local GLOBAL_EPOCHS=$5
+    local STOP_EPOCH=$6
     local IS_RESUME=$7
-    local WANDB_RUN_ID=$8       # get run consistency
+    local WANDB_RUN_ID=$8
     
     local WORK_DIR="$WORK/round_${ROUND}/${MODEL_NAME}"
-    
-    # Configure Load vs Resume arguments
     local CFG_LOAD_ARG=""
     local RESUME_ARG=""
     
@@ -132,8 +129,10 @@ run_training () {
     fi
 
     echo "=== ROUND $ROUND | Training $MODEL_NAME | Stop Epoch: $STOP_EPOCH (Global: $GLOBAL_EPOCHS) ==="
-    local MASTER_PORT=$(apptainer exec --cleanenv "$APPTAINER_IMAGE" python3 -c 'import socket; s=socket.socket(); s.bind(("", 0)); print(s.getsockname()[1]); s.close()')
-    echo "Using Master Port: $MASTER_PORT"
+    
+    # Grab a fresh, guaranteed-free port for THIS specific training run
+    local CURRENT_MASTER_PORT=$(apptainer exec --cleanenv "$APPTAINER_IMAGE" python3 -c 'import socket; s=socket.socket(); s.bind(("", 0)); print(s.getsockname()[1]); s.close()')
+    echo "Using Master Port: $CURRENT_MASTER_PORT"
 
     srun --ntasks=1 bash -lc "
       apptainer exec --nv --cleanenv \
@@ -152,7 +151,7 @@ run_training () {
       --env WANDB_DIR=\"/workspace/tmp/wandb/\$SLURM_PROCID\" \
       --env TMPDIR=\"/workspace/tmp/tmp/\$SLURM_PROCID\" \
       --env WANDB_PROJECT=\"$WANDB_PROJECT\" \
-      --env WANDB_NAME=\"FedMC3_${MODEL_NAME}\" \
+      --env WANDB_NAME=\"${RUN_NAME}_${MODEL_NAME}\" \
       --env WANDB_API_KEY=\"$WANDB_API_KEY\" \
       --env OMP_NUM_THREADS=1 \
       --env MKL_NUM_THREADS=1 \
@@ -161,18 +160,17 @@ run_training () {
       --env NCCL_BLOCKING_WAIT=1 \
       --env TORCH_DISTRIBUTED_DEBUG=DETAIL \
       --env MASTER_ADDR=\"127.0.0.1\" \
-      --env MASTER_PORT=\"$MASTER_PORT\" \
+      --env MASTER_PORT=\"$CURRENT_MASTER_PORT\" \
       --env NCCL_SOCKET_IFNAME=\"campus\" \
       --env WANDB_RUN_ID=\"$WANDB_RUN_ID\" \
       --env WANDB_RESUME=\"allow\" \
-      --env WANDB_INIT_TIMEOUT=\"300\" \
       \"$APPTAINER_IMAGE\" \
-        bash -lc '
+      bash -lc '
         cd /workspace/mmdet/mmdetection3d && \
         export PYTHONPATH=/workspace/mmdet/mmdetection3d:/workspace/mmdet:\$PYTHONPATH && \
-        python -m torch.distributed.launch --nproc_per_node=2 --master_port=$MASTER_PORT \
+        python -m torch.distributed.launch --nproc_per_node=2 --master_port=$CURRENT_MASTER_PORT \
         tools/train.py \
-        projects/cmt/fed/fedmc/improved_lightweight_cmt_iterated.py \
+        projects/cmt/fed/fedSelect/improved_lightweight_cmt_iterated_FedSelect.py \
           --launcher pytorch \
           --work-dir $WORK_DIR \
           $RESUME_ARG \
@@ -180,13 +178,10 @@ run_training () {
             data.samples_per_gpu=$SAMPLES_PER_GPU \
             total_epochs=$GLOBAL_EPOCHS \
             custom_hooks.1.stop_epoch=$STOP_EPOCH \
-            custom_hooks.2.save_path=$WORK_DIR/fisher_matrix.pth
+            custom_hooks.2.mask_path=\"/workspace/work_dirs/fedselect_masks/${MODEL_NAME}_mask.pth\"
       '
     "
 }
-
-
-
 # --- MERGE FUNCTION ---
 run_merge () {
     local CKPT_A=$1
@@ -199,62 +194,58 @@ run_merge () {
     local OUT_C=$8
     local OUT_D=$9
     local OUT_E=${10}
-    local ROUND=${11}
+    local METHOD=${11}
     
-    # Construct the container paths dynamically based on the round
-    local FISH_A="/workspace/work_dirs/round_${ROUND}/ModelA/fisher_matrix.pth"
-    local FISH_B="/workspace/work_dirs/round_${ROUND}/ModelB/fisher_matrix.pth"
-    local FISH_C="/workspace/work_dirs/round_${ROUND}/ModelC/fisher_matrix.pth"
-    local FISH_D="/workspace/work_dirs/round_${ROUND}/ModelD/fisher_matrix.pth"
-    local FISH_E="/workspace/work_dirs/round_${ROUND}/ModelE/fisher_matrix.pth"
+    echo "=== Merging Models using $METHOD ==="
     
-    # --- NEW: Dynamic Method Selection ---
-    local MERGE_METHOD="fedmc"
-    if [ "$ROUND" -le 10 ]; then
-        MERGE_METHOD="fedavg"
-        echo "=== Round $ROUND: Merging Models using FEDAVG ==="
-    else
-        echo "=== Round $ROUND: Merging Models using FEDMC ==="
+    # Base command string
+    local MERGE_CMD="python projects/cmt_40_epoch/tools/modular_merging.py \
+            --inputs $CKPT_A $CKPT_B $CKPT_C $CKPT_D $CKPT_E \
+            --outputs $OUT_A $OUT_B $OUT_C $OUT_D $OUT_E \
+            --weight-a $SIZE_A --weight-b $SIZE_B --weight-c $SIZE_C --weight-d $SIZE_D --weight-e $SIZE_E \
+            --method $METHOD \
+            --config projects/cmt/fed/fedSelect/improved_lightweight_cmt_iterated_FedSelect.py \
+            --dynamic-sparsity 0.75"
+            
+    # Append CKA specific arguments if the method is fedselect_cka
+    if [ "$METHOD" = "fedselect_cka_elastic" ]; then
+        MERGE_CMD="$MERGE_CMD \
+            --runner-path projects/cmt_40_epoch/fedcka/scripts_cmt_copy/runner.py \
+            --data-dir /tudelft.net/staff-umbrella/IntelligentVehiclesPublicDatasets/nuscenes \
+            --modality lidar_camera"
     fi
 
-    echo "=== Merging Models ==="
     apptainer exec --nv --cleanenv \
       --bind "$HOME/mmdet:/workspace/mmdet" \
       --bind "$WORK:/workspace/work_dirs" \
       --bind "/tudelft.net/staff-umbrella/MscThesisjverhoog:/tudelft.net/staff-umbrella/MscThesisjverhoog" \
+      --bind "/tudelft.net/staff-umbrella/IntelligentVehiclesPublicDatasets:/tudelft.net/staff-umbrella/IntelligentVehiclesPublicDatasets" \
       "$APPTAINER_IMAGE" \
       bash -lc "
         cd /workspace/mmdet/mmdetection3d && \
         export PYTHONPATH=/workspace/mmdet/mmdetection3d:/workspace/mmdet:\$PYTHONPATH && \
-        python projects/cmt_40_epoch/tools/modular_merging.py \
-            --inputs $CKPT_A $CKPT_B $CKPT_C $CKPT_D $CKPT_E \
-            --outputs $OUT_A $OUT_B $OUT_C $OUT_D $OUT_E \
-            --weight-a $SIZE_A --weight-b $SIZE_B --weight-c $SIZE_C --weight-d $SIZE_D --weight-e $SIZE_E \
-            --method $MERGE_METHOD \
-            --fisher_paths $FISH_A $FISH_B $FISH_C $FISH_D $FISH_E \
-            --select-ratio 0.02 \
-            --max-sparsity 0.4
+        $MERGE_CMD
       "
-    
-    # --- NEW: Save the Round 10 global model as the baseline for Round 11's FedMC ---
-    if [ "$ROUND" -eq 10 ]; then
-        echo "Saving Round 10 FedAvg model as baseline for FedMC..."
-        mkdir -p "$WORK/fedmc_states"
-        # Since FedAvg outputs identical global models for A-E, we can just copy OUT_A
-        cp "$OUT_A" "$WORK/fedmc_states/global_model.pth"
-    fi
 }
 
 # ==========================================
 # MAIN LOOP
 # ==========================================
 
-# Create persistent WandB Run IDs so each model logs to the same run across rounds
-export WANDB_ID_A="fedmc3_A_40epochsREAL2"
-export WANDB_ID_B="fedmc3_B_40epochsREAL2"
-export WANDB_ID_C="fedmc3_C_40epochsREAL2"
-export WANDB_ID_D="fedmc3_D_40epochsREAL2"
-export WANDB_ID_E="fedmc3_E_40epochsREAL2"
+# Create persistent WandB Run IDs based on CONTINUE_WANDB_RUN flag
+if [ "$CONTINUE_WANDB_RUN" == "true" ]; then
+    export WANDB_ID_A="${RUN_NAME}_A"
+    export WANDB_ID_B="${RUN_NAME}_B"
+    export WANDB_ID_C="${RUN_NAME}_C"
+    export WANDB_ID_D="${RUN_NAME}_D"
+    export WANDB_ID_E="${RUN_NAME}_E"
+else
+    export WANDB_ID_A="job_${SLURM_JOB_ID}_A"
+    export WANDB_ID_B="job_${SLURM_JOB_ID}_B"
+    export WANDB_ID_C="job_${SLURM_JOB_ID}_C"
+    export WANDB_ID_D="job_${SLURM_JOB_ID}_D"
+    export WANDB_ID_E="job_${SLURM_JOB_ID}_E"
+fi
 
 if [ "$START_ROUND" -eq 1 ]; then
     echo "Starting fresh run from Round 1"
@@ -281,8 +272,15 @@ for ((i=START_ROUND; i<=NUM_ROUNDS; i++)); do
     # This is where we want to STOP in this specific round
     CURRENT_STOP_EPOCH=$((i * EPOCHS_PER_ROUND))
     
+    # --- PHASE merging DETERMINATION ---
+    if [ "$i" -le 10 ]; then
+        CURRENT_METHOD="fedavg"
+    else
+        CURRENT_METHOD="fedselect_cka_elastic"
+    fi
+    
     echo "-------------------------------------"
-    echo "       STARTING FEDAVG ROUND $i      "
+    echo "       STARTING $CURRENT_METHOD ROUND $i      "
     echo "       Scheduler Horizon: $GLOBAL_MAX_EPOCHS epochs"
     echo "       Stop Training At:  $CURRENT_STOP_EPOCH epochs"
     echo "-------------------------------------"
@@ -293,47 +291,54 @@ for ((i=START_ROUND; i<=NUM_ROUNDS; i++)); do
         IS_RESUME="true"
     fi
 
-
-if [ "$START_MODEL" != "A" ]; then
+    if [ "$START_MODEL" != "A" ]; then
         echo "Starting Round $i from Model $START_MODEL , then resuming normal training after that."
         if [ "$START_MODEL" = "B" ]; then
             CKPT_A="$WORK/round_${i}/ModelA/epoch_${CURRENT_STOP_EPOCH}.pth"
-            run_training "ModelB" "$CONFIG_B" "$MODEL_B" "$i" "$GLOBAL_MAX_EPOCHS" "$CURRENT_STOP_EPOCH" "$IS_RESUME" "$WANDB_ID_B"
+            run_training "ModelB" "$DATASET_B" "$MODEL_B" "$i" "$GLOBAL_MAX_EPOCHS" "$CURRENT_STOP_EPOCH" "$IS_RESUME" "$WANDB_ID_B"
             CKPT_B="$WORK/round_${i}/ModelB/epoch_${CURRENT_STOP_EPOCH}.pth"
-            run_training "ModelC" "$CONFIG_C" "$MODEL_C" "$i" "$GLOBAL_MAX_EPOCHS" "$CURRENT_STOP_EPOCH" "$IS_RESUME" "$WANDB_ID_C"
+            run_training "ModelC" "$DATASET_C" "$MODEL_C" "$i" "$GLOBAL_MAX_EPOCHS" "$CURRENT_STOP_EPOCH" "$IS_RESUME" "$WANDB_ID_C"
             CKPT_C="$WORK/round_${i}/ModelC/epoch_${CURRENT_STOP_EPOCH}.pth"
-            run_training "ModelD" "$CONFIG_D" "$MODEL_D" "$i" "$GLOBAL_MAX_EPOCHS" "$CURRENT_STOP_EPOCH" "$IS_RESUME" "$WANDB_ID_D"
+            run_training "ModelD" "$DATASET_D" "$MODEL_D" "$i" "$GLOBAL_MAX_EPOCHS" "$CURRENT_STOP_EPOCH" "$IS_RESUME" "$WANDB_ID_D"
             CKPT_D="$WORK/round_${i}/ModelD/epoch_${CURRENT_STOP_EPOCH}.pth"
-            run_training "ModelE" "$CONFIG_E" "$MODEL_E" "$i" "$GLOBAL_MAX_EPOCHS" "$CURRENT_STOP_EPOCH" "$IS_RESUME" "$WANDB_ID_E"
+            run_training "ModelE" "$DATASET_E" "$MODEL_E" "$i" "$GLOBAL_MAX_EPOCHS" "$CURRENT_STOP_EPOCH" "$IS_RESUME" "$WANDB_ID_E"
             CKPT_E="$WORK/round_${i}/ModelE/epoch_${CURRENT_STOP_EPOCH}.pth"  
         elif [ "$START_MODEL" = "C" ]; then
             CKPT_A="$WORK/round_${i}/ModelA/epoch_${CURRENT_STOP_EPOCH}.pth"
             CKPT_B="$WORK/round_${i}/ModelB/epoch_${CURRENT_STOP_EPOCH}.pth"    
-            run_training "ModelC" "$CONFIG_C" "$MODEL_C" "$i" "$GLOBAL_MAX_EPOCHS" "$CURRENT_STOP_EPOCH" "$IS_RESUME" "$WANDB_ID_C"
+            run_training "ModelC" "$DATASET_C" "$MODEL_C" "$i" "$GLOBAL_MAX_EPOCHS" "$CURRENT_STOP_EPOCH" "$IS_RESUME" "$WANDB_ID_C"
             CKPT_C="$WORK/round_${i}/ModelC/epoch_${CURRENT_STOP_EPOCH}.pth"
-            run_training "ModelD" "$CONFIG_D" "$MODEL_D" "$i" "$GLOBAL_MAX_EPOCHS" "$CURRENT_STOP_EPOCH" "$IS_RESUME" "$WANDB_ID_D"
+            run_training "ModelD" "$DATASET_D" "$MODEL_D" "$i" "$GLOBAL_MAX_EPOCHS" "$CURRENT_STOP_EPOCH" "$IS_RESUME" "$WANDB_ID_D"
             CKPT_D="$WORK/round_${i}/ModelD/epoch_${CURRENT_STOP_EPOCH}.pth"
-            run_training "ModelE" "$CONFIG_E" "$MODEL_E" "$i" "$GLOBAL_MAX_EPOCHS" "$CURRENT_STOP_EPOCH" "$IS_RESUME" "$WANDB_ID_E"
+            run_training "ModelE" "$DATASET_E" "$MODEL_E" "$i" "$GLOBAL_MAX_EPOCHS" "$CURRENT_STOP_EPOCH" "$IS_RESUME" "$WANDB_ID_E"
             CKPT_E="$WORK/round_${i}/ModelE/epoch_${CURRENT_STOP_EPOCH}.pth"
         elif [ "$START_MODEL" = "D" ]; then
             CKPT_A="$WORK/round_${i}/ModelA/epoch_${CURRENT_STOP_EPOCH}.pth"
             CKPT_B="$WORK/round_${i}/ModelB/epoch_${CURRENT_STOP_EPOCH}.pth"    
             CKPT_C="$WORK/round_${i}/ModelC/epoch_${CURRENT_STOP_EPOCH}.pth"
-            run_training "ModelD" "$CONFIG_D" "$MODEL_D" "$i" "$GLOBAL_MAX_EPOCHS" "$CURRENT_STOP_EPOCH" "$IS_RESUME" "$WANDB_ID_D"
+            run_training "ModelD" "$DATASET_D" "$MODEL_D" "$i" "$GLOBAL_MAX_EPOCHS" "$CURRENT_STOP_EPOCH" "$IS_RESUME" "$WANDB_ID_D"
             CKPT_D="$WORK/round_${i}/ModelD/epoch_${CURRENT_STOP_EPOCH}.pth"
-            run_training "ModelE" "$CONFIG_E" "$MODEL_E" "$i" "$GLOBAL_MAX_EPOCHS" "$CURRENT_STOP_EPOCH" "$IS_RESUME" "$WANDB_ID_E"
+            run_training "ModelE" "$DATASET_E" "$MODEL_E" "$i" "$GLOBAL_MAX_EPOCHS" "$CURRENT_STOP_EPOCH" "$IS_RESUME" "$WANDB_ID_E"
             CKPT_E="$WORK/round_${i}/ModelE/epoch_${CURRENT_STOP_EPOCH}.pth"
         elif [ "$START_MODEL" = "E" ]; then
             CKPT_A="$WORK/round_${i}/ModelA/epoch_${CURRENT_STOP_EPOCH}.pth"
             CKPT_B="$WORK/round_${i}/ModelB/epoch_${CURRENT_STOP_EPOCH}.pth"    
             CKPT_C="$WORK/round_${i}/ModelC/epoch_${CURRENT_STOP_EPOCH}.pth"
             CKPT_D="$WORK/round_${i}/ModelD/epoch_${CURRENT_STOP_EPOCH}.pth"
-            run_training "ModelE" "$CONFIG_E" "$MODEL_E" "$i" "$GLOBAL_MAX_EPOCHS" "$CURRENT_STOP_EPOCH" "$IS_RESUME" "$WANDB_ID_E"
+            run_training "ModelE" "$DATASET_E" "$MODEL_E" "$i" "$GLOBAL_MAX_EPOCHS" "$CURRENT_STOP_EPOCH" "$IS_RESUME" "$WANDB_ID_E"
             CKPT_E="$WORK/round_${i}/ModelE/epoch_${CURRENT_STOP_EPOCH}.pth"
         elif [ "$START_MODEL" = "merge" ]; then
             # Calculate correct previous round and its stop epoch
             PREV_RND=$((i - 1))
             PREV_STOP_EPOCH=$((CURRENT_STOP_EPOCH - EPOCHS_PER_ROUND))
+            
+            # --- NEW: Determine the correct method for the previous round ---
+            if [ "$PREV_RND" -le 10 ]; then
+                PREV_METHOD="fedavg"
+            else
+                PREV_METHOD="fedselect_cka_elastic"
+            fi
+            # ----------------------------------------------------------------
             
             CKPT_A="$WORK/round_${PREV_RND}/ModelA/epoch_${PREV_STOP_EPOCH}.pth"
             CKPT_B="$WORK/round_${PREV_RND}/ModelB/epoch_${PREV_STOP_EPOCH}.pth"
@@ -348,48 +353,49 @@ if [ "$START_MODEL" != "A" ]; then
             MERGED_D="$WORK/round_${PREV_RND}/merged_D.pth"
             MERGED_E="$WORK/round_${PREV_RND}/merged_E.pth"
             
+            # --- UPDATED: Pass $PREV_METHOD instead of "fedavg" ---
             run_merge "$CKPT_A" "$CKPT_B" "$CKPT_C" "$CKPT_D" "$CKPT_E" \
-                    "$MERGED_A" "$MERGED_B" "$MERGED_C" "$MERGED_D" "$MERGED_E" "$PREV_RND"
+                    "$MERGED_A" "$MERGED_B" "$MERGED_C" "$MERGED_D" "$MERGED_E" "$PREV_METHOD"
+            # ------------------------------------------------------
             
-            # Now run Round 2 training 
-            run_training "ModelA" "$CONFIG_A" "$MODEL_A" "$i" "$GLOBAL_MAX_EPOCHS" "$CURRENT_STOP_EPOCH" "$IS_RESUME" "$WANDB_ID_A"
+            # Now run Round 2 training (IS_RESUME="true" will use the newly created MERGED checkpoints)
+            run_training "ModelA" "$DATASET_A" "$MODEL_A" "$i" "$GLOBAL_MAX_EPOCHS" "$CURRENT_STOP_EPOCH" "$IS_RESUME" "$WANDB_ID_A"
             CKPT_A="$WORK/round_${i}/ModelA/epoch_${CURRENT_STOP_EPOCH}.pth"
 
-            run_training "ModelB" "$CONFIG_B" "$MODEL_B" "$i" "$GLOBAL_MAX_EPOCHS" "$CURRENT_STOP_EPOCH" "$IS_RESUME" "$WANDB_ID_B"
+            run_training "ModelB" "$DATASET_B" "$MODEL_B" "$i" "$GLOBAL_MAX_EPOCHS" "$CURRENT_STOP_EPOCH" "$IS_RESUME" "$WANDB_ID_B"
             CKPT_B="$WORK/round_${i}/ModelB/epoch_${CURRENT_STOP_EPOCH}.pth"
 
-            run_training "ModelC" "$CONFIG_C" "$MODEL_C" "$i" "$GLOBAL_MAX_EPOCHS" "$CURRENT_STOP_EPOCH" "$IS_RESUME" "$WANDB_ID_C"
+            run_training "ModelC" "$DATASET_C" "$MODEL_C" "$i" "$GLOBAL_MAX_EPOCHS" "$CURRENT_STOP_EPOCH" "$IS_RESUME" "$WANDB_ID_C"
             CKPT_C="$WORK/round_${i}/ModelC/epoch_${CURRENT_STOP_EPOCH}.pth"
 
-            run_training "ModelD" "$CONFIG_D" "$MODEL_D" "$i" "$GLOBAL_MAX_EPOCHS" "$CURRENT_STOP_EPOCH" "$IS_RESUME" "$WANDB_ID_D"
+            run_training "ModelD" "$DATASET_D" "$MODEL_D" "$i" "$GLOBAL_MAX_EPOCHS" "$CURRENT_STOP_EPOCH" "$IS_RESUME" "$WANDB_ID_D"
             CKPT_D="$WORK/round_${i}/ModelD/epoch_${CURRENT_STOP_EPOCH}.pth"
 
-            run_training "ModelE" "$CONFIG_E" "$MODEL_E" "$i" "$GLOBAL_MAX_EPOCHS" "$CURRENT_STOP_EPOCH" "$IS_RESUME" "$WANDB_ID_E"
+            run_training "ModelE" "$DATASET_E" "$MODEL_E" "$i" "$GLOBAL_MAX_EPOCHS" "$CURRENT_STOP_EPOCH" "$IS_RESUME" "$WANDB_ID_E"
             CKPT_E="$WORK/round_${i}/ModelE/epoch_${CURRENT_STOP_EPOCH}.pth"
-
         else
             echo "Invalid START_MODEL specified: $START_MODEL. Must be one of A, B, C, D, E."
             exit 1
         fi
         START_MODEL="A" # Reset to normal training for next rounds
+
+
+
     else
-        # UPDATE: Pass both GLOBAL total and LOCAL stop to the training function
-        # Note: I am updating the function call arguments below
-        run_training "ModelA" "$CONFIG_A" "$MODEL_A" "$i" "$GLOBAL_MAX_EPOCHS" "$CURRENT_STOP_EPOCH" "$IS_RESUME" "$WANDB_ID_A"
-        CKPT_A="$WORK/round_${i}/ModelA/epoch_${CURRENT_STOP_EPOCH}.pth" # Use specific epoch
+        run_training "ModelA" "$DATASET_A" "$MODEL_A" "$i" "$GLOBAL_MAX_EPOCHS" "$CURRENT_STOP_EPOCH" "$IS_RESUME" "$WANDB_ID_A"
+        CKPT_A="$WORK/round_${i}/ModelA/epoch_${CURRENT_STOP_EPOCH}.pth"
 
-        run_training "ModelB" "$CONFIG_B" "$MODEL_B" "$i" "$GLOBAL_MAX_EPOCHS" "$CURRENT_STOP_EPOCH" "$IS_RESUME" "$WANDB_ID_B"
-        CKPT_B="$WORK/round_${i}/ModelB/epoch_${CURRENT_STOP_EPOCH}.pth" # Use specific epoch
+        run_training "ModelB" "$DATASET_B" "$MODEL_B" "$i" "$GLOBAL_MAX_EPOCHS" "$CURRENT_STOP_EPOCH" "$IS_RESUME" "$WANDB_ID_B"
+        CKPT_B="$WORK/round_${i}/ModelB/epoch_${CURRENT_STOP_EPOCH}.pth"
 
-        run_training "ModelC" "$CONFIG_C" "$MODEL_C" "$i" "$GLOBAL_MAX_EPOCHS" "$CURRENT_STOP_EPOCH" "$IS_RESUME" "$WANDB_ID_C"
-        CKPT_C="$WORK/round_${i}/ModelC/epoch_${CURRENT_STOP_EPOCH}.pth" # Use specific epoch
+        run_training "ModelC" "$DATASET_C" "$MODEL_C" "$i" "$GLOBAL_MAX_EPOCHS" "$CURRENT_STOP_EPOCH" "$IS_RESUME" "$WANDB_ID_C"
+        CKPT_C="$WORK/round_${i}/ModelC/epoch_${CURRENT_STOP_EPOCH}.pth"
 
-        run_training "ModelD" "$CONFIG_D" "$MODEL_D" "$i" "$GLOBAL_MAX_EPOCHS" "$CURRENT_STOP_EPOCH" "$IS_RESUME" "$WANDB_ID_D"
-        CKPT_D="$WORK/round_${i}/ModelD/epoch_${CURRENT_STOP_EPOCH}.pth" # Use specific epoch
+        run_training "ModelD" "$DATASET_D" "$MODEL_D" "$i" "$GLOBAL_MAX_EPOCHS" "$CURRENT_STOP_EPOCH" "$IS_RESUME" "$WANDB_ID_D"
+        CKPT_D="$WORK/round_${i}/ModelD/epoch_${CURRENT_STOP_EPOCH}.pth"
 
-        run_training "ModelE" "$CONFIG_E" "$MODEL_E" "$i" "$GLOBAL_MAX_EPOCHS" "$CURRENT_STOP_EPOCH" "$IS_RESUME" "$WANDB_ID_E"
-        CKPT_E="$WORK/round_${i}/ModelE/epoch_${CURRENT_STOP_EPOCH}.pth" # Use specific epoch
-
+        run_training "ModelE" "$DATASET_E" "$MODEL_E" "$i" "$GLOBAL_MAX_EPOCHS" "$CURRENT_STOP_EPOCH" "$IS_RESUME" "$WANDB_ID_E"
+        CKPT_E="$WORK/round_${i}/ModelE/epoch_${CURRENT_STOP_EPOCH}.pth"
     fi
 
     # 3. Aggregate and Save 5 Distinct Models
@@ -400,8 +406,17 @@ if [ "$START_MODEL" != "A" ]; then
     MERGED_E="$WORK/round_${i}/merged_E.pth"
     
     run_merge "$CKPT_A" "$CKPT_B" "$CKPT_C" "$CKPT_D" "$CKPT_E" \
-              "$MERGED_A" "$MERGED_B" "$MERGED_C" "$MERGED_D" "$MERGED_E" "$i"
+              "$MERGED_A" "$MERGED_B" "$MERGED_C" "$MERGED_D" "$MERGED_E" "$CURRENT_METHOD"
     
+    # --- FEDSELECT HANDOVER LOGIC ---
+    # If we just finished Round 10, save Model A (since all are identical after FedAvg) 
+    # as the baseline global model for FedSelect in Round 11
+    if [ "$i" -eq 10 ]; then
+        echo "Transitioning to FedSelect next round. Saving baseline global model..."
+        mkdir -p "$WORK/fedselect_states"
+        cp "$MERGED_A" "$WORK/fedselect_states/global_model.pth"
+    fi
+
     # Setup for next round
     MODEL_A="$MERGED_A"
     MODEL_B="$MERGED_B"
@@ -411,63 +426,3 @@ if [ "$START_MODEL" != "A" ]; then
     
     echo "Round $i complete. 5 distinct merged models saved."
 done
-
-# Measure GPU usage of your job (result) for all allocated GPUs
-/usr/bin/nvidia-smi --query-accounted-apps='gpu_instance_id,gpu_utilization,mem_utilization,max_memory_usage,time' --format='csv' 2>/dev/null || true
-
-# Cleanup
-srun --nodes=$SLURM_NNODES --ntasks-per-node=1 rm -rf "$TMP_BASE"
-
-
-
-
-
-# old backup
-    # srun --ntasks=2 --gpus-per-node=2 bash -lc "
-    #   apptainer exec --nv --cleanenv \
-    #   --bind \"$HOME/mmdet:/workspace/mmdet\" \
-    #   --bind \"$TMP_BASE:/workspace/tmp\" \
-    #   --bind \"$WORK:/workspace/work_dirs\" \
-    #   --bind \"/tudelft.net/staff-umbrella/MscThesisjverhoog:/tudelft.net/staff-umbrella/MscThesisjverhoog\" \
-    #   --bind \"/tudelft.net/staff-umbrella/IntelligentVehiclesPublicDatasets:/tudelft.net/staff-umbrella/IntelligentVehiclesPublicDatasets\" \
-    #   --bind \"$DATASET_PATH:/workspace/mmdet/mmdetection3d/data/nuscenes\" \
-    #   --env SLURM_PROCID=\"\$SLURM_PROCID\" \
-    #   --env SLURM_NTASKS=\"\$SLURM_NTASKS\" \
-    #   --env SLURM_NODELIST=\"\$SLURM_NODELIST\" \
-    #   --env SLURM_JOB_ID=\"\$SLURM_JOB_ID\" \
-    #   --env TORCH_HOME=\"/workspace/tmp/torch/\$SLURM_PROCID\" \
-    #   --env XDG_CACHE_HOME=\"/workspace/tmp/xdg/\$SLURM_PROCID\" \
-    #   --env WANDB_DIR=\"/workspace/tmp/wandb/\$SLURM_PROCID\" \
-    #   --env TMPDIR=\"/workspace/tmp/tmp/\$SLURM_PROCID\" \
-    #   --env WANDB_PROJECT=\"$WANDB_PROJECT\" \
-    #   --env WANDB_NAME=\"FedMC3_${MODEL_NAME}\" \
-    #   --env WANDB_API_KEY=\"$WANDB_API_KEY\" \
-    #   --env OMP_NUM_THREADS=1 \
-    #   --env MKL_NUM_THREADS=1 \
-    #   --env NCCL_DEBUG=INFO \
-    #   --env NCCL_ASYNC_ERROR_HANDLING=1 \
-    #   --env NCCL_BLOCKING_WAIT=1 \
-    #   --env TORCH_DISTRIBUTED_DEBUG=DETAIL \
-    #   --env MASTER_ADDR=\"$MASTER_ADDR\" \
-    #   --env MASTER_PORT=\"$MASTER_PORT\" \
-    #   --env NCCL_SOCKET_IFNAME=\"campus\" \
-    #   --env WANDB_RUN_ID=\"$WANDB_RUN_ID\" \
-    #   --env WANDB_RESUME=\"allow\" \
-    #   --env WANDB_INIT_TIMEOUT=\"300\" \
-    #   \"$APPTAINER_IMAGE\" \
-#       bash -lc '
-#         cd /workspace/mmdet/mmdetection3d && \
-#         export PYTHONPATH=/workspace/mmdet/mmdetection3d:/workspace/mmdet:\$PYTHONPATH && \
-#         python -u tools/train.py \
-#         projects/cmt/fed/fedmc/improved_lightweight_cmt_iterated.py \
-#           --launcher slurm \
-#           --work-dir $WORK_DIR \
-#           $RESUME_ARG \
-#           --cfg-options ${CFG_LOAD_ARG} dist_params.port=$MASTER_PORT \
-#             data.samples_per_gpu=$SAMPLES_PER_GPU \
-#             total_epochs=$GLOBAL_EPOCHS \
-#             custom_hooks.1.stop_epoch=$STOP_EPOCH \
-#             custom_hooks.2.save_path=$WORK_DIR/fisher_matrix.pth
-#       '
-#     "
-# }
