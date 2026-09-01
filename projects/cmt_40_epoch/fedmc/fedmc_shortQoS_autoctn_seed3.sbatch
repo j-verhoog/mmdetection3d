@@ -8,7 +8,6 @@
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --ntasks-per-node=1
-#SBATCH --gpus-per-node=2
 #SBATCH --gres=gpu:a40:2
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=64G
@@ -136,7 +135,7 @@ run_training () {
     local MASTER_PORT=$(apptainer exec --cleanenv "$APPTAINER_IMAGE" python3 -c 'import socket; s=socket.socket(); s.bind(("", 0)); print(s.getsockname()[1]); s.close()')
     echo "Using Master Port: $MASTER_PORT"
 
-    srun --ntasks=1 --gpus-per-node=2 bash -lc "
+    srun --ntasks=1 bash -lc "
       apptainer exec --nv --cleanenv \
       --bind \"$HOME/mmdet:/workspace/mmdet\" \
       --bind \"$TMP_BASE:/workspace/tmp\" \
