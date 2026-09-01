@@ -1,9 +1,9 @@
 #!/bin/bash
 #SBATCH --partition=general
 #SBATCH --qos=medium
-#SBATCH --job-name=Et-fs-cka
-#SBATCH --output=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/cmt/fs_cka_elasticTest_dyn075_job%j_rank%t.out
-#SBATCH --error=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/cmt/fs_cka_elasticTest_dyn075_job%j_rank%t.err
+#SBATCH --job-name=Epy-fs-cka
+#SBATCH --output=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/cmt/fs_cka_elasticPytorch_dyn075_job%j_rank%t.out
+#SBATCH --error=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/cmt/fs_cka_elasticPytorch_dyn075_job%j_rank%t.err
 #SBATCH --time=36:00:00
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
@@ -158,13 +158,15 @@ run_training () {
       --env NCCL_DEBUG=INFO \
       --env NCCL_ASYNC_ERROR_HANDLING=1 \
       --env NCCL_BLOCKING_WAIT=1 \
+      --env NCCL_P2P_DISABLE=1 \
       --env TORCH_DISTRIBUTED_DEBUG=DETAIL \
       --env MASTER_ADDR=\"127.0.0.1\" \
       --env MASTER_PORT=\"$CURRENT_MASTER_PORT\" \
-      --env NCCL_SOCKET_IFNAME=\"campus\" \
+      --env NCCL_SOCKET_IFNAME=\"lo\" \
+      --env GLOO_SOCKET_IFNAME=\"lo\" \
       --env WANDB_RUN_ID=\"$WANDB_RUN_ID\" \
       --env WANDB_RESUME=\"allow\" \
-        --env WANDB_INIT_TIMEOUT=\"300\" \
+      --env WANDB_INIT_TIMEOUT=\"300\" \
       \"$APPTAINER_IMAGE\" \
       bash -lc '
         cd /workspace/mmdet/mmdetection3d && \
