@@ -6,8 +6,8 @@
 #SBATCH --error=/tudelft.net/staff-umbrella/MscThesisjverhoog/logs/cmt/fs_3cka_dyn075_job%j_rank%t.err
 #SBATCH --time=36:00:00
 #SBATCH --nodes=1
-#SBATCH --ntasks=2
-#SBATCH --ntasks-per-node=2
+#SBATCH --ntasks=1
+#SBATCH --ntasks-per-node=1
 #SBATCH --gres=gpu:a40:2
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=64G
@@ -134,7 +134,7 @@ run_training () {
     local CURRENT_MASTER_PORT=$(apptainer exec --cleanenv "$APPTAINER_IMAGE" python3 -c 'import socket; s=socket.socket(); s.bind(("", 0)); print(s.getsockname()[1]); s.close()')
     echo "Using Master Port: $CURRENT_MASTER_PORT"
 
-    srun --ntasks=2 --gpus-per-node=2 bash -lc "
+    srun --ntasks=1 bash -lc "
       apptainer exec --nv --cleanenv \
       --bind \"$HOME/mmdet:/workspace/mmdet\" \
       --bind \"$TMP_BASE:/workspace/tmp\" \
@@ -158,22 +158,26 @@ run_training () {
       --env NCCL_DEBUG=INFO \
       --env NCCL_ASYNC_ERROR_HANDLING=1 \
       --env NCCL_BLOCKING_WAIT=1 \
+      --env NCCL_P2P_DISABLE=1 \
       --env TORCH_DISTRIBUTED_DEBUG=DETAIL \
-      --env MASTER_ADDR=\"$MASTER_ADDR\" \
+      --env MASTER_ADDR=\"127.0.0.1\" \
       --env MASTER_PORT=\"$CURRENT_MASTER_PORT\" \
-      --env NCCL_SOCKET_IFNAME=\"campus\" \
+      --env NCCL_SOCKET_IFNAME=\"lo\" \
+      --env GLOO_SOCKET_IFNAME=\"lo\" \
       --env WANDB_RUN_ID=\"$WANDB_RUN_ID\" \
       --env WANDB_RESUME=\"allow\" \
+      --env WANDB_INIT_TIMEOUT=\"300\" \
       \"$APPTAINER_IMAGE\" \
       bash -lc '
         cd /workspace/mmdet/mmdetection3d && \
         export PYTHONPATH=/workspace/mmdet/mmdetection3d:/workspace/mmdet:\$PYTHONPATH && \
-        python -u tools/train.py \
+        python -m torch.distributed.launch --nproc_per_node=2 --master_port=$CURRENT_MASTER_PORT \
+        tools/train.py \
         projects/cmt/fed/fedSelect/improved_lightweight_cmt_iterated_FedSelect.py \
-          --launcher slurm \
+          --launcher pytorch \
           --work-dir $WORK_DIR \
           $RESUME_ARG \
-          --cfg-options ${CFG_LOAD_ARG} dist_params.port=$CURRENT_MASTER_PORT \
+          --cfg-options ${CFG_LOAD_ARG} \
             data.samples_per_gpu=$SAMPLES_PER_GPU \
             total_epochs=$GLOBAL_EPOCHS \
             custom_hooks.1.stop_epoch=$STOP_EPOCH \
